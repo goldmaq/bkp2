@@ -65,7 +65,9 @@ export interface Maquina {
   hourMeter?: number | null;
   notes?: string | null;
   partsCatalogUrl?: string | null; 
-  errorCodesUrl?: string | null;   
+  errorCodesUrl?: string | null;
+  observacao2?: string | null;
+  linkedAuxiliaryEquipmentIds?: string[] | null;
 }
 
 export const serviceTypeOptionsList = [
@@ -204,6 +206,8 @@ export const MaquinaSchema = z.object({
   notes: z.string().optional().nullable(),
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
+  observacao2: z.string().optional().nullable(),
+  auxiliaryEquipmentIds: z.array(z.string()).optional().nullable(),
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;

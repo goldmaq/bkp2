@@ -13,22 +13,30 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import type { Maquina, Customer, CompanyId, OwnerReferenceType } from "@/types"; 
-import { MaquinaSchema, maquinaTypeOptions, maquinaOperationalStatusOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types"; 
+import type { Maquina, Customer, CompanyId, OwnerReferenceType, AuxiliaryEquipment } from "@/types";
+import { MaquinaSchema, maquinaTypeOptions, maquinaOperationalStatusOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc, writeBatch } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
-const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos"; 
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+
+
+const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+const FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME = "equipamentosAuxiliares";
+
 
 const NO_CUSTOMER_SELECT_ITEM_VALUE = "_NO_CUSTOMER_SELECTED_";
 const LOADING_CUSTOMERS_SELECT_ITEM_VALUE = "_LOADING_CUSTOMERS_";
@@ -77,7 +85,7 @@ async function uploadFile(
   if (!storage) {
     throw new Error("Firebase Storage connection not available.");
   }
-  const filePath = `equipment_files/${maquinaId}/${fileTypePrefix}_${file.name}`; 
+  const filePath = `equipment_files/${maquinaId}/${fileTypePrefix}_${file.name}`;
   const fileStorageRef = storageRef(storage!, filePath);
   await uploadBytes(fileStorageRef, file);
   return getDownloadURL(fileStorageRef);
@@ -101,7 +109,7 @@ async function deleteFileFromStorage(fileUrl?: string | null) {
 }
 
 
-async function fetchMaquinas(): Promise<Maquina[]> { 
+async function fetchMaquinas(): Promise<Maquina[]> {
   if (!db) {
     throw new Error("Firebase Firestore connection not available.");
   }
@@ -130,6 +138,8 @@ async function fetchMaquinas(): Promise<Maquina[]> {
       notes: data.notes || null,
       partsCatalogUrl: data.partsCatalogUrl || null,
       errorCodesUrl: data.errorCodesUrl || null,
+      observacao2: data.observacao2 || null,
+      linkedAuxiliaryEquipmentIds: Array.isArray(data.linkedAuxiliaryEquipmentIds) ? data.linkedAuxiliaryEquipmentIds : null,
     } as Maquina;
   });
 }
@@ -143,20 +153,32 @@ async function fetchCustomers(): Promise<Customer[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
 
-interface MaquinasClientPageProps { 
-  maquinaIdFromUrl?: string | null; 
+async function fetchAllAuxiliaryEquipments(): Promise<AuxiliaryEquipment[]> {
+    if (!db) {
+        console.error("fetchAllAuxiliaryEquipments: Firebase DB is not available.");
+        throw new Error("Firebase DB is not available");
+    }
+    const q = query(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME), orderBy("name", "asc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as AuxiliaryEquipment));
 }
 
-export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps) { 
+
+interface MaquinasClientPageProps {
+  maquinaIdFromUrl?: string | null;
+}
+
+export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingMaquina, setEditingMaquina] = useState<Maquina | null>(null); 
+  const [editingMaquina, setEditingMaquina] = useState<Maquina | null>(null);
   const [partsCatalogFile, setPartsCatalogFile] = useState<File | null>(null);
   const [errorCodesFile, setErrorCodesFile] = useState<File | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
 
 
   const [showCustomFields, setShowCustomFields] = useState({
@@ -164,25 +186,26 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     equipmentType: false,
   });
 
-  const form = useForm<z.infer<typeof MaquinaSchema>>({ 
-    resolver: zodResolver(MaquinaSchema), 
+  const form = useForm<z.infer<typeof MaquinaSchema>>({
+    resolver: zodResolver(MaquinaSchema),
     defaultValues: {
       brand: "", model: "", chassisNumber: "", equipmentType: "Empilhadeira Contrabalançada GLP",
-      operationalStatus: "Disponível", customerId: null, 
-      ownerReference: null, 
+      operationalStatus: "Disponível", customerId: null,
+      ownerReference: null,
       manufactureYear: new Date().getFullYear(),
       customBrand: "", customEquipmentType: "",
       towerOpenHeightMm: undefined, towerClosedHeightMm: undefined,
       nominalCapacityKg: undefined,
       batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
-      notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
+      notes: "", observacao2: "", monthlyRentalValue: undefined, hourMeter: undefined,
       partsCatalogUrl: null, errorCodesUrl: null,
+      auxiliaryEquipmentIds: [],
     },
   });
 
-  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({ 
-    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME], 
-    queryFn: fetchMaquinas, 
+  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchMaquinas,
     enabled: !!db,
   });
 
@@ -191,7 +214,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     queryFn: fetchCustomers,
     enabled: !!db,
   });
-  
+
+  const { data: allAuxiliaryEquipments = [], isLoading: isLoadingAuxiliaryEquipment } = useQuery<AuxiliaryEquipment[], Error>({
+    queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchAllAuxiliaryEquipments,
+    enabled: !!db,
+  });
+
   if (!db || !storage) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
@@ -206,14 +235,14 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     );
   }
 
-  const openModal = useCallback((maquina?: Maquina) => { 
+  const openModal = useCallback((maquina?: Maquina) => {
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
     if (maquina) {
-      setEditingMaquina(maquina); 
-      setIsEditMode(false); // Start in view mode for existing items
+      setEditingMaquina(maquina);
+      setIsEditMode(false);
       const isBrandPredefined = predefinedBrandOptionsList.includes(maquina.brand) && maquina.brand !== "Outra";
-      const isEquipmentTypePredefined = maquinaTypeOptions.includes(maquina.equipmentType as any); 
+      const isEquipmentTypePredefined = maquinaTypeOptions.includes(maquina.equipmentType as any);
 
       form.reset({
         ...maquina,
@@ -222,7 +251,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         customBrand: isBrandPredefined ? "" : (maquina.brand === "Outra" || maquina.brand === "_CUSTOM_" ? "" : maquina.brand),
         equipmentType: isEquipmentTypePredefined ? maquina.equipmentType : '_CUSTOM_',
         customEquipmentType: isEquipmentTypePredefined ? "" : maquina.equipmentType,
-        customerId: maquina.customerId || null, 
+        customerId: maquina.customerId || null,
         ownerReference: maquina.ownerReference || null,
         manufactureYear: maquina.manufactureYear ?? new Date().getFullYear(),
         towerOpenHeightMm: maquina.towerOpenHeightMm ?? undefined,
@@ -233,48 +262,59 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         batteryBoxDepthMm: maquina.batteryBoxDepthMm ?? undefined,
         monthlyRentalValue: maquina.monthlyRentalValue ?? undefined,
         hourMeter: maquina.hourMeter ?? undefined,
-        notes: maquina.notes || "",
+        notes: maquina.notes || null,
+        observacao2: maquina.observacao2 || null,
         partsCatalogUrl: maquina.partsCatalogUrl || null,
         errorCodesUrl: maquina.errorCodesUrl || null,
+        auxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
       });
       setShowCustomFields({ brand: !isBrandPredefined, equipmentType: !isEquipmentTypePredefined });
     } else {
-      setEditingMaquina(null); 
-      setIsEditMode(true); // Start in edit mode for new items
+      setEditingMaquina(null);
+      setIsEditMode(true);
       form.reset({
         brand: "", model: "", chassisNumber: "", equipmentType: "Empilhadeira Contrabalançada GLP",
-        operationalStatus: "Disponível", customerId: null, 
-        ownerReference: null, 
+        operationalStatus: "Disponível", customerId: null,
+        ownerReference: null,
         manufactureYear: new Date().getFullYear(),
         customBrand: "", customEquipmentType: "",
         towerOpenHeightMm: undefined, towerClosedHeightMm: undefined, nominalCapacityKg: undefined,
         batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
         notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
-        partsCatalogUrl: null, errorCodesUrl: null,
+        observacao2: "", partsCatalogUrl: null, errorCodesUrl: null,
+        auxiliaryEquipmentIds: [],
       });
       setShowCustomFields({ brand: false, equipmentType: false });
     }
     setIsModalOpen(true);
-  }, [form, maquinaList]); // Dependency array reviewed
+  }, [form, maquinaList]);
 
   useEffect(() => {
-    if (maquinaIdFromUrl && !isLoadingMaquinas && maquinaList.length > 0 && !isModalOpen) { 
-      const maquinaToEdit = maquinaList.find(eq => eq.id === maquinaIdFromUrl); 
+    if (maquinaIdFromUrl && !isLoadingMaquinas && maquinaList.length > 0 && !isModalOpen) {
+      const maquinaToEdit = maquinaList.find(eq => eq.id === maquinaIdFromUrl);
       if (maquinaToEdit) {
         openModal(maquinaToEdit);
         if (typeof window !== "undefined") {
-           window.history.replaceState(null, '', '/maquinas'); 
+           window.history.replaceState(null, '', '/maquinas');
         }
       }
     }
-  }, [maquinaIdFromUrl, maquinaList, isLoadingMaquinas, openModal, isModalOpen]); 
+  }, [maquinaIdFromUrl, maquinaList, isLoadingMaquinas, openModal, isModalOpen]);
 
   const prepareDataForFirestore = (
-    formData: z.infer<typeof MaquinaSchema>, 
+    formData: z.infer<typeof MaquinaSchema>,
     newPartsCatalogUrl?: string | null,
     newErrorCodesUrl?: string | null
-  ): Omit<Maquina, 'id' | 'customBrand' | 'customEquipmentType'> => { 
-    const { customBrand, customEquipmentType, customerId: formCustomerId, ownerReference: formOwnerReferenceFromForm, ...restOfData } = formData;
+  ): Omit<Maquina, 'id' | 'customBrand' | 'customEquipmentType'> => {
+    const {
+      customBrand,
+      customEquipmentType,
+      customerId: formCustomerId,
+      ownerReference: formOwnerReferenceFromForm,
+      auxiliaryEquipmentIds: formAuxiliaryEquipmentIds,
+      ...restOfData
+    } = formData;
+
     const parsedData = {
       ...restOfData,
       manufactureYear: parseNumericToNullOrNumber(restOfData.manufactureYear),
@@ -286,7 +326,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       batteryBoxDepthMm: parseNumericToNullOrNumber(restOfData.batteryBoxDepthMm),
       monthlyRentalValue: parseNumericToNullOrNumber(restOfData.monthlyRentalValue),
       hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter),
-    };
+    }; // <-- This closing brace was missing
 
     const finalOwnerReference: OwnerReferenceType | null = formOwnerReferenceFromForm ?? null;
 
@@ -295,17 +335,19 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       brand: parsedData.brand === '_CUSTOM_' ? customBrand || "Não especificado" : parsedData.brand,
       model: parsedData.model,
       equipmentType: parsedData.equipmentType === '_CUSTOM_' ? customEquipmentType || "Não especificado" : parsedData.equipmentType,
-      customerId: formCustomerId, 
+      customerId: formCustomerId,
       ownerReference: finalOwnerReference,
       notes: parsedData.notes || null,
+      observacao2: parsedData.observacao2 || null,
       partsCatalogUrl: newPartsCatalogUrl === undefined ? formData.partsCatalogUrl : newPartsCatalogUrl,
       errorCodesUrl: newErrorCodesUrl === undefined ? formData.errorCodesUrl : newErrorCodesUrl,
+      linkedAuxiliaryEquipmentIds: formAuxiliaryEquipmentIds || null,
     };
   };
 
-  const addMaquinaMutation = useMutation({ 
+  const addMaquinaMutation = useMutation({
     mutationFn: async (data: {
-      formData: z.infer<typeof MaquinaSchema>, 
+      formData: z.infer<typeof MaquinaSchema>,
       catalogFile: File | null,
       codesFile: File | null
     }) => {
@@ -325,11 +367,21 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       }
 
       const maquinaDataForFirestore = prepareDataForFirestore(data.formData, partsCatalogUrl, errorCodesUrl);
-      await setDoc(doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, newMaquinaId), maquinaDataForFirestore);
+      const batch = writeBatch(db!);
+
+      batch.set(doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, newMaquinaId), maquinaDataForFirestore);
+
+      const auxIdsToLink = maquinaDataForFirestore.linkedAuxiliaryEquipmentIds || [];
+      for (const auxId of auxIdsToLink) {
+        const auxRef = doc(db!, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, auxId);
+        batch.update(auxRef, { linkedEquipmentId: newMaquinaId });
+      }
+      await batch.commit();
       return { ...maquinaDataForFirestore, id: newMaquinaId };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
       toast({ title: "Máquina Criada", description: `${data.brand} ${data.model} adicionada.` });
       closeModal();
     },
@@ -343,13 +395,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     onSettled: () => setIsUploadingFiles(false)
   });
 
-  const updateMaquinaMutation = useMutation({ 
+  const updateMaquinaMutation = useMutation({
     mutationFn: async (data: {
       id: string,
-      formData: z.infer<typeof MaquinaSchema>, 
+      formData: z.infer<typeof MaquinaSchema>,
       catalogFile: File | null,
       codesFile: File | null,
-      currentMaquina: Maquina 
+      currentMaquina: Maquina
     }) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
@@ -368,12 +420,30 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       }
 
       const maquinaDataForFirestore = prepareDataForFirestore(data.formData, newPartsCatalogUrl, newErrorCodesUrl);
+      const batch = writeBatch(db!);
       const maquinaRef = doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, data.id);
-      await updateDoc(maquinaRef, maquinaDataForFirestore);
+      batch.update(maquinaRef, maquinaDataForFirestore as { [x: string]: any });
+
+      const oldLinkedIds = data.currentMaquina.linkedAuxiliaryEquipmentIds || [];
+      const newLinkedIds = maquinaDataForFirestore.linkedAuxiliaryEquipmentIds || [];
+
+      const idsToUnlink = oldLinkedIds.filter(id => !newLinkedIds.includes(id));
+      const idsToLink = newLinkedIds.filter(id => !oldLinkedIds.includes(id));
+
+      for (const auxId of idsToUnlink) {
+        const auxRef = doc(db!, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, auxId);
+        batch.update(auxRef, { linkedEquipmentId: null });
+      }
+      for (const auxId of idsToLink) {
+        const auxRef = doc(db!, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, auxId);
+        batch.update(auxRef, { linkedEquipmentId: data.id });
+      }
+      await batch.commit();
       return { ...maquinaDataForFirestore, id: data.id };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
       toast({ title: "Máquina Atualizada", description: `${data.brand} ${data.model} atualizada.` });
       closeModal();
     },
@@ -399,8 +469,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
-      if(editingMaquina && editingMaquina.id === data.maquinaId){ 
-        setEditingMaquina(prev => prev ? ({...prev, [data.fileType]: null}) : null); 
+      if(editingMaquina && editingMaquina.id === data.maquinaId){
+        setEditingMaquina(prev => prev ? ({...prev, [data.fileType]: null}) : null);
         form.setValue(data.fileType, null);
       }
       toast({ title: "Arquivo Removido", description: "O arquivo foi removido com sucesso." });
@@ -410,23 +480,34 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     }
   });
 
-  const deleteMaquinaMutation = useMutation({ 
-    mutationFn: async (maquinaToDelete: Maquina) => { 
+  const deleteMaquinaMutation = useMutation({
+    mutationFn: async (maquinaToDelete: Maquina) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
       if (!maquinaToDelete?.id) {
         throw new Error("ID da máquina inválido fornecido para a função de mutação.");
       }
-      const { id, partsCatalogUrl, errorCodesUrl } = maquinaToDelete;
+      const { id, partsCatalogUrl, errorCodesUrl, linkedAuxiliaryEquipmentIds } = maquinaToDelete;
       await deleteFileFromStorage(partsCatalogUrl);
       await deleteFileFromStorage(errorCodesUrl);
+
+      const batch = writeBatch(db!);
       const maquinaRef = doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, id);
-      await deleteDoc(maquinaRef);
+      batch.delete(maquinaRef);
+
+      if (linkedAuxiliaryEquipmentIds && linkedAuxiliaryEquipmentIds.length > 0) {
+        for (const auxId of linkedAuxiliaryEquipmentIds) {
+          const auxRef = doc(db!, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, auxId);
+          batch.update(auxRef, { linkedEquipmentId: null });
+        }
+      }
+      await batch.commit();
       return id;
     },
     onSuccess: (deletedMaquinaId) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
       toast({ title: "Máquina Excluída", description: "A máquina e seus arquivos foram removidos." });
       closeModal();
     },
@@ -442,43 +523,43 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingMaquina(null); 
+    setEditingMaquina(null);
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
-    setIsEditMode(false); // Reset edit mode on close
+    setIsEditMode(false);
     form.reset();
     setShowCustomFields({ brand: false, equipmentType: false });
   };
 
-  const onSubmit = async (values: z.infer<typeof MaquinaSchema>) => { 
-    if (editingMaquina && editingMaquina.id) { 
-      updateMaquinaMutation.mutate({ 
+  const onSubmit = async (values: z.infer<typeof MaquinaSchema>) => {
+    if (editingMaquina && editingMaquina.id) {
+      updateMaquinaMutation.mutate({
         id: editingMaquina.id,
         formData: values,
         catalogFile: partsCatalogFile,
         codesFile: errorCodesFile,
-        currentMaquina: editingMaquina 
+        currentMaquina: editingMaquina
       });
     } else {
-      addMaquinaMutation.mutate({ formData: values, catalogFile: partsCatalogFile, codesFile: errorCodesFile }); 
+      addMaquinaMutation.mutate({ formData: values, catalogFile: partsCatalogFile, codesFile: errorCodesFile });
     }
   };
 
   const handleModalDeleteConfirm = () => {
-    const maquinaToExclude = editingMaquina; 
+    const maquinaToExclude = editingMaquina;
     if (!maquinaToExclude || !maquinaToExclude.id) {
       toast({ title: "Erro Interno", description: "Referência à máquina inválida para exclusão.", variant: "destructive" });
       return;
     }
     const confirmation = window.confirm(`Tem certeza que deseja excluir a máquina "${maquinaToExclude.brand} ${maquinaToExclude.model}" e seus arquivos associados? Esta ação não pode ser desfeita.`);
     if (confirmation) {
-      deleteMaquinaMutation.mutate(maquinaToExclude); 
+      deleteMaquinaMutation.mutate(maquinaToExclude);
     }
   };
 
 
   const handleFileRemove = (fileType: 'partsCatalogUrl' | 'errorCodesUrl') => {
-    if (editingMaquina && editingMaquina.id) { 
+    if (editingMaquina && editingMaquina.id) {
       const fileUrlToRemove = editingMaquina[fileType];
       if (fileUrlToRemove) {
         if (window.confirm(`Tem certeza que deseja remover este ${fileType === 'partsCatalogUrl' ? 'catálogo de peças' : 'arquivo de códigos de erro'}?`)) {
@@ -515,7 +596,18 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     return Construction;
   };
 
-  const isLoadingPage = isLoadingMaquinas || isLoadingCustomers;
+   const getLinkedAuxiliaryEquipmentDisplay = (linkedIds?: string[] | null): string => {
+    if (isLoadingAuxiliaryEquipment) return "Carregando...";
+    if (!linkedIds || linkedIds.length === 0) return "sem vinculo";
+    const names = linkedIds.map(id => {
+        const auxEq = allAuxiliaryEquipments.find(aux => aux.id === id);
+        return auxEq ? auxEq.name : `ID (${id}) não encontrado`;
+    }).filter(Boolean);
+    if (names.length === 0) return "sem vinculo (IDs inválidos)";
+    return names.join(", ");
+  };
+
+  const isLoadingPage = isLoadingMaquinas || isLoadingCustomers || isLoadingAuxiliaryEquipment;
   const isMutating = addMaquinaMutation.isPending || updateMaquinaMutation.isPending || deleteMaquinaMutation.isPending || removeFileMutation.isPending || isUploadingFiles;
 
   if (isLoadingPage && !isModalOpen) {
@@ -538,10 +630,19 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     );
   }
 
+  const handleAuxiliaryEquipmentSelect = (equipmentId: string) => {
+    const currentSelected = form.getValues("auxiliaryEquipmentIds") || [];
+    const newSelected = currentSelected.includes(equipmentId)
+      ? currentSelected.filter(id => id !== equipmentId)
+      : [...currentSelected, equipmentId];
+    form.setValue("auxiliaryEquipmentIds", newSelected, { shouldDirty: true, shouldValidate: true });
+  };
+
+
   return (
     <React.Fragment>
       <PageHeader
-        title="Máquinas" 
+        title="Máquinas"
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Máquina
@@ -549,20 +650,21 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         }
       />
 
-      {maquinaList.length === 0 && !isLoadingMaquinas ? ( 
+      {maquinaList.length === 0 && !isLoadingMaquinas ? (
         <DataTablePlaceholder
           icon={Construction}
-          title="Nenhuma Máquina Registrada" 
-          description="Adicione sua primeira máquina para começar a rastrear." 
-          buttonLabel="Adicionar Máquina" 
+          title="Nenhuma Máquina Registrada"
+          description="Adicione sua primeira máquina para começar a rastrear."
+          buttonLabel="Adicionar Máquina"
           onButtonClick={() => openModal()}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {maquinaList.map((maq) => { 
+          {maquinaList.map((maq) => {
             const customer = maq.customerId ? customers.find(c => c.id === maq.customerId) : null;
             const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
             const OwnerIconComponent = getOwnerIcon(maq.ownerReference);
+            const linkedAuxDisplay = getLinkedAuxiliaryEquipmentDisplay(maq.linkedAuxiliaryEquipmentIds);
             return (
             <Card
               key={maq.id}
@@ -620,6 +722,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                  {maq.hourMeter !== null && maq.hourMeter !== undefined && <p className="flex items-center text-sm"><Timer className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Horímetro:</span> {maq.hourMeter}h</p>}
                  {maq.monthlyRentalValue !== null && maq.monthlyRentalValue !== undefined && <p className="flex items-center text-sm"><Coins className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Aluguel Mensal:</span> R$ {maq.monthlyRentalValue.toFixed(2)}</p>}
 
+                 <p className="flex items-start text-sm">
+                    <Package className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
+                    <span className="whitespace-pre-wrap break-words">{linkedAuxDisplay}</span>
+                  </p>
+
                  {maq.partsCatalogUrl && (
                     <p className="flex items-center text-sm">
                         <BookOpen className="mr-2 h-4 w-4 text-primary" />
@@ -658,6 +766,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                     <span className="font-medium text-muted-foreground mr-1">Obs.:</span>
                     <span className="whitespace-pre-wrap break-words">{maq.notes}</span>
                   </p>
+                 )}
+                 {maq.observacao2 && (
+                  <p className="flex items-start text-sm">
+                    <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">Obs. 2:</span>
+                    <span className="whitespace-pre-wrap break-words">{maq.observacao2}</span>
+                  </p>
                 )}
               </CardContent>
               <CardFooter className="border-t pt-4 flex justify-end gap-2">
@@ -671,60 +786,59 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       <FormModal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingMaquina ? "Editar Máquina" : "Adicionar Nova Máquina"} 
-        description="Forneça os detalhes da máquina, incluindo arquivos PDF se necessário." 
-        formId="maquina-form" 
+        title={editingMaquina ? "Editar Máquina" : "Adicionar Nova Máquina"}
+        description="Forneça os detalhes da máquina, incluindo arquivos PDF se necessário."
+        formId="maquina-form"
         isSubmitting={isMutating}
-        editingItem={editingMaquina} 
+        editingItem={editingMaquina}
         onDeleteConfirm={handleModalDeleteConfirm}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        isDeleting={deleteMaquinaMutation.isPending} 
-        deleteButtonLabel="Excluir Máquina" 
+        isDeleting={deleteMaquinaMutation.isPending}
+        deleteButtonLabel="Excluir Máquina"
       >
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} id="maquina-form" className="space-y-4"> 
-            <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Informações Básicas</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <fieldset disabled={!!editingMaquina && !isEditMode}>
-                <FormField control={form.control} name="brand" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Marca</FormLabel>
-                    <Select onValueChange={(value) => handleSelectChange('brand', value)} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione ou digite" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {predefinedBrandOptionsList.map(option => (
-                          <SelectItem key={option} value={option}>{option}</SelectItem>
-                        ))}
-                        <SelectItem value="_CUSTOM_">Digitar Marca...</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {showCustomFields.brand && (
-                      <FormField control={form.control} name="customBrand" render={({ field: customField }) => (
-                        <FormItem className="mt-2">
-                          <FormControl><Input placeholder="Digite a marca" {...customField} value={customField.value ?? ""} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )} />
+          <form onSubmit={form.handleSubmit(onSubmit)} id="maquina-form" className="space-y-4">
+            <fieldset disabled={!!editingMaquina && !isEditMode} className="space-y-4">
+                <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Informações Básicas</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="brand" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Marca</FormLabel>
+                        <Select onValueChange={(value) => handleSelectChange('brand', value)} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Selecione ou digite" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                            {predefinedBrandOptionsList.map(option => (
+                            <SelectItem key={option} value={option}>{option}</SelectItem>
+                            ))}
+                            <SelectItem value="_CUSTOM_">Digitar Marca...</SelectItem>
+                        </SelectContent>
+                        </Select>
+                        {showCustomFields.brand && (
+                        <FormField control={form.control} name="customBrand" render={({ field: customField }) => (
+                            <FormItem className="mt-2">
+                            <FormControl><Input placeholder="Digite a marca" {...customField} value={customField.value ?? ""} /></FormControl>
+                            <FormMessage />
+                            </FormItem>
+                        )} />
+                        )}
+                        <FormMessage />
+                    </FormItem>
+                    )} />
 
-                <FormField control={form.control} name="model" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Modelo</FormLabel>
-                    <FormControl><Input placeholder="Ex: 8FGCU25, S25" {...field} value={field.value ?? ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </fieldset>
-            </div>
-            <fieldset disabled={!!editingMaquina && !isEditMode}>
+                    <FormField control={form.control} name="model" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Modelo</FormLabel>
+                        <FormControl><Input placeholder="Ex: 8FGCU25, S25" {...field} value={field.value ?? ""} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )} />
+                </div>
+
               <FormField control={form.control} name="chassisNumber" render={({ field }) => (
                 <FormItem><FormLabel>Número do Chassi</FormLabel><FormControl><Input placeholder="Número único do chassi" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
-              
+
               <FormField
                 control={form.control}
                 name="ownerReference"
@@ -763,7 +877,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                     <FormLabel>Cliente Associado (Serviço/Locação)</FormLabel>
                     <Select
                       onValueChange={(selectedValue) => field.onChange(selectedValue === NO_CUSTOMER_SELECT_ITEM_VALUE ? null : selectedValue)}
-                      value={field.value || NO_CUSTOMER_SELECT_ITEM_VALUE} 
+                      value={field.value || NO_CUSTOMER_SELECT_ITEM_VALUE}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -791,139 +905,209 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
 
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="equipmentType" render={({ field }) => ( 
-                  <FormItem>
-                    <FormLabel>Tipo de Máquina</FormLabel> 
-                    <Select onValueChange={(value) => handleSelectChange('equipmentType', value)} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {maquinaTypeOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)} 
-                        <SelectItem value="_CUSTOM_">Digitar Tipo...</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {showCustomFields.equipmentType && (
-                      <FormField control={form.control} name="customEquipmentType" render={({ field: customField }) => (
-                       <FormItem className="mt-2">
-                          <FormControl><Input placeholder="Digite o tipo" {...customField} value={customField.value ?? ""} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="manufactureYear" render={({ field }) => (
-                  <FormItem><FormLabel>Ano de Fabricação</FormLabel><FormControl><Input type="number" placeholder="Ex: 2022" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                )} />
-              </div>
-              <FormField control={form.control} name="operationalStatus" render={({ field }) => (
-                <FormItem><FormLabel>Status Operacional</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o status" /></SelectTrigger></FormControl>
+                <FormField control={form.control} name="equipmentType" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipo de Máquina</FormLabel>
+                  <Select onValueChange={(value) => handleSelectChange('equipmentType', value)} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {maquinaOperationalStatusOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)} 
+                      {maquinaTypeOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                      <SelectItem value="_CUSTOM_">Digitar Tipo...</SelectItem>
                     </SelectContent>
-                  </Select><FormMessage />
+                  </Select>
+                  {showCustomFields.equipmentType && (
+                    <FormField control={form.control} name="customEquipmentType" render={({ field: customField }) => (
+                     <FormItem className="mt-2">
+                        <FormControl><Input placeholder="Digite o tipo" {...customField} value={customField.value ?? ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  <FormMessage />
                 </FormItem>
               )} />
-            </fieldset>
+              <FormField control={form.control} name="manufactureYear" render={({ field }) => (
+                <FormItem><FormLabel>Ano de Fabricação</FormLabel><FormControl><Input type="number" placeholder="Ex: 2022" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="operationalStatus" render={({ field }) => (
+             <FormItem><FormLabel>Status Operacional</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione o status" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {maquinaOperationalStatusOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select><FormMessage />
+              </FormItem>
+            )} />
 
-            <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Especificações Técnicas (Opcional)</h3>
-            <fieldset disabled={!!editingMaquina && !isEditMode}>
+            <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Equipamentos Auxiliares Vinculados</h3>
+            <FormField
+              control={form.control}
+              name="auxiliaryEquipmentIds"
+              render={({ field }) => (
+                <FormItem>
+                  <Popover open={isAuxiliaryEquipmentPopoverOpen} onOpenChange={setIsAuxiliaryEquipmentPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={isAuxiliaryEquipmentPopoverOpen}
+                          className="w-full justify-between font-normal"
+                        >
+                          {field.value && field.value.length > 0
+                            ? `${field.value.length} selecionado(s)`
+                            : "Selecionar equipamentos..."}
+                           <Layers className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      {isLoadingAuxiliaryEquipment ? (
+                        <div className="flex justify-center items-center p-4">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Carregando...
+                        </div>
+                      ) : allAuxiliaryEquipments.length === 0 ? (
+                        <div className="p-4 text-sm text-center text-muted-foreground">
+                            Nenhum equipamento auxiliar cadastrado.
+                        </div>
+                       ) : (
+                        <Command>
+                          <CommandInput placeholder="Buscar equipamento auxiliar..." />
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty>Nenhum equipamento encontrado.</CommandEmpty>
+                            <CommandGroup>
+                              {allAuxiliaryEquipments?.map((equipment) => (
+                                <CommandItem
+                                  key={equipment.id}
+                                  value={equipment.name}
+                                  onSelect={() => {
+                                    handleAuxiliaryEquipmentSelect(equipment.id);
+                                  }}
+                                >
+                                  <Checkbox
+                                    checked={field.value?.includes(equipment.id)}
+                                    onCheckedChange={() => handleAuxiliaryEquipmentSelect(equipment.id)}
+                                    className="mr-2"
+                                    aria-labelledby={`aux-label-${equipment.id}`}
+                                  />
+                                  <Label htmlFor={`aux-label-${equipment.id}`} className="flex-grow cursor-pointer">
+                                    {equipment.name}
+                                  </Label>
+                                  {field.value?.includes(equipment.id) && (
+                                    <Check className="ml-auto h-4 w-4 text-primary" />
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                   {field.value && field.value.length > 0 && (
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      <strong>Selecionados:</strong> {field.value.map(id => allAuxiliaryEquipments?.find(eq => eq.id === id)?.name).filter(Boolean).join(", ")}
+                    </div>
+                  )}
+                </FormItem>
+              )}
+            />
+
+
+              <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Especificações Técnicas (Opcional)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <FormField control={form.control} name="towerOpenHeightMm" render={({ field }) => (
-                  <FormItem><FormLabel>H3 - Torre Aberta (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="towerClosedHeightMm" render={({ field }) => (
-                  <FormItem><FormLabel>H1 - Torre Fechada (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="nominalCapacityKg" render={({ field }) => (
-                  <FormItem><FormLabel>Capacidade Nominal (kg)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                )} />
-              </div>
-            </fieldset>
-
+              <FormField control={form.control} name="towerOpenHeightMm" render={({ field }) => (
+                <FormItem><FormLabel>H3 - Torre Aberta (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="towerClosedHeightMm" render={({ field }) => (
+                <FormItem><FormLabel>H1 - Torre Fechada (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="nominalCapacityKg" render={({ field }) => (
+                <FormItem><FormLabel>Capacidade Nominal (kg)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Dimensões Caixa de Bateria (Opcional)</h3>
-            <fieldset disabled={!!editingMaquina && !isEditMode}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FormField control={form.control} name="batteryBoxWidthMm" render={({ field }) => (
-                      <FormItem><FormLabel>Largura (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="batteryBoxHeightMm" render={({ field }) => (
-                      <FormItem><FormLabel>Altura (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="batteryBoxDepthMm" render={({ field }) => (
-                      <FormItem><FormLabel>Comprimento (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value,10))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-              </div>
-            </fieldset>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField control={form.control} name="batteryBoxWidthMm" render={({ field }) => (
+                    <FormItem><FormLabel>Largura (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="batteryBoxHeightMm" render={({ field }) => (
+                    <FormItem><FormLabel>Altura (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="batteryBoxDepthMm" render={({ field }) => (
+                    <FormItem><FormLabel>Comprimento (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
+                )} />
+            </div>
 
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Arquivos (PDF)</h3>
             <FormItem>
               <FormLabel>Catálogo de Peças (PDF)</FormLabel>
-              <fieldset disabled={!!editingMaquina && !isEditMode}>
-                {editingMaquina?.partsCatalogUrl && !partsCatalogFile && (
-                  <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
-                    <a href={editingMaquina.partsCatalogUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                      <LinkIcon className="h-3 w-3"/> Ver Catálogo: {getFileNameFromUrl(editingMaquina.partsCatalogUrl)}
-                    </a>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('partsCatalogUrl')} className="text-destructive hover:text-destructive">
-                      <XCircle className="h-4 w-4 mr-1"/> Remover
-                    </Button>
-                  </div>
-                )}
-                <FormControl>
-                  <Input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setPartsCatalogFile(e.target.files ? e.target.files[0] : null)}
-                    className="mt-1"
-                  />
-                </FormControl>
-                {partsCatalogFile && <FormDescription>Novo arquivo selecionado: {partsCatalogFile.name}</FormDescription>}
-              </fieldset>
+              {editingMaquina?.partsCatalogUrl && !partsCatalogFile && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                  <a href={editingMaquina.partsCatalogUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                    <LinkIcon className="h-3 w-3"/> Ver Catálogo: {getFileNameFromUrl(editingMaquina.partsCatalogUrl)}
+                  </a>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('partsCatalogUrl')} className="text-destructive hover:text-destructive">
+                    <XCircle className="h-4 w-4 mr-1"/> Remover
+                  </Button>
+                </div>
+              )}
+              <FormControl>
+                <Input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setPartsCatalogFile(e.target.files ? e.target.files[0] : null)}
+                  className="mt-1"
+                />
+              </FormControl>
+              {partsCatalogFile && <FormDescription>Novo arquivo selecionado: {partsCatalogFile.name}</FormDescription>}
               <FormMessage />
             </FormItem>
 
             <FormItem>
               <FormLabel>Códigos de Erro (PDF)</FormLabel>
-              <fieldset disabled={!!editingMaquina && !isEditMode}>
-                 {editingMaquina?.errorCodesUrl && !errorCodesFile && ( 
-                  <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
-                    <a href={editingMaquina.errorCodesUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                      <LinkIcon className="h-3 w-3"/> Ver Códigos: {getFileNameFromUrl(editingMaquina.errorCodesUrl)}
-                    </a>
-                     <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('errorCodesUrl')} className="text-destructive hover:text-destructive">
-                      <XCircle className="h-4 w-4 mr-1"/> Remover
-                    </Button>
-                  </div>
-                )}
-                <FormControl>
-                  <Input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setErrorCodesFile(e.target.files ? e.target.files[0] : null)}
-                    className="mt-1"
-                  />
-                </FormControl>
-                {errorCodesFile && <FormDescription>Novo arquivo selecionado: {errorCodesFile.name}</FormDescription>}
-              </fieldset>
+               {editingMaquina?.errorCodesUrl && !errorCodesFile && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                  <a href={editingMaquina.errorCodesUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                    <LinkIcon className="h-3 w-3"/> Ver Códigos: {getFileNameFromUrl(editingMaquina.errorCodesUrl)}
+                  </a>
+                   <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('errorCodesUrl')} className="text-destructive hover:text-destructive">
+                    <XCircle className="h-4 w-4 mr-1"/> Remover
+                  </Button>
+                </div>
+              )}
+              <FormControl>
+                <Input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setErrorCodesFile(e.target.files ? e.target.files[0] : null)}
+                  className="mt-1"
+                />
+              </FormControl>
+              {errorCodesFile && <FormDescription>Novo arquivo selecionado: {errorCodesFile.name}</FormDescription>}
               <FormMessage />
             </FormItem>
 
+
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Informações Adicionais (Opcional)</h3>
-            <fieldset disabled={!!editingMaquina && !isEditMode}>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <FormField control={form.control} name="hourMeter" render={({ field }) => (
-                      <FormItem><FormLabel>Horímetro Atual (h)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="monthlyRentalValue" render={({ field }) => (
-                      <FormItem><FormLabel>Valor Aluguel Mensal (R$)</FormLabel><FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-              </div>
-              <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais, histórico, etc." {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
-              )} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <FormField control={form.control} name="hourMeter" render={({ field }) => (
+                    <FormItem><FormLabel>Horímetro Atual (h)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="monthlyRentalValue" render={({ field }) => (
+                   <FormItem><FormLabel>Valor Aluguel Mensal (R$)</FormLabel><FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                )} />
+            </div>
+            <FormField control={form.control} name="notes" render={({ field }) => (
+              <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais, histórico, etc." {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+            )} />
+
+            <FormField control={form.control} name="observacao2" render={({ field }) => (
+              <FormItem><FormLabel>Observação 2</FormLabel><FormControl><Textarea placeholder="Segunda caixa de observações" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+            )} />
             </fieldset>
           </form>
         </Form>
