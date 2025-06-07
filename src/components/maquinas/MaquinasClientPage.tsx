@@ -1,12 +1,12 @@
 
 "use client";
 
-import React from 'react'; // Explicitly import React
+import React from 'react';
 import { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check } from "lucide-react"; // Added Check
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch } from "lucide-react"; // Added PackageSearch
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -220,20 +220,6 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     enabled: !!db,
   });
 
-  if (!db || !storage) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <AlertIconLI className="h-16 w-16 text-destructive mb-4" />
-        <PageHeader title="Erro de Conexão" />
-        <p className="text-lg text-center text-muted-foreground">
-          Não foi possível conectar aos serviços do Firebase.
-          <br />
-          Verifique a configuração e sua conexão com a internet.
-        </p>
-      </div>
-    );
-  }
-
   const openModal = useCallback((maquina?: Maquina) => {
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
@@ -246,7 +232,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       form.reset({
         ...maquina,
         model: maquina.model || "",
-        brand: isBrandPredefined ? maquina.brand : '_CUSTOM_' as any, // Cast to any to allow special value
+        brand: isBrandPredefined ? maquina.brand : '_CUSTOM_' as any,
         customBrand: isBrandPredefined ? "" : (maquina.brand === "Outra" || maquina.brand === "_CUSTOM_" ? "" : maquina.brand),
         equipmentType: isEquipmentTypePredefined ? maquina.equipmentType : '_CUSTOM_',
         customEquipmentType: isEquipmentTypePredefined ? "" : maquina.equipmentType,
@@ -287,6 +273,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     setIsModalOpen(true);
   }, [form]);
 
+
   useEffect(() => {
     if (maquinaIdFromUrl && !isLoadingMaquinas && maquinaList.length > 0 && !isModalOpen) {
       const maquinaToEdit = maquinaList.find(eq => eq.id === maquinaIdFromUrl);
@@ -298,6 +285,20 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       }
     }
   }, [maquinaIdFromUrl, maquinaList, isLoadingMaquinas, openModal, isModalOpen]);
+
+  if (!db || !storage) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <AlertIconLI className="h-16 w-16 text-destructive mb-4" />
+        <PageHeader title="Erro de Conexão" />
+        <p className="text-lg text-center text-muted-foreground">
+          Não foi possível conectar aos serviços do Firebase.
+          <br />
+          Verifique a configuração e sua conexão com a internet.
+        </p>
+      </div>
+    );
+  }
 
   const prepareDataForFirestore = (
     formData: z.infer<typeof MaquinaSchema>,
@@ -455,7 +456,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   });
 
   const removeFileMutation = useMutation({
-    mutationFn: async (data: { maquinaId: string; fileType: 'partsCatalogUrl' | 'errorCodesUrl'; fileUrl: string }) => { // Kept errorCodesUrl in mutation type for potential future use or shared logic
+    mutationFn: async (data: { maquinaId: string; fileType: 'partsCatalogUrl' | 'errorCodesUrl'; fileUrl: string }) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
@@ -593,16 +594,14 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     return Construction;
   };
 
-   const getLinkedAuxiliaryEquipmentDisplay = (linkedIds?: string[] | null): string => {
-    if (isLoadingAuxiliaryEquipment) return "Carregando...";
-    if (!linkedIds || linkedIds.length === 0) return "sem vinculo";
-    const names = linkedIds.map(id => {
+  const getLinkedAuxiliaryEquipmentDetails = (linkedIds?: string[] | null): { id: string, name: string }[] => {
+    if (isLoadingAuxiliaryEquipment || !linkedIds || linkedIds.length === 0 || !allAuxiliaryEquipments) return [];
+    return linkedIds.map(id => {
         const auxEq = allAuxiliaryEquipments.find(aux => aux.id === id);
-        return auxEq ? auxEq.name : `ID (${id}) não encontrado`;
-    }).filter(Boolean);
-    if (names.length === 0) return "sem vinculo (IDs inválidos)";
-    return names.join(", ");
+        return auxEq ? { id: auxEq.id, name: auxEq.name } : null;
+    }).filter(Boolean) as { id: string, name: string }[];
   };
+
 
   const isLoadingPage = isLoadingMaquinas || isLoadingCustomers || isLoadingAuxiliaryEquipment;
   const isMutating = addMaquinaMutation.isPending || updateMaquinaMutation.isPending || deleteMaquinaMutation.isPending || removeFileMutation.isPending || isUploadingFiles;
@@ -660,7 +659,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
             const customer = maq.customerId ? customers.find(c => c.id === maq.customerId) : null;
             const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
             const OwnerIconComponent = getOwnerIcon(maq.ownerReference);
-            const linkedAuxDisplay = getLinkedAuxiliaryEquipmentDisplay(maq.linkedAuxiliaryEquipmentIds);
+            const linkedAuxDetails = getLinkedAuxiliaryEquipmentDetails(maq.linkedAuxiliaryEquipmentIds);
             return (
             <Card
               key={maq.id}
@@ -718,11 +717,44 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                  {maq.hourMeter !== null && maq.hourMeter !== undefined && <p className="flex items-center text-sm"><Timer className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Horímetro:</span> {maq.hourMeter}h</p>}
                  {maq.monthlyRentalValue !== null && maq.monthlyRentalValue !== undefined && <p className="flex items-center text-sm"><Coins className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Aluguel Mensal:</span> R$ {maq.monthlyRentalValue.toFixed(2)}</p>}
 
-                 <p className="flex items-start text-sm">
-                    <Package className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
-                    <span className="whitespace-pre-wrap break-words">{linkedAuxDisplay}</span>
-                  </p>
+                  <div className="pt-1">
+                    {isLoadingAuxiliaryEquipment ? (
+                      <p className="flex items-center text-xs text-muted-foreground">
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando equip. auxiliares...
+                      </p>
+                    ) : linkedAuxDetails.length > 0 ? (
+                      <div>
+                        <h4 className="font-semibold text-xs mt-1 mb-0.5 flex items-center">
+                          <PackageSearch className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                          <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
+                        </h4>
+                        <ul className="list-none pl-1 space-y-0.5">
+                          {linkedAuxDetails.slice(0, 3).map(aux => (
+                            <li key={aux.id} className="text-xs text-muted-foreground">
+                              <Link
+                                href={`/auxiliary-equipment?openAuxEquipmentId=${aux.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:underline hover:text-primary transition-colors"
+                                title={`Ver detalhes de ${aux.name}`}
+                              >
+                                {aux.name}
+                              </Link>
+                            </li>
+                          ))}
+                          {linkedAuxDetails.length > 3 && (
+                            <li className="text-xs text-muted-foreground">...e mais {linkedAuxDetails.length - 3}.</li>
+                          )}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="flex items-center text-xs text-muted-foreground mt-1">
+                        <PackageSearch className="mr-1.5 h-3.5 w-3.5 text-gray-400" />
+                        <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
+                        Nenhum vinculado.
+                      </p>
+                    )}
+                  </div>
+
 
                  {maq.partsCatalogUrl && (
                     <p className="flex items-center text-sm">
@@ -982,7 +1014,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                                     aria-labelledby={`aux-label-${equipment.id}`}
                                   />
                                   <Label htmlFor={`aux-label-${equipment.id}`} className="flex-grow cursor-pointer">
-                                    {equipment.name}
+                                    {equipment.name} ({equipment.type})
                                   </Label>
                                   {field.value?.includes(equipment.id) && (
                                     <Check className="ml-auto h-4 w-4 text-primary" />
@@ -1100,4 +1132,3 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     </>
   );
 }
-
