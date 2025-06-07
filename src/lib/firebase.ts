@@ -55,6 +55,7 @@ Application may not function correctly without these Firebase credentials.`;
   console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
   console.error("!!! FIREBASE FATAL ERROR: ENVIRONMENT VARIABLES ARE MISSING !!!");
   console.error(`!!! Details: ${errorMessage}`);
+  console.error("!!! PLEASE CHECK THE BROWSER CONSOLE LOGS PRECEDING THIS MESSAGE FOR '>>> DEBUG: NEXT_PUBLIC_FIREBASE_...' OUTPUT. !!!");
   console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 } else {
   const completeConfig = firebaseConfigValues as FirebaseConfig;
