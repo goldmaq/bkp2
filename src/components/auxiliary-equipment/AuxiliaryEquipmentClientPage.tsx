@@ -29,8 +29,6 @@ import { cn } from "@/lib/utils";
 const FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME = "equipamentosAuxiliares";
 const FIRESTORE_MAQUINAS_COLLECTION_NAME = "equipamentos";
 
-const NO_LINKED_EQUIPMENT_VALUE = "_NO_LINKED_EQUIPMENT_";
-const LOADING_EQUIPMENT_VALUE = "_LOADING_EQUIPMENT_";
 const CUSTOM_AUXILIARY_TYPE_VALUE = "_CUSTOM_";
 
 const statusIcons: Record<typeof auxiliaryEquipmentStatusOptions[number], JSX.Element> = {
@@ -86,7 +84,7 @@ export function AuxiliaryEquipmentClientPage() {
       customType: "",
       serialNumber: "",
       status: "Disponível",
-      linkedEquipmentId: null,
+      // linkedEquipmentId foi removido dos defaultValues
       notes: "",
     },
   });
@@ -125,7 +123,7 @@ export function AuxiliaryEquipmentClientPage() {
         ...dataToSave,
         type: dataToSave.type === CUSTOM_AUXILIARY_TYPE_VALUE ? customType || "Outro" : dataToSave.type,
         serialNumber: dataToSave.serialNumber || null,
-        linkedEquipmentId: dataToSave.linkedEquipmentId || null,
+        // linkedEquipmentId removido daqui, será definido pelo formulário da máquina
         notes: dataToSave.notes || null,
       };
       return addDoc(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME), finalData);
@@ -143,17 +141,28 @@ export function AuxiliaryEquipmentClientPage() {
   const updateAuxEquipmentMutation = useMutation({
     mutationFn: async (itemData: AuxiliaryEquipment) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para atualizar equipamento auxiliar.");
-      const { id, customType, ...dataToUpdate } = itemData;
+      // O tipo de itemData aqui é AuxiliaryEquipment, que ainda pode ter linkedEquipmentId lido do DB.
+      // No entanto, o schema de validação do formulário não o inclui mais.
+      // Ao construir finalData, pegamos os valores do formulário (que não tem linkedEquipmentId).
+      const formData = form.getValues(); // Pega os valores validados pelo schema (sem linkedEquipmentId)
+      const { id, customType: itemCustomType, linkedEquipmentId: currentLinkedEquipmentId, ...restOfItemDataFromDb } = itemData; // currentLinkedEquipmentId do DB
+      
       if (!id) throw new Error("ID do item é necessário para atualização.");
+
       const finalData = {
-        ...dataToUpdate,
-        type: dataToUpdate.type === CUSTOM_AUXILIARY_TYPE_VALUE ? customType || "Outro" : dataToUpdate.type,
-        serialNumber: dataToUpdate.serialNumber || null,
-        linkedEquipmentId: dataToUpdate.linkedEquipmentId || null,
-        notes: dataToUpdate.notes || null,
+        // ...restOfItemDataFromDb, // Preserva outros campos do DB não presentes no form
+        name: formData.name,
+        type: formData.type === CUSTOM_AUXILIARY_TYPE_VALUE ? formData.customType || "Outro" : formData.type,
+        serialNumber: formData.serialNumber || null,
+        status: formData.status,
+        notes: formData.notes || null,
+        // linkedEquipmentId: currentLinkedEquipmentId, // Preserva o linkedEquipmentId existente, pois este form não o altera
       };
+
       const itemRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, id);
-      return updateDoc(itemRef, finalData);
+      // Apenas os campos do `finalData` serão atualizados.
+      // Se `linkedEquipmentId` não estiver em `finalData`, ele não será alterado no Firestore por esta mutação.
+      return updateDoc(itemRef, finalData as any); // Cast to any para permitir campos não mapeados no schema deste form
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
@@ -169,10 +178,14 @@ export function AuxiliaryEquipmentClientPage() {
     mutationFn: async (itemId: string) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para excluir equipamento auxiliar.");
       if (!itemId) throw new Error("ID do item é necessário para exclusão.");
+      // Adicionar lógica para desvincular da máquina principal, se necessário, antes de excluir.
+      // Isso seria feito atualizando a máquina principal para remover o ID deste equipamento auxiliar.
+      // Por ora, apenas exclui o equipamento auxiliar. A máquina ainda pode ter o ID.
       return deleteDoc(doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, itemId));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_MAQUINAS_COLLECTION_NAME]}); // invalidar maquinas tbm
       toast({ title: "Equipamento Auxiliar Excluído", description: `O item foi removido.` });
       closeModal();
     },
@@ -186,21 +199,26 @@ export function AuxiliaryEquipmentClientPage() {
       setEditingItem(item);
       const isTypePredefined = auxiliaryEquipmentTypeOptions.includes(item.type as any);
       form.reset({
-        ...item,
+        // ...item, // Não usar spread de item completo pois ele pode ter linkedEquipmentId
+        name: item.name,
         type: isTypePredefined ? item.type : CUSTOM_AUXILIARY_TYPE_VALUE,
         customType: isTypePredefined ? "" : item.type,
-        linkedEquipmentId: item.linkedEquipmentId || null,
+        serialNumber: item.serialNumber || "",
+        status: item.status,
+        notes: item.notes || "",
+        // linkedEquipmentId não está mais no form.reset
       });
       setShowCustomTypeField(!isTypePredefined);
-      setIsEditMode(false); // Start in view mode for existing items
+      setIsEditMode(false); 
     } else {
       setEditingItem(null);
       form.reset({
         name: "", type: "", customType: "", serialNumber: "",
-        status: "Disponível", linkedEquipmentId: null, notes: "",
+        status: "Disponível", notes: "",
+        // linkedEquipmentId não está mais no form.reset
       });
       setShowCustomTypeField(false);
-      setIsEditMode(true); // Start in edit mode for new items
+      setIsEditMode(true); 
     }
     setIsModalOpen(true);
   };
@@ -210,12 +228,14 @@ export function AuxiliaryEquipmentClientPage() {
     setEditingItem(null);
     form.reset();
     setShowCustomTypeField(false);
-    setIsEditMode(false); // Reset edit mode
+    setIsEditMode(false); 
   };
 
   const onSubmit = async (values: z.infer<typeof AuxiliaryEquipmentSchema>) => {
     if (editingItem && editingItem.id) {
-      updateAuxEquipmentMutation.mutate({ ...values, id: editingItem.id });
+      // Passamos o `editingItem` completo que contém o `id` e outros campos
+      // que podem não estar no `values` do formulário (como o linkedEquipmentId existente)
+      updateAuxEquipmentMutation.mutate({ ...values, id: editingItem.id } as AuxiliaryEquipment);
     } else {
       addAuxEquipmentMutation.mutate(values);
     }
@@ -223,7 +243,7 @@ export function AuxiliaryEquipmentClientPage() {
 
   const handleModalDeleteConfirm = () => {
     if (editingItem && editingItem.id) {
-      if (window.confirm(`Tem certeza que deseja excluir o equipamento auxiliar "${editingItem.name}"?`)) {
+      if (window.confirm(`Tem certeza que deseja excluir o equipamento auxiliar "${editingItem.name}"? Esta ação também o desvinculará de qualquer máquina.`)) {
         deleteAuxEquipmentMutation.mutate(editingItem.id);
       }
     }
@@ -401,34 +421,7 @@ export function AuxiliaryEquipmentClientPage() {
                 </FormItem>
               )} />
 
-              <FormField control={form.control} name="linkedEquipmentId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Vincular à Máquina Principal (Opcional)</FormLabel>
-                  <Select
-                    onValueChange={(selectedValue) => field.onChange(selectedValue === NO_LINKED_EQUIPMENT_VALUE ? null : selectedValue)}
-                    value={field.value ?? NO_LINKED_EQUIPMENT_VALUE}
-                  >
-                    <FormControl><SelectTrigger>
-                      <SelectValue placeholder={isLoadingMaquinasPrincipais ? "Carregando..." : "Selecione para vincular"} />
-                    </SelectTrigger></FormControl>
-                    <SelectContent>
-                      {isLoadingMaquinasPrincipais ? (
-                        <SelectItem value={LOADING_EQUIPMENT_VALUE} disabled>Carregando...</SelectItem>
-                      ) : (
-                        <>
-                          <SelectItem value={NO_LINKED_EQUIPMENT_VALUE}>Nenhuma</SelectItem>
-                          {maquinasPrincipaisList.map((eq) => (
-                            <SelectItem key={eq.id} value={eq.id}>
-                              {eq.brand} {eq.model} (Chassi: {eq.chassisNumber})
-                            </SelectItem>
-                          ))}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              {/* Campo de Vincular à Máquina Principal REMOVIDO daqui */}
 
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais sobre o equipamento" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
@@ -440,5 +433,3 @@ export function AuxiliaryEquipmentClientPage() {
     </>
   );
 }
-
-    

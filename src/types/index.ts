@@ -146,7 +146,7 @@ export interface AuxiliaryEquipment {
   customType?: string; // Se type for "Outro"
   serialNumber?: string | null;
   status: typeof auxiliaryEquipmentStatusOptions[number];
-  linkedEquipmentId?: string | null; // ID da máquina principal (Maquina)
+  linkedEquipmentId?: string | null; // ID da máquina principal (Maquina) - AINDA NECESSÁRIO PARA LEITURA/EXIBIÇÃO
   notes?: string | null;
 }
 
@@ -205,7 +205,7 @@ export const MaquinaSchema = z.object({
   notes: z.string().optional().nullable(),
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
-  auxiliaryEquipmentIds: z.array(z.string()).optional().nullable(),
+  auxiliaryEquipmentIds: z.array(z.string()).optional().nullable(), // Este é o campo para o formulário da máquina
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;
@@ -285,7 +285,7 @@ export const AuxiliaryEquipmentSchema = z.object({
   customType: z.string().optional(),
   serialNumber: z.string().optional().nullable(),
   status: z.enum(auxiliaryEquipmentStatusOptions, { required_error: "Status é obrigatório" }),
-  linkedEquipmentId: z.string().nullable().optional(), // ID da máquina principal (Maquina)
+  // linkedEquipmentId foi removido deste schema, pois não será definido por este formulário
   notes: z.string().optional().nullable(),
 }).refine(data => {
   if (data.type === '_CUSTOM_' && (!data.customType || data.customType.trim() === "")) {
@@ -296,3 +296,4 @@ export const AuxiliaryEquipmentSchema = z.object({
   message: "Por favor, especifique o tipo customizado.",
   path: ["customType"],
 });
+
