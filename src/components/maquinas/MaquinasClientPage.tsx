@@ -5,8 +5,8 @@ import React from 'react'; // Explicitly import React
 import { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIcon, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer } from "lucide-react";
+import type * as z from "zod"; 
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIcon, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check } from "lucide-react"; // Added Check
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +29,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox } from "@/components/ui/checkbox"; 
 import { Label } from "@/components/ui/label";
 
 
@@ -43,7 +43,7 @@ const LOADING_CUSTOMERS_SELECT_ITEM_VALUE = "_LOADING_CUSTOMERS_";
 const NO_OWNER_REFERENCE_VALUE = "_NOT_SPECIFIED_";
 
 
-const operationalStatusIcons: Record<typeof maquinaOperationalStatusOptions[number], JSX.Element> = {
+const operationalStatusIcons: Record<typeof maquinaOperationalStatusOptions[number], React.JSX.Element> = {
   Disponível: <CheckCircle className="h-4 w-4 text-green-500" />,
   Locada: <Package className="h-4 w-4 text-blue-500" />,
   'Em Manutenção': <ShieldAlert className="h-4 w-4 text-yellow-500" />,
@@ -287,7 +287,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       setShowCustomFields({ brand: false, equipmentType: false });
     }
     setIsModalOpen(true);
-  }, [form, maquinaList]);
+  }, [form]);
 
   useEffect(() => {
     if (maquinaIdFromUrl && !isLoadingMaquinas && maquinaList.length > 0 && !isModalOpen) {
@@ -326,7 +326,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       batteryBoxDepthMm: parseNumericToNullOrNumber(restOfData.batteryBoxDepthMm),
       monthlyRentalValue: parseNumericToNullOrNumber(restOfData.monthlyRentalValue),
       hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter),
-    }; // <-- This closing brace was missing
+    }; 
 
     const finalOwnerReference: OwnerReferenceType | null = formOwnerReferenceFromForm ?? null;
 
@@ -993,7 +993,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                                     aria-labelledby={`aux-label-${equipment.id}`}
                                   />
                                   <Label htmlFor={`aux-label-${equipment.id}`} className="flex-grow cursor-pointer">
-                                    {equipment.name}
+                                    {equipment.name} 
                                   </Label>
                                   {field.value?.includes(equipment.id) && (
                                     <Check className="ml-auto h-4 w-4 text-primary" />
