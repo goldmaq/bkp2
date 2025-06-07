@@ -23,14 +23,14 @@ const firebaseConfigValues: Partial<FirebaseConfig> = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Adicione estes console.log temporários para depuração
-console.log("DEBUG: firebaseConfigValues:", firebaseConfigValues);
+console.log("Firebase.ts: Raw environment variable values being read:");
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_API_KEY:", process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:", process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID);
 console.log("DEBUG: NEXT_PUBLIC_FIREBASE_APP_ID:", process.env.NEXT_PUBLIC_FIREBASE_APP_ID);
+console.log("DEBUG: firebaseConfigValues collected:", firebaseConfigValues);
 
 
 const requiredKeys: Array<keyof FirebaseConfig> = [
@@ -45,17 +45,16 @@ let storage: FirebaseStorage | null = null;
 
 if (missingEnvVarKeys.length > 0) {
   const errorMessage = `Firebase Fatal Error: Essential Firebase configuration is missing for the following keys: ${missingEnvVarKeys.join(", ")}.
-Please ensure these environment variables are set.
+Please ensure these environment variables are set and accessible to the client-side application.
 - If running locally, check your .env.local file.
-- If deployed, check your hosting provider's environment variable settings.
+- If deployed, check your hosting provider's environment variable settings (e.g., apphosting.yaml and Google Cloud Secret Manager).
+CHECK THE BROWSER CONSOLE LOGS ABOVE THIS ERROR for 'DEBUG: NEXT_PUBLIC_FIREBASE_...' lines to see the actual values being read.
 Application may not function correctly without these Firebase credentials.`;
 
   console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
   console.error("!!! FIREBASE FATAL ERROR: ENVIRONMENT VARIABLES ARE MISSING !!!");
   console.error(`!!! Details: ${errorMessage}`);
   console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-  // Not throwing an error here to allow the app to attempt to run and potentially show client-side errors or partial functionality
-  // However, db and storage will remain null.
 } else {
   const completeConfig = firebaseConfigValues as FirebaseConfig;
 
@@ -95,7 +94,6 @@ Application may not function correctly without these Firebase credentials.`;
 
   } catch (error) {
     console.error("Firebase.ts: CRITICAL ERROR DURING FIREBASE INITIALIZATION OR SERVICE RETRIEVAL:", error);
-    // app, db, storage will remain null if an error occurs here.
   }
 }
 
