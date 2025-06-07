@@ -23,13 +23,14 @@ const firebaseConfigValues: Partial<FirebaseConfig> = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-console.log("Firebase.ts: Raw environment variable values being read:");
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_API_KEY:", process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:", process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID);
-console.log("DEBUG: NEXT_PUBLIC_FIREBASE_APP_ID:", process.env.NEXT_PUBLIC_FIREBASE_APP_ID);
+console.log("Firebase.ts: ----- BEGIN FIREBASE ENV VAR DEBUG -----");
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_API_KEY:", process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:", process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID);
+console.log(">>> DEBUG: NEXT_PUBLIC_FIREBASE_APP_ID:", process.env.NEXT_PUBLIC_FIREBASE_APP_ID);
+console.log("Firebase.ts: ----- END FIREBASE ENV VAR DEBUG -----");
 console.log("DEBUG: firebaseConfigValues collected:", firebaseConfigValues);
 
 
@@ -46,9 +47,9 @@ let storage: FirebaseStorage | null = null;
 if (missingEnvVarKeys.length > 0) {
   const errorMessage = `Firebase Fatal Error: Essential Firebase configuration is missing for the following keys: ${missingEnvVarKeys.join(", ")}.
 Please ensure these environment variables are set and accessible to the client-side application.
-- If running locally, check your .env.local file.
+- If running locally, check your .env.local file and ensure it's loaded.
 - If deployed, check your hosting provider's environment variable settings (e.g., apphosting.yaml and Google Cloud Secret Manager).
-CHECK THE BROWSER CONSOLE LOGS ABOVE THIS ERROR for 'DEBUG: NEXT_PUBLIC_FIREBASE_...' lines to see the actual values being read.
+CRITICAL: LOOK IN THE BROWSER CONSOLE LOGS IMMEDIATELY ABOVE THIS ERROR for lines starting with '>>> DEBUG: NEXT_PUBLIC_FIREBASE_...' to see the actual values (or 'undefined') being read by the application.
 Application may not function correctly without these Firebase credentials.`;
 
   console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
