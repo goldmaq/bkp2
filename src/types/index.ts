@@ -4,24 +4,24 @@ export interface Customer {
   name: string;
   cnpj: string;
   email: string;
-  phone?: string; 
-  contactName?: string; 
+  phone?: string;
+  contactName?: string;
   cep?: string | null;
   street: string;
   number?: string;
   complement?: string;
   neighborhood: string;
   city: string;
-  state: string; 
-  preferredTechnician?: string | null; 
+  state: string;
+  preferredTechnician?: string | null;
   notes?: string;
 }
 
 export const maquinaTypeOptions = [
-  'Empilhadeira Contrabalançada GLP', 
-  'Empilhadeira Contrabalançada Elétrica', 
-  'Empilhadeira Retrátil', 
-  'Transpaleteira Elétrica', 
+  'Empilhadeira Contrabalançada GLP',
+  'Empilhadeira Contrabalançada Elétrica',
+  'Empilhadeira Retrátil',
+  'Transpaleteira Elétrica',
 ] as const;
 
 export const maquinaOperationalStatusOptions = ['Disponível', 'Locada', 'Em Manutenção', 'Sucata'] as const;
@@ -45,13 +45,13 @@ export interface Maquina {
   brand: string;
   model: string;
   chassisNumber: string;
-  equipmentType: typeof maquinaTypeOptions[number] | string; 
+  equipmentType: typeof maquinaTypeOptions[number] | string;
   manufactureYear: number | null;
   operationalStatus: typeof maquinaOperationalStatusOptions[number];
   customerId?: string | null;
-  ownerReference?: OwnerReferenceType | null; 
-  customBrand?: string; 
-  customEquipmentType?: string; 
+  ownerReference?: OwnerReferenceType | null;
+  customBrand?: string;
+  customEquipmentType?: string;
 
   towerOpenHeightMm?: number | null;
   towerClosedHeightMm?: number | null;
@@ -64,9 +64,8 @@ export interface Maquina {
   monthlyRentalValue?: number | null;
   hourMeter?: number | null;
   notes?: string | null;
-  partsCatalogUrl?: string | null; 
+  partsCatalogUrl?: string | null;
   errorCodesUrl?: string | null;
-  observacao2?: string | null;
   linkedAuxiliaryEquipmentIds?: string[] | null;
 }
 
@@ -88,12 +87,12 @@ export interface ServiceOrder {
   requesterName?: string | null; // Nome do solicitante do serviço
   phase: 'Pendente' | 'Em Progresso' | 'Aguardando Peças' | 'Concluída' | 'Cancelada';
   technicianId?: string | null;
-  serviceType: string; 
-  customServiceType?: string; 
-  vehicleId?: string | null; 
-  startDate?: string; 
-  endDate?: string;   
-  description: string; 
+  serviceType: string;
+  customServiceType?: string;
+  vehicleId?: string | null;
+  startDate?: string;
+  endDate?: string;
+  description: string;
   notes?: string | null;
   mediaUrls?: string[] | null; // Array de URLs de mídia (fotos/vídeos)
   technicalConclusion?: string | null;
@@ -104,7 +103,7 @@ export interface Technician {
   name: string;
   employeeId: string;
   specialization?: string;
-  phone?: string; 
+  phone?: string;
 }
 
 export interface Company {
@@ -132,7 +131,7 @@ export interface Vehicle {
   currentMileage: number;
   fuelConsumption: number;
   costPerKilometer: number;
-  fipeValue?: number | null; 
+  fipeValue?: number | null;
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
 }
@@ -156,7 +155,7 @@ import { z } from 'zod';
 
 export const CustomerSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
-  cnpj: z.string().min(1, "CNPJ é obrigatório"), 
+  cnpj: z.string().min(1, "CNPJ é obrigatório"),
   email: z.string().email("Endereço de email inválido"),
   phone: z.string().optional(),
   contactName: z.string().optional(),
@@ -164,15 +163,15 @@ export const CustomerSchema = z.object({
     .refine(val => !val || /^\d{5}-?\d{3}$/.test(val), { message: "CEP inválido. Use o formato XXXXX-XXX ou XXXXXXXX." })
     .optional()
     .nullable()
-    .transform(val => val ? val.replace(/\D/g, '') : null) 
-    .transform(val => val && val.length === 8 ? `${val.slice(0,5)}-${val.slice(5)}` : val), 
+    .transform(val => val ? val.replace(/\D/g, '') : null)
+    .transform(val => val && val.length === 8 ? `${val.slice(0,5)}-${val.slice(5)}` : val),
   street: z.string().min(1, "Rua é obrigatória"),
   number: z.string().optional(),
   complement: z.string().optional(),
   neighborhood: z.string().min(1, "Bairro é obrigatório"),
   city: z.string().min(1, "Cidade é obrigatória"),
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória e deve ter 2 caracteres"),
-  preferredTechnician: z.string().nullable().optional(), 
+  preferredTechnician: z.string().nullable().optional(),
   notes: z.string().optional(),
 });
 
@@ -185,10 +184,10 @@ export const MaquinaSchema = z.object({
   brand: z.string().min(1, "Marca é obrigatória"),
   model: z.string().min(1, "Modelo é obrigatório"),
   chassisNumber: z.string().min(1, "Número do chassi é obrigatório"),
-  equipmentType: z.string().min(1, "Tipo de máquina é obrigatório"), 
+  equipmentType: z.string().min(1, "Tipo de máquina é obrigatório"),
   manufactureYear: z.coerce.number().min(1900, "Ano inválido").max(new Date().getFullYear() + 1, "Ano inválido").nullable(),
   operationalStatus: z.enum(maquinaOperationalStatusOptions),
-  customerId: z.string().nullable().optional(), 
+  customerId: z.string().nullable().optional(),
   ownerReference: ownerReferenceSchema.nullable().optional(),
   customBrand: z.string().optional(),
   customEquipmentType: z.string().optional(),
@@ -206,7 +205,6 @@ export const MaquinaSchema = z.object({
   notes: z.string().optional().nullable(),
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
-  observacao2: z.string().optional().nullable(),
   auxiliaryEquipmentIds: z.array(z.string()).optional().nullable(),
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
@@ -215,7 +213,7 @@ export const MaquinaSchema = z.object({
   return true;
 }, {
   message: "Um cliente deve ser selecionado se a propriedade for definida como 'Cliente Vinculado'.",
-  path: ["customerId"], 
+  path: ["customerId"],
 });
 
 
@@ -233,7 +231,7 @@ export const VehicleSchema = z.object({
   currentMileage: z.coerce.number().min(0, "Quilometragem deve ser positiva"),
   fuelConsumption: z.coerce.number().min(0, "Consumo de combustível deve ser positivo"),
   costPerKilometer: z.coerce.number().min(0, "Custo por quilômetro deve ser positivo"),
-  fipeValue: z.coerce.number().min(0, "Valor FIPE deve ser positivo ou zero").optional().nullable(), 
+  fipeValue: z.coerce.number().min(0, "Valor FIPE deve ser positivo ou zero").optional().nullable(),
   registrationInfo: z.string().optional(),
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
 });
@@ -241,16 +239,16 @@ export const VehicleSchema = z.object({
 export const ServiceOrderSchema = z.object({
   orderNumber: z.string().min(1, "Número da ordem é obrigatório"),
   customerId: z.string().min(1, "Cliente é obrigatório"),
-  equipmentId: z.string().min(1, "Máquina é obrigatória"), 
+  equipmentId: z.string().min(1, "Máquina é obrigatória"),
   requesterName: z.string().optional().nullable(),
   phase: z.enum(['Pendente', 'Em Progresso', 'Aguardando Peças', 'Concluída', 'Cancelada']),
   technicianId: z.string().nullable().optional(),
   serviceType: z.string().min(1, "Tipo de serviço é obrigatório"),
   customServiceType: z.string().optional(),
-  vehicleId: z.string().nullable().optional(), 
-  startDate: z.string().optional(), 
-  endDate: z.string().optional(),   
-  description: z.string().min(1, "Problema relatado é obrigatório"), 
+  vehicleId: z.string().nullable().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  description: z.string().min(1, "Problema relatado é obrigatório"),
   notes: z.string().optional().nullable(),
   mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
   technicalConclusion: z.string().nullable().optional(),
@@ -298,4 +296,3 @@ export const AuxiliaryEquipmentSchema = z.object({
   message: "Por favor, especifique o tipo customizado.",
   path: ["customType"],
 });
-    

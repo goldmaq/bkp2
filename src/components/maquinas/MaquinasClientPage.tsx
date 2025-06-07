@@ -5,8 +5,8 @@ import React from 'react'; // Explicitly import React
 import { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import type * as z from "zod"; 
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIcon, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check } from "lucide-react"; // Added Check
+import type * as z from "zod";
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check } from "lucide-react"; // Added Check
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +29,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Checkbox } from "@/components/ui/checkbox"; 
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 
@@ -138,7 +138,6 @@ async function fetchMaquinas(): Promise<Maquina[]> {
       notes: data.notes || null,
       partsCatalogUrl: data.partsCatalogUrl || null,
       errorCodesUrl: data.errorCodesUrl || null,
-      observacao2: data.observacao2 || null,
       linkedAuxiliaryEquipmentIds: Array.isArray(data.linkedAuxiliaryEquipmentIds) ? data.linkedAuxiliaryEquipmentIds : null,
     } as Maquina;
   });
@@ -197,7 +196,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       towerOpenHeightMm: undefined, towerClosedHeightMm: undefined,
       nominalCapacityKg: undefined,
       batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
-      notes: "", observacao2: "", monthlyRentalValue: undefined, hourMeter: undefined,
+      notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
       partsCatalogUrl: null, errorCodesUrl: null,
       auxiliaryEquipmentIds: [],
     },
@@ -247,7 +246,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       form.reset({
         ...maquina,
         model: maquina.model || "",
-        brand: isBrandPredefined ? maquina.brand : '_CUSTOM_',
+        brand: isBrandPredefined ? maquina.brand : '_CUSTOM_' as any, // Cast to any to allow special value
         customBrand: isBrandPredefined ? "" : (maquina.brand === "Outra" || maquina.brand === "_CUSTOM_" ? "" : maquina.brand),
         equipmentType: isEquipmentTypePredefined ? maquina.equipmentType : '_CUSTOM_',
         customEquipmentType: isEquipmentTypePredefined ? "" : maquina.equipmentType,
@@ -263,7 +262,6 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         monthlyRentalValue: maquina.monthlyRentalValue ?? undefined,
         hourMeter: maquina.hourMeter ?? undefined,
         notes: maquina.notes || null,
-        observacao2: maquina.observacao2 || null,
         partsCatalogUrl: maquina.partsCatalogUrl || null,
         errorCodesUrl: maquina.errorCodesUrl || null,
         auxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
@@ -281,7 +279,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         towerOpenHeightMm: undefined, towerClosedHeightMm: undefined, nominalCapacityKg: undefined,
         batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
         notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
-        observacao2: "", partsCatalogUrl: null, errorCodesUrl: null,
+        partsCatalogUrl: null, errorCodesUrl: null,
         auxiliaryEquipmentIds: [],
       });
       setShowCustomFields({ brand: false, equipmentType: false });
@@ -325,8 +323,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       batteryBoxHeightMm: parseNumericToNullOrNumber(restOfData.batteryBoxHeightMm),
       batteryBoxDepthMm: parseNumericToNullOrNumber(restOfData.batteryBoxDepthMm),
       monthlyRentalValue: parseNumericToNullOrNumber(restOfData.monthlyRentalValue),
-      hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter),
-    }; 
+      hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter)
+    };
 
     const finalOwnerReference: OwnerReferenceType | null = formOwnerReferenceFromForm ?? null;
 
@@ -338,7 +336,6 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       customerId: formCustomerId,
       ownerReference: finalOwnerReference,
       notes: parsedData.notes || null,
-      observacao2: parsedData.observacao2 || null,
       partsCatalogUrl: newPartsCatalogUrl === undefined ? formData.partsCatalogUrl : newPartsCatalogUrl,
       errorCodesUrl: newErrorCodesUrl === undefined ? formData.errorCodesUrl : newErrorCodesUrl,
       linkedAuxiliaryEquipmentIds: formAuxiliaryEquipmentIds || null,
@@ -458,7 +455,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   });
 
   const removeFileMutation = useMutation({
-    mutationFn: async (data: { maquinaId: string; fileType: 'partsCatalogUrl' | 'errorCodesUrl'; fileUrl: string }) => {
+    mutationFn: async (data: { maquinaId: string; fileType: 'partsCatalogUrl' | 'errorCodesUrl'; fileUrl: string }) => { // Kept errorCodesUrl in mutation type for potential future use or shared logic
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
@@ -640,9 +637,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
 
 
   return (
-    <React.Fragment>
-      <PageHeader
-        title="Máquinas"
+    <>
+      <PageHeader title="Máquinas"
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Máquina
@@ -767,13 +763,6 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                     <span className="whitespace-pre-wrap break-words">{maq.notes}</span>
                   </p>
                  )}
-                 {maq.observacao2 && (
-                  <p className="flex items-start text-sm">
-                    <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Obs. 2:</span>
-                    <span className="whitespace-pre-wrap break-words">{maq.observacao2}</span>
-                  </p>
-                )}
               </CardContent>
               <CardFooter className="border-t pt-4 flex justify-end gap-2">
               </CardFooter>
@@ -993,7 +982,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                                     aria-labelledby={`aux-label-${equipment.id}`}
                                   />
                                   <Label htmlFor={`aux-label-${equipment.id}`} className="flex-grow cursor-pointer">
-                                    {equipment.name} 
+                                    {equipment.name}
                                   </Label>
                                   {field.value?.includes(equipment.id) && (
                                     <Check className="ml-auto h-4 w-4 text-primary" />
@@ -1048,7 +1037,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
               {editingMaquina?.partsCatalogUrl && !partsCatalogFile && (
                 <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
                   <a href={editingMaquina.partsCatalogUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                    <LinkIcon className="h-3 w-3"/> Ver Catálogo: {getFileNameFromUrl(editingMaquina.partsCatalogUrl)}
+                    <LinkIconLI className="h-3 w-3"/> Ver Catálogo: {getFileNameFromUrl(editingMaquina.partsCatalogUrl)}
                   </a>
                   <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('partsCatalogUrl')} className="text-destructive hover:text-destructive">
                     <XCircle className="h-4 w-4 mr-1"/> Remover
@@ -1072,7 +1061,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                {editingMaquina?.errorCodesUrl && !errorCodesFile && (
                 <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
                   <a href={editingMaquina.errorCodesUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                    <LinkIcon className="h-3 w-3"/> Ver Códigos: {getFileNameFromUrl(editingMaquina.errorCodesUrl)}
+                    <LinkIconLI className="h-3 w-3"/> Ver Códigos: {getFileNameFromUrl(editingMaquina.errorCodesUrl)}
                   </a>
                    <Button type="button" variant="ghost" size="sm" onClick={() => handleFileRemove('errorCodesUrl')} className="text-destructive hover:text-destructive">
                     <XCircle className="h-4 w-4 mr-1"/> Remover
@@ -1104,14 +1093,11 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
             <FormField control={form.control} name="notes" render={({ field }) => (
               <FormItem><FormLabel>Observações</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais, histórico, etc." {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
             )} />
-
-            <FormField control={form.control} name="observacao2" render={({ field }) => (
-              <FormItem><FormLabel>Observação 2</FormLabel><FormControl><Textarea placeholder="Segunda caixa de observações" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
-            )} />
             </fieldset>
           </form>
         </Form>
       </FormModal>
-    </React.Fragment>
+    </>
   );
 }
+
