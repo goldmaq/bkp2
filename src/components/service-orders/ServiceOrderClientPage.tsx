@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building } from "lucide-react"; // Added Building
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon } from "lucide-react"; // Added Building, Route, CoinsIcon
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType } from "@/types"; // Added OwnerReferenceType
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER } from "@/types"; // Added companyDisplayOptions, OWNER_REF_CUSTOMER
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType } from "@/types"; 
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER } from "@/types"; 
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -164,6 +164,9 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       notes: data.notes || null,
       mediaUrls: Array.isArray(data.mediaUrls) ? data.mediaUrls.filter(url => typeof url === 'string') : [],
       technicalConclusion: data.technicalConclusion || null,
+      estimatedTravelDistanceKm: data.estimatedTravelDistanceKm !== undefined ? Number(data.estimatedTravelDistanceKm) : null,
+      estimatedTollCosts: data.estimatedTollCosts !== undefined ? Number(data.estimatedTollCosts) : null,
+      estimatedTravelCost: data.estimatedTravelCost !== undefined ? Number(data.estimatedTravelCost) : null,
     };
     return serviceOrder;
   });
@@ -279,12 +282,12 @@ const getWhatsAppNumber = (phone?: string): string => {
 const formatPhoneNumberForDisplay = (phone?: string): string => {
   if (!phone) return "N/A";
   const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 11) { // Celular com 9º dígito
+  if (cleaned.length === 11) { 
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-  } else if (cleaned.length === 10) { // Fixo ou celular sem 9º dígito
+  } else if (cleaned.length === 10) { 
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
   }
-  return phone; // Retorna o original se não bater com os formatos esperados
+  return phone; 
 };
 
 
@@ -311,12 +314,17 @@ export function ServiceOrderClientPage() {
       requesterName: "", serviceType: "", customServiceType: "", vehicleId: null, description: "",
       notes: "", startDate: formatDateForInput(new Date().toISOString()), endDate: "",
       mediaUrls: [], technicalConclusion: null,
+      estimatedTravelDistanceKm: null, estimatedTollCosts: null, estimatedTravelCost: null,
     },
   });
 
   const selectedCustomerId = useWatch({ control: form.control, name: 'customerId' });
   const selectedEquipmentId = useWatch({ control: form.control, name: 'equipmentId' });
   const formMediaUrls = useWatch({ control: form.control, name: 'mediaUrls' });
+  const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
+  const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
+  const formEstimatedTollCosts = useWatch({ control: form.control, name: 'estimatedTollCosts' });
+
 
   const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_COLLECTION_NAME],
@@ -355,6 +363,25 @@ export function ServiceOrderClientPage() {
     queryFn: fetchVehicles,
     enabled: !!db,
   });
+
+  useEffect(() => {
+    if (formVehicleId && typeof formEstimatedTravelDistanceKm === 'number') {
+      const vehicle = vehicles.find(v => v.id === formVehicleId);
+      if (vehicle && typeof vehicle.costPerKilometer === 'number') {
+        const fuelCost = formEstimatedTravelDistanceKm * vehicle.costPerKilometer;
+        const totalTolls = typeof formEstimatedTollCosts === 'number' ? formEstimatedTollCosts : 0;
+        form.setValue('estimatedTravelCost', parseFloat((fuelCost + totalTolls).toFixed(2)));
+      } else {
+        form.setValue('estimatedTravelCost', typeof formEstimatedTollCosts === 'number' ? formEstimatedTollCosts : null);
+      }
+    } else if (typeof formEstimatedTollCosts === 'number') {
+      form.setValue('estimatedTravelCost', formEstimatedTollCosts);
+    }
+     else {
+      form.setValue('estimatedTravelCost', null);
+    }
+  }, [formVehicleId, formEstimatedTravelDistanceKm, formEstimatedTollCosts, vehicles, form]);
+
 
   if (!db || !storage) {
     return (
@@ -439,6 +466,9 @@ export function ServiceOrderClientPage() {
       mediaUrls: validProcessedUrls && validProcessedUrls.length > 0 ? validProcessedUrls : null,
       technicalConclusion: restOfData.technicalConclusion || null,
       notes: (restOfData.notes === undefined || restOfData.notes === null || restOfData.notes.trim() === "") ? null : restOfData.notes,
+      estimatedTravelDistanceKm: restOfData.estimatedTravelDistanceKm !== undefined ? Number(restOfData.estimatedTravelDistanceKm) : null,
+      estimatedTollCosts: restOfData.estimatedTollCosts !== undefined ? Number(restOfData.estimatedTollCosts) : null,
+      estimatedTravelCost: restOfData.estimatedTravelCost !== undefined ? Number(restOfData.estimatedTravelCost) : null,
     };
   };
 
@@ -601,6 +631,9 @@ export function ServiceOrderClientPage() {
         technicalConclusion: order.technicalConclusion || null,
         notes: order.notes || "",
         requesterName: order.requesterName || "",
+        estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined ? Number(order.estimatedTravelDistanceKm) : null,
+        estimatedTollCosts: order.estimatedTollCosts !== undefined ? Number(order.estimatedTollCosts) : null,
+        estimatedTravelCost: order.estimatedTravelCost !== undefined ? Number(order.estimatedTravelCost) : null,
       });
       setShowCustomServiceType(!isServiceTypePredefined);
     } else {
@@ -613,6 +646,7 @@ export function ServiceOrderClientPage() {
         requesterName: "", serviceType: "", customServiceType: "", vehicleId: null, description: "",
         notes: "", startDate: formatDateForInput(new Date().toISOString()), endDate: "",
         mediaUrls: [], technicalConclusion: null,
+        estimatedTravelDistanceKm: null, estimatedTollCosts: null, estimatedTravelCost: null,
       });
       setShowCustomServiceType(false);
     }
@@ -761,9 +795,9 @@ export function ServiceOrderClientPage() {
     );
   }
 
-  const getCustomerDetails = (id: string): { name: string; cnpj: string; phone?: string; id: string; } => {
+  const getCustomerDetails = (id: string): { name: string; phone?: string; id: string; } => {
     const customer = customers.find(c => c.id === id);
-    return customer ? { name: customer.name, cnpj: customer.cnpj, phone: customer.phone, id: customer.id } : { name: id, cnpj: "CNPJ não encontrado", id };
+    return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
   };
   const getEquipmentDetails = (id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
     const eq = equipmentList.find(e => e.id === id);
@@ -781,13 +815,13 @@ export function ServiceOrderClientPage() {
 
   const generateWhatsAppMessage = (
     order: ServiceOrder,
-    customer: { name: string; cnpj: string; phone?: string },
+    customer: { name: string; phone?: string },
     equipment: { brand: string, model: string, chassisNumber: string, id: string },
     technicianName: string
   ): string => {
     let message = `Olá ${customer.name},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
-    message += `*Cliente:* ${customer.name}\n`; // Removido CNPJ daqui
+    message += `*Cliente:* ${customer.name}\n`; 
     message += `*Equipamento:* ${equipment.brand} ${equipment.model} (Chassi: ${equipment.chassisNumber})\n`;
     message += `*Fase Atual:* ${order.phase}\n`;
     message += `*Problema Relatado:* ${order.description}\n`;
@@ -953,6 +987,13 @@ export function ServiceOrderClientPage() {
                          {vehicleDetails.identifier}
                        </Link>
                     )}
+                  </p>
+                )}
+                 {order.estimatedTravelCost !== null && order.estimatedTravelCost !== undefined && (
+                  <p className="flex items-center text-sm">
+                    <CoinsIcon className="mr-2 h-4 w-4 text-primary" />
+                    <span className="font-medium text-muted-foreground mr-1">Custo Viagem (Est.):</span>
+                    <span>R$ {Number(order.estimatedTravelCost).toFixed(2)}</span>
                   </p>
                 )}
                 <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}</p>
@@ -1170,7 +1211,35 @@ export function ServiceOrderClientPage() {
                   <FormItem><FormLabel>Data de Conclusão (Prevista)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""}  /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
+              
+              <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Custos da Viagem (Opcional)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <FormField control={form.control} name="estimatedTravelDistanceKm" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Distância Viagem (km - total)</FormLabel>
+                        <FormControl><Input type="number" step="0.1" placeholder="Ex: 120.5" {...field} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} value={String(field.value ?? '')} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                 )} />
+                 <FormField control={form.control} name="estimatedTollCosts" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Custo Pedágios (R$)</FormLabel>
+                        <FormControl><Input type="number" step="0.01" placeholder="Ex: 25.50" {...field} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} value={String(field.value ?? '')} /></FormControl>
+                        <FormMessage />
+                    </FormItem>
+                 )} />
+              </div>
+                <FormField control={form.control} name="estimatedTravelCost" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Custo Estimado da Viagem (R$)</FormLabel>
+                        <FormControl><Input type="number" step="0.01" {...field} readOnly placeholder="Calculado automaticamente" value={String(field.value ?? '')} className="bg-muted/50" /></FormControl>
+                        <FormDescription>Calculado com base na distância, custo/km do veículo e pedágios.</FormDescription>
+                        <FormMessage />
+                    </FormItem>
+                )} />
 
+
+              <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Detalhes do Serviço</h3>
               <FormField control={form.control} name="requesterName" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Nome do Solicitante (Opcional)</FormLabel>

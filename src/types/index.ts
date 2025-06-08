@@ -93,8 +93,8 @@ export interface ServiceOrder {
   id: string;
   orderNumber: string;
   customerId: string;
-  equipmentId: string; // This ID refers to a 'Maquina' entity
-  requesterName?: string | null; // Nome do solicitante do serviço
+  equipmentId: string; 
+  requesterName?: string | null; 
   phase: ServiceOrderPhaseType;
   technicianId?: string | null;
   serviceType: string;
@@ -104,8 +104,11 @@ export interface ServiceOrder {
   endDate?: string;
   description: string;
   notes?: string | null;
-  mediaUrls?: string[] | null; // Array de URLs de mídia (fotos/vídeos)
+  mediaUrls?: string[] | null; 
   technicalConclusion?: string | null;
+  estimatedTravelDistanceKm?: number | null;
+  estimatedTollCosts?: number | null;
+  estimatedTravelCost?: number | null;
 }
 
 export const roleOptionsList = [
@@ -113,11 +116,11 @@ export const roleOptionsList = [
   "Financeiro", "Compras", "Vendas", "Comercial"
 ] as const;
 
-export interface Technician { // Interface Renamed to Technician for consistency, but represents Collaborator
+export interface Technician { 
   id: string;
   name: string;
-  role: typeof roleOptionsList[number] | string; // Role of the collaborator
-  specialization?: string; // Specific to technicians, optional for others
+  role: typeof roleOptionsList[number] | string; 
+  specialization?: string; 
   phone?: string;
 }
 
@@ -139,8 +142,8 @@ export interface Company {
 }
 
 export interface FuelingRecord {
-  id: string; // UUID for the record, generated client-side
-  date: string; // ISO string format
+  id: string; 
+  date: string; 
   liters: number;
   pricePerLiter: number;
   totalCost: number;
@@ -155,8 +158,8 @@ export interface Vehicle {
   licensePlate: string;
   kind: string;
   currentMileage: number;
-  fuelConsumption: number; // km/L - could be an average or last calculated
-  costPerKilometer: number; // R$/km - could be an average or last calculated
+  fuelConsumption: number; 
+  costPerKilometer: number; 
   fipeValue?: number | null;
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
@@ -168,9 +171,9 @@ export const auxiliaryEquipmentStatusOptions = ['Disponível', 'Locado', 'Em Man
 
 export interface AuxiliaryEquipment {
   id: string;
-  name: string; // Ex: "Bateria Tracionária 80V Modelo X"
-  type: typeof auxiliaryEquipmentTypeOptions[number] | string; // "Bateria", "Carregador", "Berço", "Outro"
-  customType?: string; // Se type for "Outro"
+  name: string; 
+  type: typeof auxiliaryEquipmentTypeOptions[number] | string; 
+  customType?: string; 
   serialNumber?: string | null;
   status: typeof auxiliaryEquipmentStatusOptions[number];
   linkedEquipmentId?: string | null; 
@@ -253,7 +256,7 @@ export const TechnicianSchema = z.object({
 });
 
 export const FuelingRecordSchema = z.object({
-  id: z.string().uuid("ID inválido").optional(), // Será gerado no cliente
+  id: z.string().uuid("ID inválido").optional(), 
   date: z.string().refine((val) => {
     try {
       return !!parseISO(val);
@@ -263,7 +266,7 @@ export const FuelingRecordSchema = z.object({
   }, "Data inválida").transform((val) => formatISO(parseISO(val), { representation: 'date' })),
   liters: z.coerce.number().positive("Litros devem ser um número positivo."),
   pricePerLiter: z.coerce.number().positive("Preço por litro deve ser um número positivo."),
-  totalCost: z.coerce.number().positive("Custo total deve ser um número positivo.").optional(), // Será calculado, mas pode ser sobrescrito
+  totalCost: z.coerce.number().positive("Custo total deve ser um número positivo.").optional(), 
   mileageAtFueling: z.coerce.number().int().min(0, "Quilometragem deve ser um número positivo."),
   fuelStation: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -298,6 +301,9 @@ export const ServiceOrderSchema = z.object({
   notes: z.string().optional().nullable(),
   mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
   technicalConclusion: z.string().nullable().optional(),
+  estimatedTravelDistanceKm: z.coerce.number().min(0, "Distância deve ser positiva ou zero").optional().nullable(),
+  estimatedTollCosts: z.coerce.number().min(0, "Custo de pedágio deve ser positivo ou zero").optional().nullable(),
+  estimatedTravelCost: z.coerce.number().min(0, "Custo de viagem deve ser positivo ou zero").optional().nullable(),
 }).refine(data => {
   if (data.serviceType === '_CUSTOM_' && (!data.customServiceType || data.customServiceType.trim() === "")) {
     return false;
