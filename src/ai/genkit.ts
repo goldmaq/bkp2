@@ -1,3 +1,4 @@
+
 import {genkit, type Genkit} from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
 
@@ -7,7 +8,9 @@ try {
   console.log("Genkit.ts: Attempting to initialize Genkit with GoogleAI plugin...");
   initializedAi = genkit({
     plugins: [googleAI()],
-    model: 'googleai/gemini-2.0-flash',
+    // A opção 'model' não é válida diretamente aqui no construtor genkit().
+    // Ela seria usada em ai.generate() ou em definePrompt(), por exemplo.
+    // model: 'googleai/gemini-2.0-flash', 
   });
   console.log("Genkit.ts: Genkit initialized successfully.");
 } catch (error) {

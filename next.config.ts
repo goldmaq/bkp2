@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
         async_hooks: false, // Mocks 'async_hooks' for client-side
         fs: false, // Mocks 'fs' for client-side
         tls: false, // Mocks 'tls' for client-side
+        net: false, // Mocks 'net' for client-side
       };
     }
     return config;
