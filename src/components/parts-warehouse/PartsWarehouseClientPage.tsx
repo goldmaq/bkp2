@@ -454,7 +454,7 @@ export function PartsWarehouseClientPage() {
                     </p>
                 )}
                 {item.equipmentDetails ? (
-                    <p className="flex items-center">
+                    <div className="flex items-center"> {/* Changed from p to div */}
                       <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
                        <Tooltip>
@@ -467,12 +467,12 @@ export function PartsWarehouseClientPage() {
                           <p>Ano: {item.equipmentDetails.manufactureYear || 'N/A'}</p>
                         </TooltipContent>
                       </Tooltip>
-                    </p>
+                    </div>
                   ) : isLoadingEquipment ? (
                     <p className="flex items-center text-xs text-muted-foreground">
                       <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
                     </p>
-                  ) : item.serviceOrderId ? ( 
+                  ) : item.serviceOrderId ? (
                     <p className="flex items-center text-xs text-destructive">
                       <AlertTriangle className="mr-2 h-3 w-3" /> Máquina não encontrada para esta OS.
                     </p>
@@ -606,5 +606,3 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
-
-    
