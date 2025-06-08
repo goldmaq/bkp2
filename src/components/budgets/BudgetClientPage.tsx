@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType, Company, CompanyId } from "@/types";
+import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType, Company, CompanyId, ServiceOrderPhaseType } from "@/types";
 import { BudgetSchema, BudgetItemSchema, budgetStatusOptions, companyIds } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
@@ -27,7 +27,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
 import { format, parseISO, isValid as isValidDateFn, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { cn } from "@/lib/utils";
+import { cn, formatAddressForDisplay, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay, toTitleCase } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +40,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { toTitleCase, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay } from "@/lib/utils";
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -112,7 +111,7 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); // Regex to get only the number part
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
       if (!isNaN(num) && num > maxNum) {
@@ -120,7 +119,7 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
       }
     }
   });
-  return (maxNum + 1).toString().padStart(4, '0'); // Return only the number, padded
+  return (maxNum + 1).toString().padStart(4, '0');
 };
 
 const generateDetailedWhatsAppMessage = (
@@ -443,6 +442,18 @@ export function BudgetClientPage() {
     }
   }, [selectedServiceOrderId, serviceOrders, form, editingBudget]);
 
+  const updateServiceOrderStatus = async (orderId: string, newPhase: ServiceOrderPhaseType) => {
+    if (!db || !orderId || orderId === NO_SERVICE_ORDER_SELECTED) return;
+    try {
+      const osRef = doc(db, FIRESTORE_SERVICE_ORDER_COLLECTION_NAME, orderId);
+      await updateDoc(osRef, { phase: newPhase });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_SERVICE_ORDER_COLLECTION_NAME] });
+      toast({ title: "Status da OS Atualizado", description: `OS movida para "${newPhase}".` });
+    } catch (error: any) {
+      console.error("Erro ao atualizar status da OS:", error);
+      toast({ title: "Erro na OS", description: `Não foi possível atualizar o status da OS: ${error.message}`, variant: "destructive" });
+    }
+  };
 
   const addBudgetMutation = useMutation({
     mutationFn: async (newBudgetData: z.infer<typeof BudgetSchema>) => {
@@ -461,6 +472,9 @@ export function BudgetClientPage() {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
       toast({ title: "Orçamento Criado", description: `Orçamento ${variables.budgetNumber} foi criado.` });
       closeModal();
+      if (variables.serviceOrderId && variables.serviceOrderId !== NO_SERVICE_ORDER_SELECTED) {
+        updateServiceOrderStatus(variables.serviceOrderId, "Avaliado, Aguardando Autorização");
+      }
     },
     onError: (err: Error, variables) => {
       toast({ title: "Erro ao Criar", description: `Não foi possível criar o orçamento ${variables.budgetNumber}. Detalhes: ${err.message}`, variant: "destructive" });
@@ -485,12 +499,14 @@ export function BudgetClientPage() {
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
       };
-      return updateDoc(budgetRef, dataToSave as { [x: string]: any });
+      await updateDoc(budgetRef, dataToSave as { [x: string]: any });
+      return budgetData; // Return original budgetData passed in to access serviceOrderId
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (updatedBudgetData) => { // updatedBudgetData is what we returned from mutationFn
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
-      toast({ title: "Orçamento Atualizado", description: `Orçamento ${variables.budgetNumber} foi atualizado.` });
+      toast({ title: "Orçamento Atualizado", description: `Orçamento ${updatedBudgetData.budgetNumber} foi atualizado.` });
       closeModal();
+      // No automatic OS status change on general update, only on status-specific change
     },
     onError: (err: Error, variables) => {
       toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar o orçamento ${variables.budgetNumber}. Detalhes: ${err.message}`, variant: "destructive" });
@@ -516,11 +532,23 @@ export function BudgetClientPage() {
     mutationFn: async ({ budgetId, newStatus }: { budgetId: string; newStatus: BudgetStatusType }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, budgetId);
-      return updateDoc(budgetRef, { status: newStatus });
+      const budgetSnap = await getDoc(budgetRef);
+      if (!budgetSnap.exists()) throw new Error("Orçamento não encontrado.");
+      const budgetData = budgetSnap.data() as Budget;
+      await updateDoc(budgetRef, { status: newStatus });
+      return { budgetData, newStatus }; // Pass budgetData for serviceOrderId
     },
-    onSuccess: (_, variables) => {
+    onSuccess: ({ budgetData, newStatus }) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
-      toast({ title: "Status Atualizado", description: `O orçamento foi atualizado para "${variables.newStatus}".` });
+      toast({ title: "Status Atualizado", description: `O orçamento foi atualizado para "${newStatus}".` });
+      
+      if (budgetData.serviceOrderId && budgetData.serviceOrderId !== NO_SERVICE_ORDER_SELECTED) {
+        if (newStatus === "Aprovado") {
+          updateServiceOrderStatus(budgetData.serviceOrderId, "Autorizado, Aguardando Peça");
+        } else if (newStatus === "Recusado") {
+          updateServiceOrderStatus(budgetData.serviceOrderId, "Cancelada");
+        }
+      }
       setIsStatusConfirmModalOpen(false);
       setStatusChangeInfo(null);
     },
@@ -581,7 +609,7 @@ export function BudgetClientPage() {
     };
 
     if (editingBudget && editingBudget.id) {
-      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate } as Budget);
+      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate, serviceOrderId: editingBudget.serviceOrderId } as Budget);
     } else {
       addBudgetMutation.mutate(budgetData);
     }
@@ -1106,3 +1134,6 @@ export function BudgetClientPage() {
     </>
   );
 }
+
+
+    
