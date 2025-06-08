@@ -545,22 +545,22 @@ export function BudgetClientPage() {
                 <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-between items-center gap-2">
                   <div className="flex flex-wrap gap-2">
                       {canApprove && (
-                          <Button variant="outline" size="xs" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Aprovado'); }} disabled={isMutating}>
+                          <Button variant="outline" size="sm" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Aprovado'); }} disabled={isMutating}>
                               <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
                           </Button>
                       )}
                       {canDeny && (budget.status === "Pendente" || budget.status === "Enviado") && (
-                          <Button variant="outline" size="xs" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Recusado'); }} disabled={isMutating}>
+                          <Button variant="outline" size="sm" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Recusado'); }} disabled={isMutating}>
                               <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
                           </Button>
                       )}
                        {canCancel && (budget.status !== "Cancelado") && (
-                          <Button variant="outline" size="xs" className="border-slate-500 text-slate-600 hover:bg-slate-50 hover:text-slate-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Cancelado'); }} disabled={isMutating}>
+                          <Button variant="outline" size="sm" className="border-slate-500 text-slate-600 hover:bg-slate-50 hover:text-slate-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Cancelado'); }} disabled={isMutating}>
                              <X className="mr-1.5 h-3.5 w-3.5"/> Cancelar
                           </Button>
                       )}
                       {canReopen && (
-                        <Button variant="outline" size="xs" className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:text-blue-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Pendente'); }} disabled={isMutating}>
+                        <Button variant="outline" size="sm" className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:text-blue-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Pendente'); }} disabled={isMutating}>
                             <Pencil className="mr-1.5 h-3.5 w-3.5"/> Reabrir
                         </Button>
                       )}
@@ -568,7 +568,7 @@ export function BudgetClientPage() {
                   <div className="flex gap-2 mt-2 sm:mt-0">
                       <Button
                           variant="outline"
-                          size="xs"
+                          size="sm"
                           asChild
                           disabled={!customer?.email}
                           onClick={(e) => e.stopPropagation()}
@@ -579,7 +579,7 @@ export function BudgetClientPage() {
                       </Button>
                       <Button
                           variant="outline"
-                          size="xs"
+                          size="sm"
                           asChild
                           disabled={!whatsappNumber}
                           onClick={(e) => e.stopPropagation()}
@@ -768,3 +768,6 @@ export function BudgetClientPage() {
 }
 
       
+
+
+    

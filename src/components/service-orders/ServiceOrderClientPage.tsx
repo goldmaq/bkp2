@@ -1061,12 +1061,12 @@ export function ServiceOrderClientPage() {
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         className="text-primary hover:underline"
-                        title={`Abrir WhatsApp para ${formatPhoneNumberForDisplay(customerDetails.phone)}`}
+                        title={`Abrir WhatsApp para ${formatPhoneNumberForInputDisplay(customerDetails.phone)}`}
                       >
-                        {formatPhoneNumberForDisplay(customerDetails.phone)}
+                        {formatPhoneNumberForInputDisplay(customerDetails.phone)}
                       </a>
                     ) : (
-                      <span>{formatPhoneNumberForDisplay(customerDetails.phone)}</span>
+                      <span>{formatPhoneNumberForInputDisplay(customerDetails.phone)}</span>
                     )}
                   </p>
                 )}
@@ -1573,3 +1573,6 @@ export function ServiceOrderClientPage() {
   );
 }
 
+
+
+    
