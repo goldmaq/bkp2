@@ -155,7 +155,8 @@ export function PartsWarehouseClientPage() {
           });
         }
       });
-    
+    });
+
     let filteredItems = items;
 
     if (statusFilter !== ALL_STATUSES_FILTER_VALUE) {
@@ -172,20 +173,20 @@ export function PartsWarehouseClientPage() {
         (item.customerName && item.customerName.toLowerCase().includes(lowerSearchTerm))
       );
     }
-    
+
      return filteredItems.sort((a, b) => {
         const dateA = new Date(a.requisitionCreatedDate).getTime();
         const dateB = new Date(b.requisitionCreatedDate).getTime();
         if (dateA !== dateB) {
-            return dateA - dateB; 
+            return dateA - dateB;
         }
         const statusOrder: Record<PartsRequisitionItemStatusType, number> = {
-            "Pendente Aprovação": 0, 
+            "Pendente Aprovação": 0,
             "Aprovado": 1,
             "Aguardando Compra": 2,
             "Separado": 3,
-            "Recusado": 4, 
-            "Entregue": 5, 
+            "Recusado": 4,
+            "Entregue": 5,
         };
         return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
     });
@@ -222,17 +223,17 @@ export function PartsWarehouseClientPage() {
                 warehouseNotes: data.warehouseNotes === undefined ? updatedItems[itemIndex].warehouseNotes : data.warehouseNotes,
                 estimatedCost: data.estimatedCost === undefined ? updatedItems[itemIndex].estimatedCost : data.estimatedCost,
             };
-            
+
             let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
 
             if (currentRequisition.status !== "Cancelada") {
                 const actionableItems = updatedItems.filter(i => i.status !== "Recusado" && i.status !== "Pendente Aprovação");
-                
-                if (actionableItems.length === 0) { 
+
+                if (actionableItems.length === 0) {
                     if (updatedItems.every(i => i.status === "Recusado" || i.status === "Pendente Aprovação")){
                        newRequisitionStatus = updatedItems.some(i => i.status === "Pendente Aprovação") ? "Pendente" : "Triagem Realizada";
                     } else {
-                       newRequisitionStatus = "Triagem Realizada"; 
+                       newRequisitionStatus = "Triagem Realizada";
                     }
                 } else if (actionableItems.every(item => item.status === "Separado" || item.status === "Entregue")) {
                    newRequisitionStatus = "Atendida Totalmente";
@@ -536,5 +537,3 @@ export function PartsWarehouseClientPage() {
     </>
   );
 }
-
-    
