@@ -37,7 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-import { DialogFooter } from "@/components/ui/dialog";
+// Removed DialogFooter from here as FormModal handles its own
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
@@ -280,58 +280,24 @@ interface ServiceOrderClientPageProps {
 }
 
 const printHTML = (htmlContent: string, documentTitle: string) => {
+  console.log("[PrintDebug] printHTML called with title:", documentTitle);
+  if (!htmlContent || htmlContent.trim() === "") {
+    console.error("[PrintDebug] HTML content for printing is empty.");
+    // Optionally, show a toast to the user
+    // toast({ title: "Erro de Impressão", description: "Conteúdo para impressão está vazio.", variant: "destructive" });
+    return;
+  }
   const printWindow = window.open('', '_blank');
   if (printWindow) {
-    printWindow.document.write(`
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>${documentTitle}</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
-      .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
-      .print-header { text-align: center; margin-bottom: 20px; }
-      .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
-      .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
-      .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-      .section:last-child { border-bottom: none; }
-      .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
-      .field-group { margin-bottom: 6px; }
-      .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
-      .field-value { color: #666; }
-      .two-columns { display: flex; justify-content: space-between; }
-      .column { width: 48%; }
-      .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
-      .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
-      .signature-label { text-align: center; font-size: 10px; color: #555; }
-      .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
-      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-      th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 11px; }
-      th { background-color: #f9f9f9; font-weight: bold; }
-      .notes-section { margin-top:15px; }
-      .notes-section textarea { width: 98%; min-height: 80px; border: 1px solid #ccc; padding: 5px; font-size: 11px; }
-      @media print {
-        body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .print-header h1 { color: #F97316 !important; }
-        .no-print { display: none; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="print-container">
-      ${htmlContent}
-    </div>
-    <script>
-      setTimeout(() => {
-        window.print();
-        window.onafterprint = function() { window.close(); }
-      }, 250);
-    </script>
-  </body>
-</html>
-    `);
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
+    // Delay print to allow content to render, especially images
+    // setTimeout(() => {
+    //   printWindow.print();
+    //   printWindow.onafterprint = function() { printWindow.close(); }
+    // }, 250);
   } else {
+    console.error("[PrintDebug] Failed to open print window. It might be blocked.");
     alert("Seu navegador bloqueou a abertura da janela de impressão. Por favor, desabilite o bloqueador de pop-ups para este site.");
   }
 };
@@ -977,77 +943,115 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     technicianName?: string,
     vehicle?: { identifier: string }
   ): string => {
+    console.log("[PrintDebug] generatePrintHTMLForTechnician called");
     const companyInfo = companies?.find(c => c.id === 'goldmaq');
-
-    return `
-      <div class="print-header">
-        <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Ordem de Serviço Técnico</h1>
-        <p>${formatAddressToString(companyInfo)}</p>
-        <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
-      </div>
-      <div class="section">
-        <div class="section-title">Informações da OS</div>
-        <div class="two-columns">
-          <div class="column">
-            <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
-            <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>OS Técnico: ${order.orderNumber}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
+            .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
+            .print-header { text-align: center; margin-bottom: 20px; }
+            .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
+            .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
+            .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+            .section:last-child { border-bottom: none; }
+            .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
+            .field-group { margin-bottom: 6px; }
+            .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
+            .field-value { color: #666; }
+            .two-columns { display: flex; justify-content: space-between; flex-wrap: wrap; }
+            .column { width: 100%; margin-bottom: 5px; }
+            @media screen and (min-width: 600px) { .column { width: 48%; } }
+            .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
+            .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
+            .signature-label { text-align: center; font-size: 10px; color: #555; }
+            .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
+            .notes-section { margin-top:15px; }
+            .notes-section textarea { width: 98%; min-height: 80px; border: 1px solid #ccc; padding: 5px; font-size: 11px; box-sizing: border-box; }
+            @media print {
+              body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .print-header h1 { color: #F97316 !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">
+            <div class="print-header">
+              <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Ordem de Serviço Técnico</h1>
+              <p>${formatAddressToString(companyInfo)}</p>
+              <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
+            </div>
+            <div class="section">
+              <div class="section-title">Informações da OS</div>
+              <div class="two-columns">
+                <div class="column">
+                  <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
+                  <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
+                </div>
+                <div class="column">
+                  <div class="field-group"><span class="field-label">Data Prev. Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
+                  <div class="field-group"><span class="field-label">Técnico Designado:</span> <span class="field-value">${toTitleCase(technicianName) || 'Não Atribuído'}</span></div>
+                </div>
+              </div>
+              <div class="field-group"><span class="field-label">Tipo de Serviço:</span> <span class="field-value">${toTitleCase(order.serviceType)}</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Dados do Cliente</div>
+              <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">Solicitante:</span> <span class="field-value">${toTitleCase(order.requesterName) || 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">Telefone:</span> <span class="field-value">${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Dados da Máquina</div>
+              <div class="two-columns">
+                <div class="column">
+                  <div class="field-group"><span class="field-label">Marca:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'}</span></div>
+                  <div class="field-group"><span class="field-label">Modelo:</span> <span class="field-value">${toTitleCase(equipment?.model) || 'N/A'}</span></div>
+                </div>
+                <div class="column">
+                  <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
+                  <div class="field-group"><span class="field-label">Ano:</span> <span class="field-value">${equipment?.manufactureYear || 'N/A'}</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="section-title">Problema Relatado / Solicitação</div>
+              <p class="field-value" style="white-space: pre-wrap;">${order.description || 'Nenhum problema relatado.'}</p>
+            </div>
+            ${order.notes ? `<div class="section">
+              <div class="section-title">Observações da OS</div>
+              <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
+            </div>` : ''}
+            <div class="section notes-section">
+              <div class="section-title">Diagnóstico Técnico / Serviços Realizados</div>
+              <textarea rows="5"></textarea>
+            </div>
+            <div class="section notes-section">
+              <div class="section-title">Peças Utilizadas</div>
+              <textarea rows="3"></textarea>
+            </div>
+            <div class="signature-area">
+              <div class="signature-line"></div>
+              <div class="signature-label">Assinatura do Técnico</div>
+            </div>
+            <div class="signature-area">
+              <div class="signature-line"></div>
+              <div class="signature-label">Assinatura do Cliente / Responsável</div>
+            </div>
+             <div class="footer-notes">
+               Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
+            </div>
           </div>
-          <div class="column">
-            <div class="field-group"><span class="field-label">Data Prev. Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Técnico Designado:</span> <span class="field-value">${toTitleCase(technicianName) || 'Não Atribuído'}</span></div>
-          </div>
-        </div>
-        <div class="field-group"><span class="field-label">Tipo de Serviço:</span> <span class="field-value">${toTitleCase(order.serviceType)}</span></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Dados do Cliente</div>
-        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Solicitante:</span> <span class="field-value">${toTitleCase(order.requesterName) || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Telefone:</span> <span class="field-value">${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Dados da Máquina</div>
-        <div class="two-columns">
-          <div class="column">
-            <div class="field-group"><span class="field-label">Marca:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Modelo:</span> <span class="field-value">${toTitleCase(equipment?.model) || 'N/A'}</span></div>
-          </div>
-          <div class="column">
-            <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Ano:</span> <span class="field-value">${equipment?.manufactureYear || 'N/A'}</span></div>
-          </div>
-        </div>
-      </div>
-      <div class="section">
-        <div class="section-title">Problema Relatado / Solicitação</div>
-        <p class="field-value" style="white-space: pre-wrap;">${order.description || 'Nenhum problema relatado.'}</p>
-      </div>
-      ${order.notes ? `<div class="section">
-        <div class="section-title">Observações da OS</div>
-        <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
-      </div>` : ''}
-      <div class="section notes-section">
-        <div class="section-title">Diagnóstico Técnico / Serviços Realizados</div>
-        <textarea rows="5"></textarea>
-      </div>
-      <div class="section notes-section">
-        <div class="section-title">Peças Utilizadas</div>
-        <textarea rows="3"></textarea>
-      </div>
-      <div class="signature-area">
-        <div class="signature-line"></div>
-        <div class="signature-label">Assinatura do Técnico</div>
-      </div>
-      <div class="signature-area">
-        <div class="signature-line"></div>
-        <div class="signature-label">Assinatura do Cliente / Responsável</div>
-      </div>
-       <div class="footer-notes">
-         Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
-      </div>
+        </body>
+      </html>
     `;
+    console.log("[PrintDebug] generatePrintHTMLForTechnician finished. HTML (first 100 chars):", html.substring(0,100));
+    return html;
   };
 
   const generatePrintHTMLForCustomer = (
@@ -1057,73 +1061,152 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   ): string => {
     const companyInfo = companies?.find(c => c.id === 'goldmaq');
     return `
-      <div class="print-header">
-        <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Comprovante de Atendimento</h1>
-         <p>${formatAddressToString(companyInfo)}</p>
-        <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
-      </div>
-      <div class="section">
-        <div class="section-title">Informações do Atendimento</div>
-        <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
-        <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Data Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Dados do Cliente</div>
-        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
-         <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Dados da Máquina</div>
-         <div class="field-group"><span class="field-label">Marca/Modelo:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}</span></div>
-        <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Problema Relatado</div>
-        <p class="field-value" style="white-space: pre-wrap;">${order.description || 'N/A'}</p>
-      </div>
-      ${order.technicalConclusion ? `<div class="section">
-        <div class="section-title">Conclusão Técnica / Serviços Realizados</div>
-        <p class="field-value" style="white-space: pre-wrap;">${order.technicalConclusion}</p>
-      </div>` : ''}
-      ${order.notes ? `<div class="section">
-        <div class="section-title">Observações Adicionais</div>
-        <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
-      </div>` : ''}
-      <div class="signature-area">
-        <div class="signature-line"></div>
-        <div class="signature-label">Assinatura do Cliente / Responsável</div>
-      </div>
-      <div class="footer-notes">
-        Agradecemos a preferência! <br/>
-        Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
-      </div>
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Comprovante OS: ${order.orderNumber}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
+            .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
+            .print-header { text-align: center; margin-bottom: 20px; }
+            .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
+            .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
+            .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+            .section:last-child { border-bottom: none; }
+            .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
+            .field-group { margin-bottom: 6px; }
+            .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
+            .field-value { color: #666; }
+            .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
+            .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
+            .signature-label { text-align: center; font-size: 10px; color: #555; }
+            .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
+            @media print {
+              body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .print-header h1 { color: #F97316 !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">
+            <div class="print-header">
+              <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Comprovante de Atendimento</h1>
+               <p>${formatAddressToString(companyInfo)}</p>
+              <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
+            </div>
+            <div class="section">
+              <div class="section-title">Informações do Atendimento</div>
+              <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
+              <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">Data Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Dados do Cliente</div>
+              <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
+               <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
+              <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Dados da Máquina</div>
+               <div class="field-group"><span class="field-label">Marca/Modelo:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}</span></div>
+              <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Problema Relatado</div>
+              <p class="field-value" style="white-space: pre-wrap;">${order.description || 'N/A'}</p>
+            </div>
+            ${order.technicalConclusion ? `<div class="section">
+              <div class="section-title">Conclusão Técnica / Serviços Realizados</div>
+              <p class="field-value" style="white-space: pre-wrap;">${order.technicalConclusion}</p>
+            </div>` : ''}
+            ${order.notes ? `<div class="section">
+              <div class="section-title">Observações Adicionais</div>
+              <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
+            </div>` : ''}
+            <div class="signature-area">
+              <div class="signature-line"></div>
+              <div class="signature-label">Assinatura do Cliente / Responsável</div>
+            </div>
+            <div class="footer-notes">
+              Agradecemos a preferência! <br/>
+              Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
+            </div>
+          </div>
+        </body>
+      </html>
     `;
   };
 
   const handlePrintForTechnician = () => {
-    if (!editingOrder) return;
+    console.log("[PrintDebug] handlePrintForTechnician called");
+    if (!editingOrder) {
+      console.error("[PrintDebug] editingOrder is null in handlePrintForTechnician");
+      toast({ title: "Erro de Impressão", description: "Nenhuma OS selecionada para imprimir.", variant: "destructive" });
+      return;
+    }
     const customer = getCustomerDetails(editingOrder.customerId);
     const equipment = getEquipmentDetails(editingOrder.equipmentId);
     const technicianName = getTechnicianName(editingOrder.technicianId);
     const vehicleInfo = getVehicleDetails(editingOrder.vehicleId);
+
+    console.log("[PrintDebug] Data for technician print:", { editingOrder, customer, equipment, technicianName, vehicleInfo });
+
     const htmlContent = generatePrintHTMLForTechnician(editingOrder, customer, equipment, technicianName, vehicleInfo);
-    printHTML(htmlContent, `OS_Tecnico_${editingOrder.orderNumber}`);
+    console.log("[PrintDebug] HTML content for technician (first 100 chars):", htmlContent ? htmlContent.substring(0, 100) : "EMPTY");
+    if (htmlContent && htmlContent.trim() !== "") {
+      printHTML(htmlContent, `OS_Tecnico_${editingOrder.orderNumber}`);
+      console.log("[PrintDebug] printHTML called for technician.");
+    } else {
+      console.error("[PrintDebug] HTML content for technician is empty or invalid.");
+      toast({ title: "Erro de Impressão", description: "Não foi possível gerar o conteúdo para impressão do técnico.", variant: "destructive" });
+    }
   };
+
 
   const handlePrintForCustomer = () => {
     if (!editingOrder) return;
     const customer = getCustomerDetails(editingOrder.customerId);
     const equipment = getEquipmentDetails(editingOrder.equipmentId);
     const htmlContent = generatePrintHTMLForCustomer(editingOrder, customer, equipment);
-    printHTML(htmlContent, `Comprovante_OS_${editingOrder.orderNumber}`);
+    if (htmlContent && htmlContent.trim() !== "") {
+      printHTML(htmlContent, `Comprovante_OS_${editingOrder.orderNumber}`);
+    } else {
+       toast({ title: "Erro de Impressão", description: "Não foi possível gerar o conteúdo para impressão do cliente.", variant: "destructive" });
+    }
   };
 
 
   const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
   const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingCompanies;
+
+  const printButtons = (
+    <>
+      {editingOrder && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handlePrintForTechnician}
+          disabled={isMutating}
+        >
+          <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
+        </Button>
+      )}
+      {editingOrder && editingOrder.phase === 'Concluída' && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handlePrintForCustomer}
+          disabled={isMutating}
+        >
+          <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
+        </Button>
+      )}
+    </>
+  );
+
 
   if (isLoadingPageData && !isModalOpen) {
     return (
@@ -1458,9 +1541,10 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         onDeleteConfirm={handleModalDeleteConfirm}
         isDeleting={deleteServiceOrderMutation.isPending}
         deleteButtonLabel="Excluir OS"
-        submitButtonLabel={editingOrder ? "Salvar Alterações" : "Criar OS"}
+        submitButtonLabel={editingOrder && !isEditMode ? undefined : (editingOrder ? "Salvar Alterações" : "Criar OS")}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
+        additionalFooterActions={printButtons}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
@@ -1824,83 +1908,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                 <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Observações adicionais, peças utilizadas, etc." {...field} value={field.value ?? ""} readOnly={!isEditMode && isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada'} /></FormControl><FormMessage /></FormItem>
               )} />
             </fieldset>
-
-            <DialogFooter className="gap-2 sm:justify-between pt-4 border-t mt-4">
-                <div className="flex flex-wrap gap-2">
-                    {editingOrder && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handlePrintForTechnician}
-                            disabled={isMutating}
-                        >
-                            <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
-                        </Button>
-                    )}
-                    {editingOrder && editingOrder.phase === 'Concluída' && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handlePrintForCustomer}
-                            disabled={isMutating}
-                        >
-                            <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
-                        </Button>
-                    )}
-                </div>
-                <div className="flex-grow-0">
-                    {editingOrder && handleModalDeleteConfirm && isEditMode && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleModalDeleteConfirm}
-                            disabled={isMutating || deleteServiceOrderMutation.isPending}
-                            className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground focus:ring-destructive/50"
-                        >
-                            {deleteServiceOrderMutation.isPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Trash2 className="mr-2 h-4 w-4" />
-                            )}
-                            {deleteServiceOrderMutation.isPending ? "Excluindo..." : "Excluir OS"}
-                        </Button>
-                    )}
-                </div>
-                <div className="flex gap-2 justify-end">
-                    <Button type="button" variant="outline" onClick={closeModal} disabled={isMutating}>
-                        {isEditMode && editingOrder ? "Cancelar Edição" : "Fechar"}
-                    </Button>
-                    {!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled && (
-                        <Button
-                            type="button"
-                            onClick={() => setIsEditMode(true)}
-                            disabled={isMutating}
-                            className="bg-accent hover:bg-accent/90 text-accent-foreground"
-                        >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Editar
-                        </Button>
-                    )}
-                    {isEditMode && (
-                        <Button
-                            type="submit"
-                            form="service-order-form"
-                            disabled={isMutating || isUploadingFile || ((formMediaUrls?.length || 0) + mediaFiles.length) > MAX_FILES_ALLOWED}
-                            className="bg-primary hover:bg-primary/90"
-                        >
-                            {isMutating ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Save className="mr-2 h-4 w-4" />
-                            )}
-                            {isMutating ? "Salvando..." : (editingOrder ? "Salvar Alterações" : "Criar OS")}
-                        </Button>
-                    )}
-                </div>
-            </DialogFooter>
+            {/* The DialogFooter is now managed by FormModal, which includes additionalFooterActions */}
           </form>
         </Form>
       </FormModal>
