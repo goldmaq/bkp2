@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon } from "lucide-react";
+import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image"; // Import next/image
 
@@ -26,11 +26,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PartsRequisition, PartsRequisitionItem, ServiceOrder, Technician, Customer } from "@/types";
 import { PartsRequisitionSchema } from "@/types";
 import { cn, formatDateForDisplay, getFileNameFromUrl } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
-const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes"; // Added for displaying customer name
+const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes"; 
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_OS_SELECTED_";
 const NO_TECHNICIAN_SELECTED = "_NO_TECHNICIAN_SELECTED_";
@@ -66,7 +68,7 @@ async function fetchTechnicians(): Promise<Technician[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Technician));
 }
 
-async function fetchCustomers(): Promise<Customer[]> { // Function to fetch customers
+async function fetchCustomers(): Promise<Customer[]> { 
     if (!db) {
       console.error("fetchCustomers: Firebase DB is not available.");
       throw new Error("Firebase DB is not available");
@@ -158,7 +160,7 @@ export function PartsRequisitionClientPage() {
     queryFn: fetchTechnicians,
   });
 
-  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({ // Fetch customers
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({ 
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
   });
@@ -422,7 +424,7 @@ export function PartsRequisitionClientPage() {
   }
 
   return (
-    <>
+    <TooltipProvider>
       <PageHeader
         title="Minhas Requisições de Peças"
         actions={
@@ -445,21 +447,33 @@ export function PartsRequisitionClientPage() {
           {requisitions.map((req) => {
             const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
             const technician = technicians?.find(t => t.id === req.technicianId);
-            const customer = customers?.find(c => c.id === serviceOrder?.customerId); // Find customer
+            const customer = customers?.find(c => c.id === serviceOrder?.customerId); 
             return (
               <Card key={req.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer" onClick={() => openModal(req)}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
                     <CardTitle className="font-headline text-xl text-primary">Requisição: {req.requisitionNumber}</CardTitle>
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
-                      "bg-yellow-100 text-yellow-700": req.status === "Pendente",
-                      "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
-                      "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
-                      "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
-                      "bg-red-100 text-red-700": req.status === "Cancelada",
-                    })}>
-                      {req.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                        {req.status === "Atendida Parcialmente" && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <MessageSquare className="h-5 w-5 text-orange-500" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Atendimento parcial pelo almoxarifado.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
+                        "bg-yellow-100 text-yellow-700": req.status === "Pendente",
+                        "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
+                        "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
+                        "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
+                        "bg-red-100 text-red-700": req.status === "Cancelada",
+                        })}>
+                        {req.status}
+                        </span>
+                    </div>
                   </div>
                   <CardDescription>
                     OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || 'N/A'}
@@ -533,7 +547,7 @@ export function PartsRequisitionClientPage() {
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="parts-requisition-form" className="space-y-6">
-            <fieldset disabled={!!editingRequisition && !isEditMode} className="space-y-4">
+            <fieldset disabled={!!editingRequisition && !isEditMode && editingRequisition?.status !== 'Pendente'} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="requisitionNumber" render={({ field }) => (
                   <FormItem>
@@ -613,7 +627,7 @@ export function PartsRequisitionClientPage() {
                             accept="image/*"
                             onChange={(e) => handleItemImageChange(item.id!, e.target.files ? e.target.files[0] : null)}
                             className="text-xs"
-                            disabled={!!editingRequisition && !isEditMode && !!item.imageUrl}
+                            disabled={!!editingRequisition && !isEditMode && !!item.imageUrl && editingRequisition?.status !== 'Pendente'}
                         />
                         {item.id && imagePreviews[item.id] && (
                             <div className="relative group">
@@ -624,6 +638,7 @@ export function PartsRequisitionClientPage() {
                                     size="icon"
                                     className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={() => handleRemoveItemImage(item.id!, index)}
+                                    disabled={!!editingRequisition && !isEditMode && editingRequisition?.status !== 'Pendente'}
                                 >
                                     <XCircle className="h-3.5 w-3.5" />
                                 </Button>
@@ -636,7 +651,7 @@ export function PartsRequisitionClientPage() {
                     </div>
                     <div className="col-span-2 sm:col-span-3 md:col-span-2 flex justify-end items-end h-full">
                       {fields.length > 1 && (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index, item.id!)} className="text-destructive hover:text-destructive self-center sm:self-end">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index, item.id!)} className="text-destructive hover:text-destructive self-center sm:self-end" disabled={!!editingRequisition && !isEditMode && editingRequisition?.status !== 'Pendente'}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
@@ -658,7 +673,7 @@ export function PartsRequisitionClientPage() {
                     />
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={addItem} className="mt-3">
+                <Button type="button" variant="outline" size="sm" onClick={addItem} className="mt-3" disabled={!!editingRequisition && !isEditMode && editingRequisition?.status !== 'Pendente'}>
                   <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Peça
                 </Button>
               </div>
@@ -666,9 +681,6 @@ export function PartsRequisitionClientPage() {
           </form>
         </Form>
       </FormModal>
-    </>
+    </TooltipProvider>
   );
 }
-
-
-    

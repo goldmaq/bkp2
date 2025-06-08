@@ -32,6 +32,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -115,7 +117,7 @@ export function PartsTriageClientPage() {
 
   const requisitionsForTriage = useMemo(() => {
     return requisitions.filter(req =>
-      req.status !== "Cancelada" && req.status !== "Atendida Totalmente" &&
+      req.status === "Pendente" && // Only show "Pendente" requisitions for triage
       req.items.some(item => item.status === "Pendente Aprovação")
     );
   }, [requisitions]);
@@ -149,37 +151,16 @@ export function PartsTriageClientPage() {
           status: data.newStatus,
           triageNotes: data.notes || updatedItems[itemIndex].triageNotes || null,
         };
-
-        // Determine overall requisition status
-        let allApproved = true;
-        let someApproved = false;
-        let allTriaged = true;
-
-        updatedItems.forEach(item => {
-          if (item.status === "Pendente Aprovação") {
-            allTriaged = false;
-            allApproved = false;
-          } else if (item.status === "Aprovado" || item.status === "Aguardando Compra" || item.status === "Separado" || item.status === "Entregue") {
-            someApproved = true;
-          } else if (item.status === "Recusado") {
-            allApproved = false;
-          }
-        });
         
         let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
-        if (allTriaged) {
-            if (allApproved && someApproved) { // All items triaged and all of them are approved (or further)
-                newRequisitionStatus = "Triagem Realizada"; // Could also be more specific like "Totalmente Aprovada"
-            } else if (someApproved) { // All items triaged, some approved, some might be refused
-                newRequisitionStatus = "Triagem Realizada"; // Or "Parcialmente Aprovada"
-            } else { // All items triaged, but none approved (all refused)
-                newRequisitionStatus = "Triagem Realizada"; // Or "Totalmente Recusada"
-            }
+        const allItemsTriaged = updatedItems.every(item => item.status !== "Pendente Aprovação");
+
+        if (allItemsTriaged) {
+          newRequisitionStatus = "Triagem Realizada";
         } else {
-            newRequisitionStatus = "Pendente"; // Still items pending triage
+          newRequisitionStatus = "Pendente";
         }
-
-
+        
         transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
       });
     },
@@ -249,7 +230,7 @@ export function PartsTriageClientPage() {
   }
 
   return (
-    <>
+    <TooltipProvider>
       <PageHeader title="Triagem de Requisições de Peças" />
 
       {requisitionsForTriage.length === 0 && !isLoadingRequisitions ? (
@@ -269,15 +250,29 @@ export function PartsTriageClientPage() {
                 <CardHeader>
                   <div className="flex justify-between items-start">
                     <CardTitle className="font-headline text-xl text-primary">Requisição: {req.requisitionNumber}</CardTitle>
-                     <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
-                      "bg-yellow-100 text-yellow-700": req.status === "Pendente",
-                      "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
-                      "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
-                      "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
-                      "bg-red-100 text-red-700": req.status === "Cancelada",
-                    })}>
-                      {req.status}
-                    </span>
+                     <div className="flex items-center gap-2">
+                        {req.status === "Atendida Parcialmente" && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button type="button" className="p-0 border-0 bg-transparent cursor-help">
+                                     <MessageSquare className="h-5 w-5 text-orange-500" />
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Atendimento parcial pelo almoxarifado.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
+                        "bg-yellow-100 text-yellow-700": req.status === "Pendente",
+                        "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
+                        "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
+                        "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
+                        "bg-red-100 text-red-700": req.status === "Cancelada",
+                        })}>
+                        {req.status}
+                        </span>
+                    </div>
                   </div>
                   <CardDescription>
                     OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || 'N/A'}
@@ -397,8 +392,7 @@ export function PartsTriageClientPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </TooltipProvider>
   );
 }
 
-    

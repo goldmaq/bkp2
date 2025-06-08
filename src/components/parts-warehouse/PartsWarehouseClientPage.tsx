@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { Archive, Loader2, User, ClipboardList, Wrench, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, MessageSquare } from "lucide-react";
+import { Archive, Loader2, User, ClipboardList, Wrench, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,29 +192,45 @@ export function PartsWarehouseClientPage() {
                 warehouseNotes: data.warehouseNotes === undefined ? updatedItems[itemIndex].warehouseNotes : data.warehouseNotes,
                 estimatedCost: data.estimatedCost === undefined ? updatedItems[itemIndex].estimatedCost : data.estimatedCost,
             };
-
+            
             let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
-            const allItemsProcessedByWarehouseOrRefused = updatedItems.every(
-                item => item.status === "Separado" || item.status === "Entregue" || item.status === "Recusado"
-            );
-            const someItemsProcessedByWarehouse = updatedItems.some(
-                item => item.status === "Separado" || item.status === "Entregue"
-            );
 
-            if (allItemsProcessedByWarehouseOrRefused) {
-                newRequisitionStatus = "Atendida Totalmente";
-            } else if (someItemsProcessedByWarehouse) {
-                newRequisitionStatus = "Atendida Parcialmente";
-            } else if (updatedItems.every(item => item.status === "Recusado" || item.status === "Pendente Aprovação")) {
-                // If all non-refused items are still pending approval, or all are refused, it's still "Pendente" or "Triagem Realizada" based on triage actions
-                // This might need more nuanced logic if we want to distinguish "all items refused by triage" vs "all items refused by warehouse"
-                 newRequisitionStatus = currentRequisition.items.some(i => i.status === "Pendente Aprovação") ? "Pendente" : "Triagem Realizada";
-            } else {
-                // If some items are approved/awaiting_purchase, and some are separated
-                newRequisitionStatus = "Triagem Realizada"; // Or keep "Atendida Parcialmente" if appropriate
+            if (currentRequisition.status !== "Cancelada") {
+                const anyItemPendingApproval = updatedItems.some(i => i.status === "Pendente Aprovação");
+                if (anyItemPendingApproval) {
+                    newRequisitionStatus = "Pendente";
+                } else {
+                    const actionableItems = updatedItems.filter(i => i.status !== "Recusado");
+                    if (actionableItems.length === 0) { // All items were recused by triage
+                        newRequisitionStatus = "Triagem Realizada";
+                    } else {
+                        const allActionableItemsProcessedByWarehouse = actionableItems.every(
+                            item => item.status === "Separado" || item.status === "Entregue"
+                        );
+                        const anyActionableItemProcessedByWarehouse = actionableItems.some(
+                            item => item.status === "Separado" || item.status === "Entregue"
+                        );
+                        const anyActionableItemStillPendingForWarehouse = actionableItems.some(
+                            item => item.status === "Aprovado" || item.status === "Aguardando Compra"
+                        );
+
+                        if (allActionableItemsProcessedByWarehouse) {
+                            newRequisitionStatus = "Atendida Totalmente";
+                        } else if (anyActionableItemProcessedByWarehouse && anyActionableItemStillPendingForWarehouse) {
+                            newRequisitionStatus = "Atendida Parcialmente";
+                        } else if (anyActionableItemProcessedByWarehouse && !anyActionableItemStillPendingForWarehouse) {
+                            //This implies items were processed and the rest were recused earlier
+                            newRequisitionStatus = "Atendida Totalmente";
+                        }
+                         else if (!anyActionableItemProcessedByWarehouse && anyActionableItemStillPendingForWarehouse) {
+                            newRequisitionStatus = "Triagem Realizada"; // Waiting for warehouse to act on approved/to-buy items
+                        } else if (!anyActionableItemProcessedByWarehouse && !anyActionableItemStillPendingForWarehouse) {
+                             // All actionable items were recused (or none existed that were not recused)
+                             newRequisitionStatus = "Triagem Realizada";
+                        }
+                    }
+                }
             }
-
-
             transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
         });
     },
@@ -399,11 +415,7 @@ export function PartsWarehouseClientPage() {
                             <CheckCircle className="mr-1.5 h-4 w-4"/> Peça Chegou (Separar)
                         </Button>
                     )}
-                    {item.status === "Separado" && (
-                        <Button size="sm" variant="outline" className="flex-1 border-blue-500 text-blue-600 hover:bg-blue-50 hover:text-blue-700" onClick={() => console.log("Implementar: Entregar ao técnico", item.id)} disabled={isMutating}>
-                            <User className="mr-1.5 h-4 w-4"/> Entregar ao Técnico
-                        </Button>
-                    )}
+                    {/* O botão "Entregar ao Técnico" foi removido conforme solicitado */}
                  </div>
               </CardFooter>
             </Card>
@@ -474,3 +486,4 @@ export function PartsWarehouseClientPage() {
     </>
   );
 }
+
