@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search } from "lucide-react"; // Added Search
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send } from "lucide-react"; // Added Search, Send
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -21,9 +21,8 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore"; // Added getDoc
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, parseISO, isValid as isValidDate } from 'date-fns';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
+import { format, parseISO, isValid as isValidDateFn, addDays } from 'date-fns'; // Added addDays
 import { ptBR } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import {
@@ -35,9 +34,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger for direct use if needed
 } from "@/components/ui/alert-dialog";
-import { Label } from "@/components/ui/label"; // Added Label
-import { toTitleCase, formatDateForDisplay, getWhatsAppNumber } from "@/lib/utils"; // Import centralized utils
+import { Label } from "@/components/ui/label";
+import { toTitleCase, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils";
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -103,6 +103,49 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   return `ORC-${(maxNum + 1).toString().padStart(4, '0')}`;
 };
 
+const generateDetailedWhatsAppMessage = (
+  budget: Budget,
+  customer?: Customer,
+  equipment?: Maquina,
+  serviceOrder?: ServiceOrder
+): string => {
+  let message = "Olá!\n\n";
+  message += `Segue o Orçamento Nº *${budget.budgetNumber}* da Gold Maq Empilhadeiras:\n\n`;
+
+  if (serviceOrder) {
+    message += `Referente à OS: *${serviceOrder.orderNumber}*\n`;
+  }
+  message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\n`;
+  if (equipment) {
+    message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\n`;
+  }
+  message += `Valor Total: *${formatCurrency(budget.totalAmount)}*\n`;
+  message += `Data de Criação: *${formatDateForDisplay(budget.createdDate)}*\n`;
+
+  let validityDisplay = "7 dias";
+  if (budget.validUntilDate && isValidDateFn(parseISO(budget.validUntilDate))) {
+    validityDisplay = formatDateForDisplay(budget.validUntilDate);
+  } else if (budget.createdDate && isValidDateFn(parseISO(budget.createdDate))) {
+     const creationDate = parseISO(budget.createdDate);
+     const validityEndDate = addDays(creationDate, 7);
+     validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias)`;
+  }
+
+  message += `Validade da Proposta: *${validityDisplay}*\n\n`;
+
+  message += "Itens/Serviços:\n";
+  if (serviceOrder) {
+    message += `Baseado na OS ${serviceOrder.orderNumber}:\n`;
+  }
+  budget.items.forEach(item => {
+    message += `- ${item.description}: ${formatCurrency(item.quantity * item.unitPrice)}\n`;
+  });
+
+  message += "\nAgradecemos a preferência!";
+  return message;
+};
+
+
 export function BudgetClientPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -114,6 +157,10 @@ export function BudgetClientPage() {
   const [statusChangeInfo, setStatusChangeInfo] = useState<{ budgetId: string; budgetNumber: string, newStatus: BudgetStatusType } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<BudgetStatusType | typeof ALL_STATUSES_FILTER_VALUE>(ALL_STATUSES_FILTER_VALUE);
+
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [selectedBudgetForWhatsApp, setSelectedBudgetForWhatsApp] = useState<Budget | null>(null);
+  const [whatsAppRecipientNumber, setWhatsAppRecipientNumber] = useState("");
 
 
   const form = useForm<z.infer<typeof BudgetSchema>>({
@@ -134,7 +181,7 @@ export function BudgetClientPage() {
     },
   });
 
-  const { fields, append, remove, update } = useFieldArray({
+  const { fields, append, remove } = useFieldArray({ // Removed `update` as it's no longer needed with direct field binding
     control: form.control,
     name: "items",
   });
@@ -145,10 +192,10 @@ export function BudgetClientPage() {
   useEffect(() => {
     let subtotal = 0;
     itemsWatch?.forEach(item => {
-      subtotal += (item.quantity || 0) * (item.unitPrice || 0);
+      subtotal += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
     });
     form.setValue("subtotal", subtotal);
-    form.setValue("totalAmount", subtotal + (shippingCostWatch || 0));
+    form.setValue("totalAmount", subtotal + (Number(shippingCostWatch) || 0));
   }, [itemsWatch, shippingCostWatch, form]);
 
 
@@ -185,7 +232,7 @@ export function BudgetClientPage() {
         form.setValue('customerId', selectedOS.customerId, { shouldValidate: true });
         form.setValue('equipmentId', selectedOS.equipmentId, { shouldValidate: true });
       }
-    } else if (!editingBudget) { 
+    } else if (!editingBudget) {
       form.setValue('customerId', "", { shouldValidate: true });
       form.setValue('equipmentId', "", { shouldValidate: true });
     }
@@ -199,9 +246,9 @@ export function BudgetClientPage() {
         ...newBudgetData,
         createdDate: Timestamp.fromDate(new Date()),
         validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(parseISO(newBudgetData.validUntilDate)) : null,
-        items: newBudgetData.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
-        subtotal: newBudgetData.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
-        totalAmount: newBudgetData.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (newBudgetData.shippingCost || 0),
+        items: newBudgetData.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
+        subtotal: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
+        totalAmount: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(newBudgetData.shippingCost) || 0),
       };
       return addDoc(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), dataToSave);
     },
@@ -221,17 +268,17 @@ export function BudgetClientPage() {
       const { id, ...dataToUpdate } = budgetData;
       if (!id) throw new Error("ID do orçamento é necessário.");
       const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, id);
-      
+
       const originalBudgetDoc = await getDoc(budgetRef);
       const originalCreatedDate = originalBudgetDoc.exists() ? originalBudgetDoc.data().createdDate : Timestamp.fromDate(parseISO(dataToUpdate.createdDate));
 
       const dataToSave = {
         ...dataToUpdate,
-        createdDate: originalCreatedDate, 
+        createdDate: originalCreatedDate,
         validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(parseISO(dataToUpdate.validUntilDate)) : null,
-        items: dataToUpdate.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
-        subtotal: dataToUpdate.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
-        totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (dataToUpdate.shippingCost || 0),
+        items: dataToUpdate.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
+        subtotal: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
+        totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
       };
       return updateDoc(budgetRef, dataToSave);
     },
@@ -288,7 +335,8 @@ export function BudgetClientPage() {
         ...budget,
         createdDate: budget.createdDate ? format(parseISO(budget.createdDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0],
         validUntilDate: budget.validUntilDate ? format(parseISO(budget.validUntilDate), 'yyyy-MM-dd') : null,
-        items: budget.items.map(item => ({...item, id: item.id || crypto.randomUUID()})),
+        items: budget.items.map(item => ({...item, id: item.id || crypto.randomUUID(), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice)})),
+        shippingCost: Number(budget.shippingCost) || 0,
         serviceOrderId: budget.serviceOrderId || NO_SERVICE_ORDER_SELECTED,
       });
     } else {
@@ -304,7 +352,7 @@ export function BudgetClientPage() {
         shippingCost: 0,
         subtotal: 0,
         totalAmount: 0,
-        createdDate: new Date().toISOString().split('T')[0], 
+        createdDate: new Date().toISOString().split('T')[0],
         validUntilDate: null,
         notes: "",
       });
@@ -322,9 +370,9 @@ export function BudgetClientPage() {
   const onSubmit = (values: z.infer<typeof BudgetSchema>) => {
     const budgetData = {
       ...values,
-      items: values.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
-      subtotal: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
-      totalAmount: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (values.shippingCost || 0),
+      items: values.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
+      subtotal: values.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
+      totalAmount: values.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(values.shippingCost) || 0),
     };
 
     if (editingBudget && editingBudget.id) {
@@ -344,21 +392,6 @@ export function BudgetClientPage() {
 
   const handleAddItem = () => {
     append({ id: crypto.randomUUID(), description: "", quantity: 1, unitPrice: 0, totalPrice: 0 });
-  };
-
-  const handleItemChange = (index: number, field: keyof BudgetItem, value: string | number) => {
-    const currentItem = itemsWatch[index];
-    const newQuantity = field === 'quantity' ? Number(value) : currentItem.quantity;
-    const newUnitPrice = field === 'unitPrice' ? Number(value) : currentItem.unitPrice;
-    const newDescription = field === 'description' ? String(value) : currentItem.description;
-
-    update(index, {
-        ...currentItem,
-        description: newDescription,
-        quantity: newQuantity,
-        unitPrice: newUnitPrice,
-        totalPrice: newQuantity * newUnitPrice,
-    });
   };
 
   const handleChangeStatus = (budgetId: string, budgetNumber: string, newStatus: BudgetStatusType) => {
@@ -402,6 +435,37 @@ export function BudgetClientPage() {
     }
     return tempBudgets;
   }, [budgets, statusFilter, searchTerm, getCustomerInfo, getEquipmentInfo, getServiceOrderInfo]);
+
+
+  const handleOpenWhatsAppModal = (budget: Budget) => {
+    setSelectedBudgetForWhatsApp(budget);
+    const customer = getCustomerInfo(budget.customerId);
+    setWhatsAppRecipientNumber(customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : "");
+    setIsWhatsAppModalOpen(true);
+  };
+
+  const handleSendWhatsAppMessage = () => {
+    if (!selectedBudgetForWhatsApp || !whatsAppRecipientNumber) {
+      toast({ title: "Erro", description: "Orçamento ou número do destinatário inválido.", variant: "destructive"});
+      return;
+    }
+    const cleanedPhoneNumber = getWhatsAppNumber(whatsAppRecipientNumber);
+    if (!cleanedPhoneNumber) {
+      toast({ title: "Número Inválido", description: "Por favor, insira um número de WhatsApp válido.", variant: "destructive"});
+      return;
+    }
+
+    const customer = getCustomerInfo(selectedBudgetForWhatsApp.customerId);
+    const equipment = getEquipmentInfo(selectedBudgetForWhatsApp.equipmentId);
+    const serviceOrder = getServiceOrderInfo(selectedBudgetForWhatsApp.serviceOrderId);
+
+    const message = generateDetailedWhatsAppMessage(selectedBudgetForWhatsApp, customer, equipment, serviceOrder);
+    const whatsappUrl = `https://wa.me/${cleanedPhoneNumber}?text=${encodeURIComponent(message)}`;
+
+    window.open(whatsappUrl, '_blank');
+    setIsWhatsAppModalOpen(false);
+    setSelectedBudgetForWhatsApp(null);
+  };
 
 
   const isLoadingPageData = isLoadingBudgets || isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment;
@@ -480,21 +544,15 @@ export function BudgetClientPage() {
             const customer = getCustomerInfo(budget.customerId);
             const equipment = getEquipmentInfo(budget.equipmentId);
             const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
-            const whatsappNumber = customer?.phone ? getWhatsAppNumber(customer.phone) : null;
 
             const mailtoHref = customer?.email
               ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento Gold Maq: ${budget.budgetNumber}`)}&body=${encodeURIComponent(`Prezado(a) ${toTitleCase(customer.name)},\n\nSegue o orçamento ${budget.budgetNumber} referente à Ordem de Serviço ${serviceOrder?.orderNumber || 'N/A'}.\n\nValor Total: ${formatCurrency(budget.totalAmount)}\n\nAtenciosamente,\nEquipe Gold Maq`)}`
               : "#";
 
-            const whatsappHref = whatsappNumber
-              ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá ${toTitleCase(customer?.name)}, segue o orçamento ${budget.budgetNumber} (OS: ${serviceOrder?.orderNumber || 'N/A'}) com valor total de ${formatCurrency(budget.totalAmount)}. Atenciosamente, Equipe Gold Maq.`)}`
-              : "#";
-
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
             const canDeny = budget.status === "Pendente" || budget.status === "Enviado" || budget.status === "Aprovado";
-            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; 
+            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado";
             const canReopen = budget.status === "Aprovado" || budget.status === "Recusado" || budget.status === "Cancelado";
-
 
             return (
               <Card key={budget.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -580,13 +638,10 @@ export function BudgetClientPage() {
                       <Button
                           variant="outline"
                           size="sm"
-                          asChild
-                          disabled={!whatsappNumber}
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); handleOpenWhatsAppModal(budget); }}
+                          disabled={isMutating}
                       >
-                          <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="flex items-center">
                           <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
-                          </a>
                       </Button>
                   </div>
                 </CardFooter>
@@ -668,36 +723,36 @@ export function BudgetClientPage() {
                 <h3 className="text-md font-semibold mb-2 mt-4 border-b pb-1 font-headline">Itens do Orçamento</h3>
                 {fields.map((item, index) => (
                   <div key={item.id} className="grid grid-cols-12 gap-2 items-end border-b py-3">
-                    <FormField name={`items.${index}.description`} render={() => (
+                    <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
                       <FormItem className="col-span-12 sm:col-span-5">
                         {index === 0 && <FormLabel>Descrição</FormLabel>}
                         <FormControl>
-                          <Input placeholder="Peça ou Serviço" value={itemsWatch[index]?.description || ""} onChange={e => handleItemChange(index, 'description', e.target.value)} />
+                          <Input placeholder="Peça ou Serviço" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField name={`items.${index}.quantity`} render={() => (
+                    <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
                       <FormItem className="col-span-4 sm:col-span-2">
                          {index === 0 && <FormLabel>Qtd.</FormLabel>}
                         <FormControl>
-                           <Input type="number" placeholder="1" value={itemsWatch[index]?.quantity || ""} onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value))} />
+                           <Input type="number" placeholder="1" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                     <FormField name={`items.${index}.unitPrice`} render={() => (
+                     <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
                       <FormItem className="col-span-4 sm:col-span-2">
                         {index === 0 && <FormLabel>Preço Un.</FormLabel>}
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="0.00" value={itemsWatch[index]?.unitPrice || ""} onChange={e => handleItemChange(index, 'unitPrice', parseFloat(e.target.value))} />
+                          <Input type="number" step="0.01" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <div className="col-span-4 sm:col-span-2 flex items-center">
                         {index === 0 && <FormLabel className="invisible sm:visible">Total</FormLabel>}
-                        <p className="text-sm pt-1 sm:pt-0 w-full text-right sm:text-left font-medium">{formatCurrency((itemsWatch[index]?.quantity || 0) * (itemsWatch[index]?.unitPrice || 0))}</p>
+                        <p className="text-sm pt-1 sm:pt-0 w-full text-right sm:text-left font-medium">{formatCurrency((Number(itemsWatch[index]?.quantity) || 0) * (Number(itemsWatch[index]?.unitPrice) || 0))}</p>
                     </div>
                     <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-center">
                       {fields.length > 1 && (
@@ -717,7 +772,7 @@ export function BudgetClientPage() {
                 <FormField control={form.control} name="shippingCost" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Custo de Frete (Opcional)</FormLabel>
-                    <FormControl><Input type="number" step="0.01" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value ?? ""} /></FormControl>
+                    <FormControl><Input type="number" step="0.01" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value ?? 0} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -763,11 +818,39 @@ export function BudgetClientPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={isWhatsAppModalOpen} onOpenChange={setIsWhatsAppModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Enviar Orçamento por WhatsApp</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirme ou edite o número do destinatário para enviar o orçamento {selectedBudgetForWhatsApp?.budgetNumber}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="whatsapp-recipient-number" className="text-sm font-medium">
+              Número do WhatsApp (com código do país, ex: 55119...):
+            </Label>
+            <Input
+              id="whatsapp-recipient-number"
+              value={whatsAppRecipientNumber}
+              onChange={(e) => setWhatsAppRecipientNumber(formatPhoneNumberForInputDisplay(e.target.value))}
+              placeholder="Ex: (11) 99999-9999"
+              className="mt-1"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsWhatsAppModalOpen(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSendWhatsAppMessage} disabled={!whatsAppRecipientNumber.trim()}>
+              <Send className="mr-2 h-4 w-4"/> Enviar WhatsApp
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </>
   );
 }
-
-      
-
+    
 
     
