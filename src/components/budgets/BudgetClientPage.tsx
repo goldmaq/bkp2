@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil } from "lucide-react";
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search } from "lucide-react"; // Added Search
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore"; // Added getDoc
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, isValid as isValidDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -35,8 +35,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label"; // Added Label
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -44,6 +44,7 @@ const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_SERVICE_ORDER_SELECTED_";
+const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_BUDGET_";
 
 const toTitleCase = (str: string | undefined | null): string => {
   if (!str) return "";
@@ -139,6 +140,8 @@ export function BudgetClientPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isStatusConfirmModalOpen, setIsStatusConfirmModalOpen] = useState(false);
   const [statusChangeInfo, setStatusChangeInfo] = useState<{ budgetId: string; budgetNumber: string, newStatus: BudgetStatusType } | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<BudgetStatusType | typeof ALL_STATUSES_FILTER_VALUE>(ALL_STATUSES_FILTER_VALUE);
 
 
   const form = useForm<z.infer<typeof BudgetSchema>>({
@@ -210,7 +213,7 @@ export function BudgetClientPage() {
         form.setValue('customerId', selectedOS.customerId, { shouldValidate: true });
         form.setValue('equipmentId', selectedOS.equipmentId, { shouldValidate: true });
       }
-    } else if (!editingBudget) { // Only clear if not editing (to preserve data when opening existing budget without OS)
+    } else if (!editingBudget) { 
       form.setValue('customerId', "", { shouldValidate: true });
       form.setValue('equipmentId', "", { shouldValidate: true });
     }
@@ -222,7 +225,7 @@ export function BudgetClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const dataToSave = {
         ...newBudgetData,
-        createdDate: Timestamp.fromDate(new Date()), // Always set to current date on creation
+        createdDate: Timestamp.fromDate(new Date()),
         validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(parseISO(newBudgetData.validUntilDate)) : null,
         items: newBudgetData.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
@@ -247,13 +250,12 @@ export function BudgetClientPage() {
       if (!id) throw new Error("ID do orçamento é necessário.");
       const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, id);
       
-      // Fetch original createdDate to preserve it
       const originalBudgetDoc = await getDoc(budgetRef);
       const originalCreatedDate = originalBudgetDoc.exists() ? originalBudgetDoc.data().createdDate : Timestamp.fromDate(parseISO(dataToUpdate.createdDate));
 
       const dataToSave = {
         ...dataToUpdate,
-        createdDate: originalCreatedDate, // Preserve original creation date
+        createdDate: originalCreatedDate, 
         validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(parseISO(dataToUpdate.validUntilDate)) : null,
         items: dataToUpdate.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
@@ -330,7 +332,7 @@ export function BudgetClientPage() {
         shippingCost: 0,
         subtotal: 0,
         totalAmount: 0,
-        createdDate: new Date().toISOString().split('T')[0], // Set to today, will be read-only
+        createdDate: new Date().toISOString().split('T')[0], 
         validUntilDate: null,
         notes: "",
       });
@@ -348,7 +350,6 @@ export function BudgetClientPage() {
   const onSubmit = (values: z.infer<typeof BudgetSchema>) => {
     const budgetData = {
       ...values,
-      // createdDate is handled by mutations
       items: values.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
       subtotal: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
       totalAmount: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (values.shippingCost || 0),
@@ -357,7 +358,6 @@ export function BudgetClientPage() {
     if (editingBudget && editingBudget.id) {
       updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate } as Budget);
     } else {
-      // For new budgets, createdDate from form (today) is passed, addBudgetMutation will use Timestamp.now()
       addBudgetMutation.mutate(budgetData);
     }
   };
@@ -400,6 +400,38 @@ export function BudgetClientPage() {
     }
   };
 
+  const getCustomerInfo = useCallback((customerId: string) => customers.find(c => c.id === customerId), [customers]);
+  const getEquipmentInfo = useCallback((equipmentId: string) => equipmentList.find(e => e.id === equipmentId), [equipmentList]);
+  const getServiceOrderInfo = useCallback((serviceOrderId: string) => serviceOrders.find(os => os.id === serviceOrderId), [serviceOrders]);
+
+  const filteredBudgets = useMemo(() => {
+    let tempBudgets = budgets;
+
+    if (statusFilter !== ALL_STATUSES_FILTER_VALUE) {
+      tempBudgets = tempBudgets.filter(budget => budget.status === statusFilter);
+    }
+
+    if (searchTerm.trim()) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      tempBudgets = tempBudgets.filter(budget => {
+        const customer = getCustomerInfo(budget.customerId);
+        const equipment = getEquipmentInfo(budget.equipmentId);
+        const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
+
+        return (
+          budget.budgetNumber.toLowerCase().includes(lowerSearchTerm) ||
+          (customer?.name.toLowerCase().includes(lowerSearchTerm)) ||
+          (serviceOrder?.orderNumber.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.brand.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.model.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.chassisNumber.toLowerCase().includes(lowerSearchTerm))
+        );
+      });
+    }
+    return tempBudgets;
+  }, [budgets, statusFilter, searchTerm, getCustomerInfo, getEquipmentInfo, getServiceOrderInfo]);
+
+
   const isLoadingPageData = isLoadingBudgets || isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment;
   const isMutating = addBudgetMutation.isPending || updateBudgetMutation.isPending || deleteBudgetMutation.isPending || updateBudgetStatusMutation.isPending;
 
@@ -413,10 +445,6 @@ export function BudgetClientPage() {
     return <div className="text-red-500 p-4">Erro ao carregar orçamentos: {errorBudgets?.message}</div>;
   }
 
-  const getCustomerInfo = (customerId: string) => customers.find(c => c.id === customerId);
-  const getEquipmentInfo = (equipmentId: string) => equipmentList.find(e => e.id === equipmentId);
-  const getServiceOrderInfo = (serviceOrderId: string) => serviceOrders.find(os => os.id === serviceOrderId);
-
   return (
     <>
       <PageHeader
@@ -428,7 +456,37 @@ export function BudgetClientPage() {
         }
       />
 
-      {budgets.length === 0 && !isLoadingBudgets ? (
+      <div className="mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-grow">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Buscar por nº orçamento, cliente, OS, equipamento..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10"
+          />
+        </div>
+        <div className="relative md:w-auto">
+           <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as BudgetStatusType | typeof ALL_STATUSES_FILTER_VALUE)}
+          >
+            <SelectTrigger className="w-full md:w-[200px]">
+              <SelectValue placeholder="Filtrar por status..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_STATUSES_FILTER_VALUE}>Todos os Status</SelectItem>
+              {budgetStatusOptions.map(status => (
+                <SelectItem key={status} value={status}>{status}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+
+      {budgets.length === 0 && !isLoadingBudgets && !searchTerm.trim() && statusFilter === ALL_STATUSES_FILTER_VALUE ? (
         <DataTablePlaceholder
           icon={FileText}
           title="Nenhum Orçamento Criado"
@@ -436,9 +494,17 @@ export function BudgetClientPage() {
           buttonLabel="Criar Orçamento"
           onButtonClick={() => openModal()}
         />
+      ) : filteredBudgets.length === 0 ? (
+        <div className="text-center py-10">
+          <Search className="mx-auto h-12 w-12 text-muted-foreground" />
+          <h3 className="mt-2 text-lg font-semibold">Nenhum Orçamento Encontrado</h3>
+          <p className="text-sm text-muted-foreground">
+            Sua busca ou filtro não retornou resultados. Tente um termo diferente ou ajuste os filtros.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {budgets.map((budget) => {
+          {filteredBudgets.map((budget) => {
             const customer = getCustomerInfo(budget.customerId);
             const equipment = getEquipmentInfo(budget.equipmentId);
             const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
@@ -454,7 +520,7 @@ export function BudgetClientPage() {
 
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
             const canDeny = budget.status === "Pendente" || budget.status === "Enviado" || budget.status === "Aprovado";
-            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; // Example: can cancel if not already cancelled/denied
+            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; 
             const canReopen = budget.status === "Aprovado" || budget.status === "Recusado" || budget.status === "Cancelado";
 
 
@@ -717,8 +783,7 @@ export function BudgetClientPage() {
             <AlertDialogCancel onClick={() => { setIsStatusConfirmModalOpen(false); setStatusChangeInfo(null);}} disabled={isMutating}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmChangeStatus} disabled={isMutating} className={cn(
                 statusChangeInfo?.newStatus === "Aprovado" && buttonVariants({className: "bg-green-600 hover:bg-green-700"}),
-                statusChangeInfo?.newStatus === "Recusado" && buttonVariants({variant: "destructive"}),
-                statusChangeInfo?.newStatus === "Cancelado" && buttonVariants({variant: "destructive"}),
+                (statusChangeInfo?.newStatus === "Recusado" || statusChangeInfo?.newStatus === "Cancelado") && buttonVariants({variant: "destructive"}),
             )}>
               {isMutating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
               Confirmar
@@ -729,3 +794,5 @@ export function BudgetClientPage() {
     </>
   );
 }
+
+      
