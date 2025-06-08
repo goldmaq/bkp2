@@ -1,6 +1,6 @@
 
 import type {NextConfig} from 'next';
-import path from 'path'; // Keep for other potential future aliases
+import path from 'path'; // Ensure path is imported
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -24,21 +24,24 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       // Ensure resolve and fallback objects exist and are properly initialized
       config.resolve = config.resolve || {};
+      
+      // Handle general Node.js built-ins with fallback: false
       config.resolve.fallback = {
-        ...(config.resolve.fallback || {}), // Spread any existing fallbacks first
+        ...(config.resolve.fallback || {}), 
         fs: false,                 
         tls: false,                
         net: false,                
         http2: false,              
         dns: false,
-        'async_hooks': false,       // Explicitly set async_hooks to false in fallback
-        'node:async_hooks': false,  // Explicitly set node:async_hooks to false in fallback
+        // async_hooks and node:async_hooks will be handled by alias
       };
 
-      // Ensure alias object exists and explicitly set aliases to false
-      config.resolve.alias = config.resolve.alias || {};
-      config.resolve.alias['async_hooks'] = false;
-      config.resolve.alias['node:async_hooks'] = false;
+      // Explicitly alias problematic modules to an empty module
+      config.resolve.alias = {
+        ...(config.resolve.alias || {}),
+        'async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
+        'node:async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
+      };
       
       // Suppress errors related to expressions in context (often involves dynamic imports)
       config.module.exprContextCritical = false; 
