@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon } from "lucide-react"; // Added Building, Route, CoinsIcon
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType } from "@/types"; 
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER } from "@/types"; 
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId } from "@/types"; 
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types"; 
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -38,6 +38,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
+import { calculateDistance } from "@/ai/flows/calculate-distance-flow";
+import { ai } from "@/ai/genkit";
+
 
 const MAX_FILES_ALLOWED = 5;
 
@@ -55,6 +58,8 @@ const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_VEHICLE_COLLECTION_NAME = "veiculos";
+const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
+
 
 const NO_VEHICLE_SELECTED_VALUE = "_NO_VEHICLE_SELECTED_";
 const LOADING_VEHICLES_SELECT_ITEM_VALUE = "_LOADING_VEHICLES_";
@@ -212,6 +217,22 @@ async function fetchVehicles(): Promise<Vehicle[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Vehicle));
 }
 
+async function fetchCompanies(): Promise<Company[]> {
+  if (!db) {
+    console.error("fetchCompanies: Firebase DB is not available.");
+    throw new Error("Firebase DB is not available");
+  }
+  const companyDocs: Company[] = [];
+  for (const id of companyIds) {
+    const docRef = doc(db, FIRESTORE_COMPANY_COLLECTION_NAME, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      companyDocs.push({ id, ...docSnap.data() } as Company);
+    }
+  }
+  return companyDocs;
+}
+
 const getNextOrderNumber = (currentOrders: ServiceOrder[]): string => {
   let maxOrderNum = 3999;
   currentOrders.forEach(order => {
@@ -237,7 +258,6 @@ const getDeadlineStatusInfo = (
 
   const parsedEndDate = parseISO(endDateString);
   if (!isValid(parsedEndDate)) {
-    console.log(`DEBUG: Invalid ParsedEndDate for ${endDateString}`);
     return { status: 'none', alertClass: "" };
   }
 
@@ -247,22 +267,16 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  console.log(`DEBUG: getDeadlineStatusInfo - OS Phase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
-
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
-    console.log("DEBUG: Status Overdue - isBefore:", isBefore(endDateNormalized, today), "isToday:", isToday(endDateNormalized));
     return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5 text-destructive" />, alertClass: "bg-destructive/20 border-destructive/50 text-destructive" };
   }
   if (isToday(endDateNormalized)) {
-    console.log("DEBUG: Status Due Today - isToday:", isToday(endDateNormalized));
     return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
   const twoDaysFromNow = addDays(today, 2);
   if (isBefore(endDateNormalized, twoDaysFromNow)) {
-    console.log("DEBUG: Status Due Soon - isBefore (twoDaysFromNow):", isBefore(endDateNormalized, twoDaysFromNow));
      return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
-  console.log("DEBUG: Status None");
   return { status: 'none', alertClass: "" };
 };
 
@@ -290,6 +304,20 @@ const formatPhoneNumberForDisplay = (phone?: string): string => {
   return phone; 
 };
 
+const formatAddressToString = (addressSource: Customer | Company | null | undefined): string => {
+    if (!addressSource) return "";
+    const parts = [
+        addressSource.street,
+        addressSource.number,
+        addressSource.complement,
+        addressSource.neighborhood,
+        addressSource.city,
+        addressSource.state,
+        addressSource.cep,
+    ].filter(Boolean).join(', ');
+    return parts;
+};
+
 
 export function ServiceOrderClientPage() {
   const queryClient = useQueryClient();
@@ -305,6 +333,7 @@ export function ServiceOrderClientPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<ServiceOrderPhaseType | "Todos">("Todos");
   const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false);
+  const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
 
 
   const form = useForm<z.infer<typeof ServiceOrderSchema>>({
@@ -364,6 +393,12 @@ export function ServiceOrderClientPage() {
     enabled: !!db,
   });
 
+  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<Company[], Error>({
+      queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME],
+      queryFn: fetchCompanies,
+      enabled: !!db,
+  });
+
   useEffect(() => {
     if (formVehicleId && typeof formEstimatedTravelDistanceKm === 'number') {
       const vehicle = vehicles.find(v => v.id === formVehicleId);
@@ -381,6 +416,66 @@ export function ServiceOrderClientPage() {
       form.setValue('estimatedTravelCost', null);
     }
   }, [formVehicleId, formEstimatedTravelDistanceKm, formEstimatedTollCosts, vehicles, form]);
+
+  useEffect(() => {
+    const attemptCalculateDistance = async () => {
+      if (selectedCustomerId && selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && !isCalculatingDistance && ai && calculateDistance) {
+        const customer = customers.find(c => c.id === selectedCustomerId);
+        const equipment = equipmentList.find(e => e.id === selectedEquipmentId);
+
+        if (!customer || !equipment || !equipment.ownerReference || equipment.ownerReference === OWNER_REF_CUSTOMER) {
+          // Cannot calculate if customer/equipment not found, or equipment is customer-owned (no company origin)
+          if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) { // Only clear if it's a new OS and not manually set
+             // Do not clear if it was manually set or is an existing order.
+          }
+          return;
+        }
+
+        const companyOwnerId = equipment.ownerReference as CompanyId;
+        const originCompany = companies.find(comp => comp.id === companyOwnerId);
+
+        if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
+            !customer.street || !customer.city || !customer.state || !customer.cep) {
+          console.warn("Missing address details for origin company or destination customer. Automatic distance calculation skipped.");
+          return;
+        }
+
+        const originAddress = formatAddressToString(originCompany);
+        const destinationAddress = formatAddressToString(customer);
+
+        if (!originAddress || !destinationAddress) {
+            console.warn("Could not format origin or destination address strings. Automatic distance calculation skipped.");
+            return;
+        }
+        
+        setIsCalculatingDistance(true);
+        try {
+          const result = await calculateDistance({ originAddress, destinationAddress });
+          if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
+            form.setValue('estimatedTravelDistanceKm', parseFloat((result.distanceKm * 2).toFixed(1)), { shouldValidate: true }); // Ida e volta
+            toast({ title: "Distância Estimada", description: `Distância (ida e volta) calculada: ${(result.distanceKm * 2).toFixed(1)} km (Simulado).` });
+          } else {
+            toast({ title: "Erro ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância.", variant: "destructive" });
+            if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) {
+                // Do not clear if it was manually set or is an existing order.
+            }
+          }
+        } catch (e) {
+          console.error("Error calling calculateDistance flow:", e);
+          toast({ title: "Erro no Cálculo de Distância", description: "Ocorreu um erro ao tentar calcular a distância.", variant: "destructive" });
+        } finally {
+          setIsCalculatingDistance(false);
+        }
+      }
+    };
+
+    // Only trigger if not editing and it's a new form or relevant fields change
+    if (isModalOpen && (!editingOrder || (editingOrder && isEditMode))) {
+      attemptCalculateDistance();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomerId, selectedEquipmentId, customers, equipmentList, companies, form, isModalOpen, editingOrder, isEditMode, isCalculatingDistance]);
+
 
 
   if (!db || !storage) {
@@ -402,16 +497,17 @@ export function ServiceOrderClientPage() {
     if (selectedCustomerId) {
       return equipmentList.filter(eq =>
         eq.customerId === selectedCustomerId ||
-        (eq.ownerReference && ['goldmaq', 'goldcomercio', 'goldjob'].includes(eq.ownerReference) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção"))
+        (eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção"))
       );
     }
+    // If no customer is selected, show only company-owned available/maintenance equipment
     return equipmentList.filter(eq =>
-      eq.ownerReference && ['goldmaq', 'goldcomercio', 'goldjob'].includes(eq.ownerReference) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção")
+      eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção")
     );
   }, [equipmentList, selectedCustomerId, isLoadingEquipment]);
 
   useEffect(() => {
-    if (!editingOrder) {
+    if (!editingOrder) { // Only set preferred technician for new orders
         if (selectedCustomerId) {
             const customer = customers.find(c => c.id === selectedCustomerId);
             if (customer?.preferredTechnician) {
@@ -421,15 +517,16 @@ export function ServiceOrderClientPage() {
                 form.setValue('technicianId', null, { shouldValidate: true });
             }
         } else {
-             form.setValue('technicianId', null, { shouldValidate: true });
+             form.setValue('technicianId', null, { shouldValidate: true }); // Clear if no customer selected
         }
     }
 
+    // Reset equipment if current selection is no longer valid for the selected customer
     if (selectedCustomerId) {
       if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
-    } else {
+    } else { // No customer selected, reset if current equipment is not in the general available list
        if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
@@ -466,9 +563,9 @@ export function ServiceOrderClientPage() {
       mediaUrls: validProcessedUrls && validProcessedUrls.length > 0 ? validProcessedUrls : null,
       technicalConclusion: restOfData.technicalConclusion || null,
       notes: (restOfData.notes === undefined || restOfData.notes === null || restOfData.notes.trim() === "") ? null : restOfData.notes,
-      estimatedTravelDistanceKm: restOfData.estimatedTravelDistanceKm !== undefined ? Number(restOfData.estimatedTravelDistanceKm) : null,
-      estimatedTollCosts: restOfData.estimatedTollCosts !== undefined ? Number(restOfData.estimatedTollCosts) : null,
-      estimatedTravelCost: restOfData.estimatedTravelCost !== undefined ? Number(restOfData.estimatedTravelCost) : null,
+      estimatedTravelDistanceKm: restOfData.estimatedTravelDistanceKm !== undefined && restOfData.estimatedTravelDistanceKm !== null ? Number(restOfData.estimatedTravelDistanceKm) : null,
+      estimatedTollCosts: restOfData.estimatedTollCosts !== undefined && restOfData.estimatedTollCosts !== null ? Number(restOfData.estimatedTollCosts) : null,
+      estimatedTravelCost: restOfData.estimatedTravelCost !== undefined && restOfData.estimatedTravelCost !== null ? Number(restOfData.estimatedTravelCost) : null,
     };
   };
 
@@ -663,6 +760,7 @@ export function ServiceOrderClientPage() {
     setTechnicalConclusionText("");
     setIsEditMode(false);
     setIsCancelConfirmModalOpen(false);
+    setIsCalculatingDistance(false);
   };
 
   const onSubmit = async (values: z.infer<typeof ServiceOrderSchema>) => {
@@ -773,7 +871,7 @@ export function ServiceOrderClientPage() {
 
   const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
   const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
-  const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles;
+  const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingCompanies;
 
   if (isLoadingPageData && !isModalOpen) {
     return (
@@ -892,14 +990,12 @@ export function ServiceOrderClientPage() {
             const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
 
             let equipmentOwnerDisplay = null;
-            if (equipmentDetails.ownerReference) {
-              if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
-                const ownerCustomer = customers.find(c => c.id === equipmentDetails.customerId);
-                equipmentOwnerDisplay = ownerCustomer ? `Cliente (${ownerCustomer.name})` : "Cliente (Não especificado)";
-              } else {
-                const companyOwner = companyDisplayOptions.find(co => co.id === equipmentDetails.ownerReference);
-                equipmentOwnerDisplay = companyOwner ? companyOwner.name : "Empresa Desconhecida";
-              }
+            if (equipmentDetails.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
+                const company = companyDisplayOptions.find(c => c.id === equipmentDetails.ownerReference);
+                equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
+            } else if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
+                 const ownerCustomer = customers.find(c => c.id === equipmentDetails.customerId);
+                 equipmentOwnerDisplay = ownerCustomer ? `Cliente (${ownerCustomer.name})` : "Cliente (Não especificado)";
             }
 
 
@@ -1076,7 +1172,7 @@ export function ServiceOrderClientPage() {
                       <SelectContent>
                         {isLoadingCustomers ? <SelectItem value="loading" disabled>Carregando...</SelectItem> :
                          customers.map(customer => (
-                          <SelectItem key={customer.id} value={customer.id}>{customer.name} ({customer.cnpj})</SelectItem>
+                          <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1216,8 +1312,12 @@ export function ServiceOrderClientPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <FormField control={form.control} name="estimatedTravelDistanceKm" render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Distância Viagem (km - total)</FormLabel>
+                        <FormLabel className="flex items-center">
+                          Distância Viagem (km - total)
+                          {isCalculatingDistance && <Loader2 className="h-4 w-4 animate-spin ml-2 text-primary" />}
+                        </FormLabel>
                         <FormControl><Input type="number" step="0.1" placeholder="Ex: 120.5" {...field} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} value={String(field.value ?? '')} /></FormControl>
+                         <FormDescription>Preenchido automaticamente ou manualmente.</FormDescription>
                         <FormMessage />
                     </FormItem>
                  )} />
@@ -1411,4 +1511,3 @@ export function ServiceOrderClientPage() {
     </>
   );
 }
-

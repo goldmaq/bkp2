@@ -188,7 +188,7 @@ export const CustomerSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
   cnpj: z.string().min(1, "CNPJ é obrigatório"),
   email: z.string().email("Endereço de email inválido"),
-  phone: z.string().optional(),
+  phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
   contactName: z.string().optional(),
   cep: z.string()
     .refine(val => !val || /^\d{5}-?\d{3}$/.test(val), { message: "CEP inválido. Use o formato XXXXX-XXX ou XXXXXXXX." })
@@ -252,7 +252,7 @@ export const TechnicianSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
   role: z.string().min(1, "Cargo é obrigatório"), 
   specialization: z.string().optional(),
-  phone: z.string().optional(),
+  phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
 });
 
 export const FuelingRecordSchema = z.object({
@@ -295,8 +295,8 @@ export const ServiceOrderSchema = z.object({
   serviceType: z.string().min(1, "Tipo de serviço é obrigatório"),
   customServiceType: z.string().optional(),
   vehicleId: z.string().nullable().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), "Data de início inválida"),
+  endDate: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), "Data de conclusão inválida"),
   description: z.string().min(1, "Problema relatado é obrigatório"),
   notes: z.string().optional().nullable(),
   mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
@@ -316,6 +316,7 @@ export const ServiceOrderSchema = z.object({
 
 
 export const CompanySchema = z.object({
+  id: z.enum(companyIds),
   name: z.string().min(1, "Nome da empresa é obrigatório"),
   cnpj: z.string().min(1, "CNPJ é obrigatório"),
   street: z.string().min(1, "Rua é obrigatória"),
@@ -348,3 +349,15 @@ export const AuxiliaryEquipmentSchema = z.object({
   path: ["customType"],
 });
 
+// Type for the input of the calculate distance flow
+export interface CalculateDistanceInput {
+  originAddress: string;
+  destinationAddress: string;
+}
+
+// Type for the output of the calculate distance flow
+export interface CalculateDistanceOutput {
+  distanceKm: number;
+  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED';
+  errorMessage?: string;
+}
