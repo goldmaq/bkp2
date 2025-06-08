@@ -226,32 +226,40 @@ const getDeadlineStatusInfo = (
   phase?: ServiceOrder['phase']
 ): { status: DeadlineStatus; message?: string; icon?: JSX.Element; alertClass?: string } => {
   if (!endDateString || phase === 'Concluída' || phase === 'Cancelada') {
-    return { status: 'none' };
+    return { status: 'none', alertClass: "" };
   }
 
-  const endDate = parseISO(endDateString);
+  const endDate = parseISO(endDateString); // endDateString is already 'yyyy-MM-dd'
   if (!isValid(endDate)) {
-    return { status: 'none' };
+    return { status: 'none', alertClass: "" };
   }
 
   const today = new Date();
-  today.setHours(0,0,0,0);
+  today.setHours(0,0,0,0); // Normalize today to the start of the day
 
-  const endDateNormalized = new Date(endDate.valueOf());
+  // Normalize endDate to ensure it's compared correctly (ignoring time parts from parseISO if any)
+  const endDateNormalized = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
 
+  // For debugging purposes
+  // console.log(`DEBUG: endDateString: ${endDateString}, parsedEndDate: ${endDate.toISOString()}, endDateNormalized: ${endDateNormalized.toISOString()}, today: ${today.toISOString()}`);
+
   if (isBefore(endDateNormalized, today)) {
+    // console.log("DEBUG: Status Overdue");
     return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-red-100 border-red-500 text-red-700" };
   }
   if (isToday(endDateNormalized)) {
+    // console.log("DEBUG: Status Due Today");
     return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-yellow-100 border-yellow-500 text-yellow-700" };
   }
-  const twoDaysFromNow = addDays(today, 2);
+  const twoDaysFromNow = addDays(today, 2); // OSs due in the next 2 days (inclusive of today, which is already handled)
   if (isBefore(endDateNormalized, twoDaysFromNow)) {
+    // console.log("DEBUG: Status Due Soon");
      return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-yellow-100 border-yellow-500 text-yellow-700" };
   }
-  return { status: 'none' };
+  // console.log("DEBUG: Status None");
+  return { status: 'none', alertClass: "" };
 };
 
 
@@ -723,7 +731,7 @@ export function ServiceOrderClientPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {serviceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
-            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
+            // console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
             const cardClasses = cn("flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer");
 
             return (
@@ -731,10 +739,7 @@ export function ServiceOrderClientPage() {
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
                 <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
-                  {
-                    "bg-red-100 border-red-500 text-red-700": deadlineInfo.status === 'overdue',
-                    "bg-yellow-100 border-yellow-500 text-yellow-700": deadlineInfo.status === 'due_today' || deadlineInfo.status === 'due_soon',
-                  }
+                  deadlineInfo.alertClass // Directly use the alertClass string from getDeadlineStatusInfo
                 )}>
                   {deadlineInfo.icon}
                   <span className="ml-2">{deadlineInfo.message}</span>
@@ -1115,4 +1120,3 @@ export function ServiceOrderClientPage() {
   );
 }
 
-    
