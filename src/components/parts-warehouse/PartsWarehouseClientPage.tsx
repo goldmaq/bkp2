@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { Archive, Loader2, User, ClipboardList, Wrench, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter } from "lucide-react";
+import { Archive, Loader2, User, ClipboardList, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,21 +112,25 @@ export function PartsWarehouseClientPage() {
   const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitionsDataAll } = useQuery<PartsRequisition[], Error>({
     queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME],
     queryFn: fetchPartsRequisitions,
+    enabled: !!db,
   });
 
   const { data: serviceOrders = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrdersData } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_SERVICE_ORDER_COLLECTION_NAME],
     queryFn: fetchServiceOrders,
+    enabled: !!db,
   });
 
   const { data: technicians = [], isLoading: isLoadingTechnicians, isError: isErrorTechnicians, error: errorTechniciansData } = useQuery<Technician[], Error>({
     queryKey: [FIRESTORE_TECHNICIAN_COLLECTION_NAME],
     queryFn: fetchTechnicians,
+    enabled: !!db,
   });
 
   const { data: customers = [], isLoading: isLoadingCustomers, isError: isErrorCustomers, error: errorCustomersData } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
+    enabled: !!db,
   });
 
   const approvedItemsForWarehouseProcessing = useMemo(() => {
@@ -237,7 +241,7 @@ export function PartsWarehouseClientPage() {
                 } else if (actionableItems.every(item => item.status === "Aprovado" || item.status === "Aguardando Compra")) {
                     newRequisitionStatus = "Triagem Realizada";
                 } else {
-                   newRequisitionStatus = "Triagem Realizada"; // Default if other conditions aren't met
+                   newRequisitionStatus = "Triagem Realizada";
                 }
             }
             transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
@@ -309,14 +313,17 @@ export function PartsWarehouseClientPage() {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2">Carregando peças para separação...</p></div>;
   }
 
-  if (isErrorRequisitions || isErrorServiceOrders || isErrorTechnicians || isErrorCustomers) {
-    const errorMessages = [];
-    if (isErrorRequisitions && errorRequisitionsDataAll) errorMessages.push(`Requisições: ${errorRequisitionsDataAll.message}`);
-    if (isErrorServiceOrders && errorServiceOrdersData) errorMessages.push(`Ordens de Serviço: ${errorServiceOrdersData.message}`);
-    if (isErrorTechnicians && errorTechniciansData) errorMessages.push(`Técnicos: ${errorTechniciansData.message}`);
-    if (isErrorCustomers && errorCustomersData) errorMessages.push(`Clientes: ${errorCustomersData.message}`);
-    return <div className="text-red-500 p-4">Erro ao carregar dados do almoxarifado: {errorMessages.join("; ")}. Verifique o console.</div>;
+  const combinedErrorMessages = [
+    isErrorRequisitions && errorRequisitionsDataAll ? `Requisições: ${errorRequisitionsDataAll.message}` : null,
+    isErrorServiceOrders && errorServiceOrdersData ? `Ordens de Serviço: ${errorServiceOrdersData.message}` : null,
+    isErrorTechnicians && errorTechniciansData ? `Técnicos: ${errorTechniciansData.message}` : null,
+    isErrorCustomers && errorCustomersData ? `Clientes: ${errorCustomersData.message}` : null,
+  ].filter(Boolean);
+
+  if (combinedErrorMessages.length > 0) {
+    return <div className="text-red-500 p-4">Erro ao carregar dados do almoxarifado: {combinedErrorMessages.join("; ")}. Verifique o console.</div>;
   }
+
 
   return (
     <>
@@ -529,3 +536,5 @@ export function PartsWarehouseClientPage() {
     </>
   );
 }
+
+    
