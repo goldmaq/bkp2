@@ -50,6 +50,12 @@ interface ApprovedItem extends PartsRequisitionItem {
   customerName?: string;
   requisitionCreatedDate: string;
   requisitionStatus: PartsRequisition['status'];
+  equipmentDetails?: {
+    brand: string;
+    model: string;
+    chassisNumber: string;
+    manufactureYear: number | null;
+  } | null;
 }
 
 interface CurrentItemAction {
@@ -100,9 +106,7 @@ async function fetchCustomers(): Promise<Customer[]> {
 }
 
 async function fetchEquipmentList(): Promise<Maquina[]> {
-  if (!db) {
-    throw new Error("Firebase Firestore connection not available.");
-  }
+  if (!db) throw new Error("Firebase Firestore connection not available.");
   const q = query(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"), orderBy("model", "asc"));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => {
@@ -157,9 +161,10 @@ export function PartsWarehouseClientPage() {
     enabled: !!db,
   });
 
-  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
+  const { data: equipmentList = [], isLoading: isLoadingEquipment, isError: isErrorEquipment, error: errorEquipmentData } = useQuery<Maquina[], Error>({
     queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
     queryFn: fetchEquipmentList,
+    enabled: !!db,
   });
 
   const approvedItemsForWarehouseProcessing = useMemo(() => {
@@ -170,6 +175,7 @@ export function PartsWarehouseClientPage() {
           const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
           const technician = technicians?.find(t => t.id === req.technicianId);
           const customer = customers?.find(c => c.id === serviceOrder?.customerId);
+          const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
           items.push({
             ...item,
             requisitionId: req.id,
@@ -181,6 +187,12 @@ export function PartsWarehouseClientPage() {
             customerName: customer?.name,
             requisitionCreatedDate: req.createdDate,
             requisitionStatus: req.status,
+            equipmentDetails: equipment ? {
+              brand: equipment.brand,
+              model: equipment.model,
+              chassisNumber: equipment.chassisNumber,
+              manufactureYear: equipment.manufactureYear
+            } : null,
           });
         }
       });
@@ -199,7 +211,10 @@ export function PartsWarehouseClientPage() {
         item.requisitionNumber.toLowerCase().includes(lowerSearchTerm) ||
         (item.serviceOrderNumber && item.serviceOrderNumber.toLowerCase().includes(lowerSearchTerm)) ||
         (item.technicianName && item.technicianName.toLowerCase().includes(lowerSearchTerm)) ||
-        (item.customerName && item.customerName.toLowerCase().includes(lowerSearchTerm))
+        (item.customerName && item.customerName.toLowerCase().includes(lowerSearchTerm)) ||
+        (item.equipmentDetails?.brand.toLowerCase().includes(lowerSearchTerm)) ||
+        (item.equipmentDetails?.model.toLowerCase().includes(lowerSearchTerm)) ||
+        (item.equipmentDetails?.chassisNumber.toLowerCase().includes(lowerSearchTerm))
       );
     }
 
@@ -219,7 +234,7 @@ export function PartsWarehouseClientPage() {
         };
         return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
     });
-  }, [requisitions, serviceOrders, technicians, customers, statusFilter, searchTerm]);
+  }, [requisitions, serviceOrders, technicians, customers, equipmentList, statusFilter, searchTerm]);
 
   const updateWarehouseItemActionMutation = useMutation({
     mutationFn: async (data: {
@@ -348,6 +363,7 @@ export function PartsWarehouseClientPage() {
     isErrorServiceOrders && errorServiceOrdersData ? `Ordens de Serviço: ${errorServiceOrdersData.message}` : null,
     isErrorTechnicians && errorTechniciansData ? `Técnicos: ${errorTechniciansData.message}` : null,
     isErrorCustomers && errorCustomersData ? `Clientes: ${errorCustomersData.message}` : null,
+    isErrorEquipment && errorEquipmentData ? `Equipamentos: ${errorEquipmentData.message}` : null,
   ].filter(Boolean);
 
   if (combinedErrorMessages.length > 0) {
@@ -364,7 +380,7 @@ export function PartsWarehouseClientPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Buscar por peça, req., OS, técnico, cliente..."
+            placeholder="Buscar por peça, req., OS, técnico, cliente, máquina..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
@@ -402,10 +418,7 @@ export function PartsWarehouseClientPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {approvedItemsForWarehouseProcessing.map((item) => {
-            const serviceOrder = serviceOrders?.find(os => os.id === item.serviceOrderId);
-            const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
-            return (
+          {approvedItemsForWarehouseProcessing.map((item) => (
             <Card key={`${item.requisitionId}-${item.id}`} className={cn("flex flex-col shadow-lg", {
                 "border-2 border-yellow-400": item.status === "Aguardando Compra",
                 "border-2 border-green-500": item.status === "Separado",
@@ -440,18 +453,18 @@ export function PartsWarehouseClientPage() {
                         {item.customerName}
                     </p>
                 )}
-                {equipment ? (
+                {item.equipmentDetails ? (
                     <p className="flex items-center">
                       <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
                        <Tooltip>
                         <TooltipTrigger asChild>
-                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
+                           <span className="truncate">{`${toTitleCase(item.equipmentDetails.brand)} ${toTitleCase(item.equipmentDetails.model)}`}</span>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
-                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
-                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
+                          <p>{toTitleCase(item.equipmentDetails.brand)} {toTitleCase(item.equipmentDetails.model)}</p>
+                          <p>Chassi: {item.equipmentDetails.chassisNumber || 'N/A'}</p>
+                          <p>Ano: {item.equipmentDetails.manufactureYear || 'N/A'}</p>
                         </TooltipContent>
                       </Tooltip>
                     </p>
@@ -459,9 +472,9 @@ export function PartsWarehouseClientPage() {
                     <p className="flex items-center text-xs text-muted-foreground">
                       <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
                     </p>
-                  ) : serviceOrder?.equipmentId ? (
+                  ) : item.serviceOrderId ? ( 
                     <p className="flex items-center text-xs text-destructive">
-                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
+                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina não encontrada para esta OS.
                     </p>
                   ) : null}
                  {item.notes && (
@@ -477,7 +490,7 @@ export function PartsWarehouseClientPage() {
                 {item.imageUrl && (
                   <div className="mt-2">
                     <Link href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block group">
-                      <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image" />
+                      <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image"/>
                       <span className="text-xs text-primary hover:underline block mt-1 group-hover:text-primary/80 transition-colors">Ver Imagem</span>
                     </Link>
                   </div>
@@ -593,3 +606,5 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
+
+    
