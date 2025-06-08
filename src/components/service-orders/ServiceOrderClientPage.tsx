@@ -424,7 +424,7 @@ export function ServiceOrderClientPage() {
 
       if (
         isModalOpen &&
-        (!editingOrder || (editingOrder && isEditMode)) && // Only for new or editing orders
+        (!editingOrder || (editingOrder && isEditMode)) && 
         selectedCustomerId &&
         selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE &&
         !isCalculatingDistance &&
@@ -454,12 +454,7 @@ export function ServiceOrderClientPage() {
             return;
         }
 
-        // Only calculate if distance field is empty
         if (currentDistanceValue !== null && currentDistanceValue !== undefined) {
-            // If distance is filled but toll is not, and toll estimation is available from a previous successful calculation,
-            // it might be useful to re-apply toll if conditions allow. However, let's keep it simple:
-            // only auto-fill tolls if distance is also being auto-calculated.
-            // If distance is manual, tolls should be too, or user can clear distance to re-trigger auto.
             return;
         }
 
@@ -501,12 +496,9 @@ export function ServiceOrderClientPage() {
             setIsCalculatingDistance(false);
         });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isModalOpen, editingOrder, isEditMode, selectedCustomerId, selectedEquipmentId,
-    isCalculatingDistance, customers, equipmentList, companies, form, toast // calculateDistance removed as it's stable
-    // form.getValues("estimatedTravelDistanceKm") and form.getValues("estimatedTollCosts") are intentionally omitted to avoid infinite loops,
-    // their check is inside the function.
+    isCalculatingDistance, customers, equipmentList, companies, form, toast
   ]);
 
 
@@ -1370,9 +1362,9 @@ export function ServiceOrderClientPage() {
                             <Brain className="h-3 w-3 ml-1.5 text-muted-foreground hover:text-primary cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs text-xs">
-                            <p>Pode ser estimado pela IA (se disponível e > R$0) ou preenchido manualmente. A estimativa da IA é aproximada.</p>
+                            <p>Pode ser estimado pela IA (se disponível e &gt; R$0) ou preenchido manualmente. A estimativa da IA é aproximada.</p>
                           </TooltipContent>
-                        </Tooltip>
+                       </Tooltip>
                       </FormLabel>
                         <FormControl>
                           <Input
