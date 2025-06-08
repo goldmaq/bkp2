@@ -93,7 +93,6 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    // Tenta extrair apenas a parte numérica, independentemente do prefixo
     const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
@@ -630,7 +629,7 @@ export function BudgetClientPage() {
                     )}
                   </CardContent>
                 </div>
-                <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-between items-center gap-2">
+                <CardFooter className="border-t pt-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                   <div className="flex flex-wrap gap-2">
                       {canApprove && (
                           <Button variant="outline" size="sm" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Aprovado'); }} disabled={isMutating}>
@@ -653,13 +652,14 @@ export function BudgetClientPage() {
                         </Button>
                       )}
                   </div>
-                  <div className="flex gap-2 mt-2 sm:mt-0">
+                  <div className="flex flex-col gap-2 mt-2 sm:mt-0 sm:items-end w-full sm:w-auto">
                       <Button
                           variant="outline"
                           size="sm"
                           asChild
                           disabled={!customer?.email}
                           onClick={(e) => e.stopPropagation()}
+                          className="w-full sm:w-auto justify-start sm:justify-center"
                       >
                           <a href={mailtoHref} target="_blank" rel="noopener noreferrer" className="flex items-center">
                           <Mail className="mr-1.5 h-3.5 w-3.5" /> Email
@@ -670,6 +670,7 @@ export function BudgetClientPage() {
                           size="sm"
                           onClick={(e) => { e.stopPropagation(); handleOpenWhatsAppModal(budget); }}
                           disabled={isMutating}
+                          className="w-full sm:w-auto justify-start sm:justify-center"
                       >
                           <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
                       </Button>
