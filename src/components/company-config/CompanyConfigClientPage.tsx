@@ -178,7 +178,12 @@ export function CompanyConfigClientPage() {
         console.error("updateCompanyMutation: Firebase DB is not available.");
         throw new Error("Firebase DB is not available for updating company.");
       }
-      const { id, ...dataToUpdate } = companyData;
+      const { id, ...rawDataToUpdate } = companyData;
+
+      // Filter out undefined values before sending to Firestore
+      const dataToUpdate = Object.fromEntries(
+        Object.entries(rawDataToUpdate).filter(([_, value]) => value !== undefined)
+      );
       if (!id) throw new Error("ID da empresa é necessário para atualização.");
       const companyRef = doc(db, FIRESTORE_COLLECTION_NAME, id);
       const docSnap = await getDoc(companyRef);

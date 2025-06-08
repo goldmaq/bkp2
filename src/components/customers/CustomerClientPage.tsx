@@ -1,11 +1,12 @@
 
+      
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Users, FileText, MapPin, Mail, Building, HardHat, Loader2, AlertTriangle, Search, Phone, User, Construction, ShieldQuestion } from "lucide-react"; // Added ShieldQuestion
+import { PlusCircle, Users, FileText, MapPin, Mail, Building, HardHat, Loader2, AlertTriangle, Search, Phone, User, Construction, ShieldQuestion } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,7 @@ import { Textarea } from "../ui/textarea";
 
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
-const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos"; // Firestore collection name remains unchanged
+const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 const NO_TECHNICIAN_SELECT_ITEM_VALUE = "_NO_TECHNICIAN_SELECTED_";
 const LOADING_TECHNICIANS_SELECT_ITEM_VALUE = "_LOADING_TECHS_";
@@ -50,7 +51,7 @@ async function fetchTechnicians(): Promise<Technician[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Technician));
 }
 
-async function fetchMaquinas(): Promise<Maquina[]> { // Renamed from fetchEquipment
+async function fetchMaquinas(): Promise<Maquina[]> {
   if (!db) {
     console.error("fetchMaquinas: Firebase DB is not available.");
     throw new Error("Firebase DB is not available");
@@ -67,11 +68,24 @@ interface ViaCepResponse {
   bairro: string;
   localidade: string;
   uf: string;
-  ibge: string;
-  gia: string;
-  ddd: string;
-  siafi: string;
   erro?: boolean;
+}
+
+interface BrasilApiResponseCnpj {
+  cnpj: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  municipio?: string;
+  uf?: string;
+  cep?: string;
+  ddd_telefone_1?: string;
+  descricao_situacao_cadastral?: string;
+  erro?: boolean;
+  message?: string;
 }
 
 const formatAddressForDisplay = (customer: Customer): string => {
@@ -87,7 +101,7 @@ const formatAddressForDisplay = (customer: Customer): string => {
   else if (customer.state) parts.push(customer.state);
 
   const addressString = parts.join(', ').trim();
-  if (!addressString && customer.cep) return `${customer.cep}`; // CEP only
+  if (!addressString && customer.cep) return `${customer.cep}`;
   return addressString || "Não fornecido";
 };
 
@@ -105,7 +119,6 @@ const generateGoogleMapsUrl = (customer: Customer): string => {
 
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressParts)}`;
 };
-
 
 const getWhatsAppNumber = (phone?: string): string => {
   if (!phone) return "";
@@ -159,6 +172,7 @@ export function CustomerClientPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isCepLoading, setIsCepLoading] = useState(false);
+  const [isCnpjLoading, setIsCnpjLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const form = useForm<z.infer<typeof CustomerSchema>>({
@@ -193,9 +207,9 @@ export function CustomerClientPage() {
     enabled: !!db,
   });
 
-  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({ // Renamed from equipmentList
-    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME], // Query key remains for Firestore collection
-    queryFn: fetchMaquinas, // Renamed from fetchEquipment
+  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchMaquinas,
     enabled: !!db,
   });
 
@@ -301,6 +315,64 @@ export function CustomerClientPage() {
     }
   };
 
+  const handleSearchCnpj = async () => {
+    const cnpjValue = form.getValues("cnpj");
+    if (!cnpjValue) {
+      toast({ title: "CNPJ Vazio", description: "Por favor, insira um CNPJ.", variant: "default" });
+      return;
+    }
+    const cleanedCnpj = cnpjValue.replace(/\D/g, "");
+    if (cleanedCnpj.length !== 14) {
+      toast({ title: "CNPJ Inválido", description: "CNPJ deve conter 14 dígitos.", variant: "destructive" });
+      return;
+    }
+
+    setIsCnpjLoading(true);
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanedCnpj}`);
+      const data: BrasilApiResponseCnpj = await response.json();
+
+      if (!response.ok || data.erro || data.message) {
+        const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
+        toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
+        form.setValue("name", "");
+        form.setValue("street", "");
+        form.setValue("number", "");
+        form.setValue("complement", "");
+        form.setValue("neighborhood", "");
+        form.setValue("city", "");
+        form.setValue("state", "");
+        form.setValue("cep", "");
+        form.setValue("phone", "");
+      } else {
+        form.setValue("name", data.razao_social || "");
+        form.setValue("street", data.logradouro || "");
+        form.setValue("number", data.numero || "");
+        form.setValue("complement", data.complemento || "");
+        form.setValue("neighborhood", data.bairro || "");
+        form.setValue("city", data.municipio || "");
+        form.setValue("state", data.uf || "");
+        form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
+
+        let primaryPhone = data.ddd_telefone_1 || "";
+        if (!primaryPhone && (data as any).ddd_telefone_2) { // BrasilAPI might have ddd_telefone_2
+          primaryPhone = (data as any).ddd_telefone_2;
+        }
+        form.setValue("phone", primaryPhone ? formatPhoneNumberForInputDisplay(primaryPhone) : "");
+
+        // Optionally, set other fields like email if available, though BrasilAPI doesn't usually provide it
+        // form.setValue("email", data.email || form.getValues("email")); // Keep existing email if API doesn't provide
+
+        toast({ title: "CNPJ Encontrado", description: "Os dados do cliente foram preenchidos." });
+      }
+    } catch (error) {
+      toast({ title: "Erro ao Buscar CNPJ", description: "Não foi possível buscar os dados do CNPJ. Verifique sua conexão.", variant: "destructive" });
+    } finally {
+      setIsCnpjLoading(false);
+    }
+  };
+
+
   const openModal = (customer?: Customer) => {
     if (customer) {
       setEditingCustomer(customer);
@@ -310,7 +382,7 @@ export function CustomerClientPage() {
         preferredTechnician: customer.preferredTechnician || null,
         cep: customer.cep || null,
       });
-      setIsEditMode(false); // Start in view mode
+      setIsEditMode(false);
     } else {
       setEditingCustomer(null);
       form.reset({
@@ -318,7 +390,7 @@ export function CustomerClientPage() {
         complement: "", neighborhood: "", city: "", state: "",
         preferredTechnician: null, notes: ""
       });
-      setIsEditMode(true); // Start in edit mode
+      setIsEditMode(true);
     }
     setIsModalOpen(true);
   };
@@ -327,7 +399,7 @@ export function CustomerClientPage() {
     setIsModalOpen(false);
     setEditingCustomer(null);
     form.reset();
-    setIsEditMode(false); // Reset edit mode
+    setIsEditMode(false);
   };
 
   const onSubmit = async (values: z.infer<typeof CustomerSchema>) => {
@@ -351,7 +423,7 @@ export function CustomerClientPage() {
   };
 
   const isMutating = addCustomerMutation.isPending || updateCustomerMutation.isPending;
-  const isLoadingPageData = isLoadingCustomers || isLoadingTechnicians || isLoadingMaquinas; // Renamed from isLoadingEquipment
+  const isLoadingPageData = isLoadingCustomers || isLoadingTechnicians || isLoadingMaquinas;
 
   if (isLoadingPageData && !isModalOpen) {
     return (
@@ -373,13 +445,13 @@ export function CustomerClientPage() {
     );
   }
 
-  if (isErrorMaquinas) { // Renamed from isErrorEquipment
+  if (isErrorMaquinas) {
      return (
       <div className="flex flex-col items-center justify-center h-64 text-destructive">
         <AlertTriangle className="h-12 w-12 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Máquinas</h2>
         <p className="text-center">Não foi possível buscar os dados das máquinas. Tente novamente mais tarde.</p>
-        <p className="text-sm mt-2">Detalhe: {errorMaquinas?.message}</p> {/* Renamed from errorEquipment */}
+        <p className="text-sm mt-2">Detalhe: {errorMaquinas?.message}</p>
       </div>
     );
   }
@@ -407,7 +479,7 @@ export function CustomerClientPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {customers.map((customer) => {
-            const linkedMaquinas = maquinaList.filter(eq => eq.customerId === customer.id); // Renamed from linkedEquipment
+            const linkedMaquinas = maquinaList.filter(eq => eq.customerId === customer.id);
             const whatsappNumber = getWhatsAppNumber(customer.phone);
             const whatsappLink = whatsappNumber
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(customer.name)}`
@@ -507,21 +579,21 @@ export function CustomerClientPage() {
                 )}
 
                 <div className="pt-2 mt-2 border-t border-border">
-                  {isLoadingMaquinas ? ( // Renamed from isLoadingEquipment
+                  {isLoadingMaquinas ? (
                      <p className="flex items-center text-xs text-muted-foreground mt-2">
                         <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando máquinas...
                      </p>
-                  ) : linkedMaquinas.length > 0 ? ( // Renamed from linkedEquipment
+                  ) : linkedMaquinas.length > 0 ? (
                     <div>
                       <h4 className="font-semibold text-xs mt-2 mb-1 flex items-center">
                         <Construction className="mr-1.5 h-3.5 w-3.5 text-primary" />
                         <span className="font-medium text-muted-foreground mr-1">Máquinas:</span>
                       </h4>
                       <ul className="list-none pl-1 space-y-0.5">
-                        {linkedMaquinas.slice(0, 3).map(maq => ( // Renamed from eq
+                        {linkedMaquinas.slice(0, 3).map(maq => (
                           <li key={maq.id} className="text-xs text-muted-foreground">
                             <Link
-                              href={`/maquinas?openMaquinaId=${maq.id}`} // Updated path and query param
+                              href={`/maquinas?openMaquinaId=${maq.id}`}
                               onClick={(e) => e.stopPropagation()}
                               className="hover:underline hover:text-primary transition-colors"
                               title={`Ver detalhes de ${maq.brand} ${maq.model}`}
@@ -530,7 +602,7 @@ export function CustomerClientPage() {
                             </Link>
                           </li>
                         ))}
-                        {linkedMaquinas.length > 3 && ( // Renamed from linkedEquipment
+                        {linkedMaquinas.length > 3 && (
                            <li className="text-xs text-muted-foreground">...e mais {linkedMaquinas.length - 3}.</li>
                         )}
                       </ul>
@@ -569,10 +641,31 @@ export function CustomerClientPage() {
           <form onSubmit={form.handleSubmit(onSubmit)} id="customer-form" className="space-y-4">
             <fieldset disabled={!!editingCustomer && !isEditMode} className="space-y-4">
               <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Nome</FormLabel><FormControl><Input placeholder="Nome completo do cliente ou razão social" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Nome (Razão Social)</FormLabel><FormControl><Input placeholder="Nome completo do cliente ou razão social" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="cnpj" render={({ field }) => (
-                <FormItem><FormLabel>CNPJ</FormLabel><FormControl><Input placeholder="00.000.000/0000-00" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>CNPJ</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <FormControl>
+                      <Input placeholder="00.000.000/0000-00" {...field} onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, "");
+                        let formattedCnpj = value;
+                        if (value.length > 2) formattedCnpj = `${value.slice(0,2)}.${value.slice(2)}`;
+                        if (value.length > 5) formattedCnpj = `${formattedCnpj.slice(0,6)}.${value.slice(5)}`;
+                        if (value.length > 8) formattedCnpj = `${formattedCnpj.slice(0,10)}/${value.slice(8)}`;
+                        if (value.length > 12) formattedCnpj = `${formattedCnpj.slice(0,15)}-${value.slice(12)}`;
+                        field.onChange(formattedCnpj.substring(0, 18));
+                      }}/>
+                    </FormControl>
+                    <Button type="button" variant="outline" onClick={handleSearchCnpj} disabled={isCnpjLoading || (!!editingCustomer && !isEditMode)}>
+                      {isCnpjLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="ml-2 sm:inline hidden">Buscar</span>
+                    </Button>
+                  </div>
+                   <FormDescription>Digite o CNPJ para buscar dados automaticamente.</FormDescription>
+                  <FormMessage />
+                </FormItem>
               )} />
               <FormField control={form.control} name="contactName" render={({ field }) => (
                 <FormItem><FormLabel>Nome do Contato (Opcional)</FormLabel><FormControl><Input placeholder="Nome da pessoa de contato" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
@@ -621,7 +714,7 @@ export function CustomerClientPage() {
                         }
                       }}/>
                     </FormControl>
-                    <Button type="button" variant="outline" onClick={handleSearchCep} disabled={isCepLoading}>
+                    <Button type="button" variant="outline" onClick={handleSearchCep} disabled={isCepLoading || (!!editingCustomer && !isEditMode)}>
                       {isCepLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                       <span className="ml-2 sm:inline hidden">Buscar</span>
                     </Button>
@@ -704,3 +797,6 @@ export function CustomerClientPage() {
     </>
   );
 }
+
+
+    
