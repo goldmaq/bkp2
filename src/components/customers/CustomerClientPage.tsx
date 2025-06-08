@@ -87,22 +87,41 @@ interface BrasilApiResponseCnpj {
   message?: string;
 }
 
+// Helper function to convert string to Title Case
+const toTitleCase = (str: string | undefined | null): string => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 const formatAddressForDisplay = (customer: Customer): string => {
   const parts: string[] = [];
   if (customer.street) {
-    let line = customer.street;
-    if (customer.number) line += `, ${customer.number}`;
+    let line = toTitleCase(customer.street);
+    if (customer.number) line += `, ${customer.number}`; // Number usually doesn't need title case
+    if (customer.complement) line += ` - ${toTitleCase(customer.complement)}`;
     parts.push(line);
   }
-  if (customer.neighborhood) parts.push(customer.neighborhood);
-  if (customer.city && customer.state) parts.push(`${customer.city} - ${customer.state}`);
-  else if (customer.city) parts.push(customer.city);
-  else if (customer.state) parts.push(customer.state);
+  if (customer.neighborhood) parts.push(toTitleCase(customer.neighborhood));
+
+  let cityStatePart = "";
+  if (customer.city && customer.state) {
+    cityStatePart = `${toTitleCase(customer.city)} - ${customer.state.toUpperCase()}`; // City in Title Case, State in UPPERCASE
+  } else if (customer.city) {
+    cityStatePart = toTitleCase(customer.city);
+  } else if (customer.state) {
+    cityStatePart = customer.state.toUpperCase();
+  }
+  if (cityStatePart) parts.push(cityStatePart);
 
   const addressString = parts.join(', ').trim();
-  if (!addressString && customer.cep) return `${customer.cep}`;
+  if (!addressString && customer.cep) return `${customer.cep}`; // CEP as is
   return addressString || "Não fornecido";
 };
+
 
 const generateGoogleMapsUrl = (customer: Customer): string => {
   const addressParts = [
@@ -353,7 +372,7 @@ export function CustomerClientPage() {
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
         toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
-        form.setValue("name", form.getValues("name") || ""); 
+        form.setValue("name", form.getValues("name") || "");
       } else {
         form.setValue("name", data.razao_social || "");
         form.setValue("street", data.logradouro || "");
@@ -365,11 +384,11 @@ export function CustomerClientPage() {
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
 
         let primaryPhone = data.ddd_telefone_1 || "";
-        if (!primaryPhone && (data as any).ddd_telefone_2) { 
+        if (!primaryPhone && (data as any).ddd_telefone_2) {
           primaryPhone = (data as any).ddd_telefone_2;
         }
         form.setValue("phone", primaryPhone ? formatPhoneNumberForInputDisplay(primaryPhone) : "");
-        
+
         toast({ title: "CNPJ Encontrado", description: "Os dados do cliente foram preenchidos." });
       }
     } catch (error) {
@@ -511,8 +530,8 @@ export function CustomerClientPage() {
             const whatsappLink = whatsappNumber
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(customer.name)}`
               : "#";
-            const googleMapsUrl = generateGoogleMapsUrl(customer);
             const displayAddress = formatAddressForDisplay(customer);
+            const googleMapsUrl = generateGoogleMapsUrl({ ...customer, street: displayAddress.split(',')[0] }); // Use formatted street for maps
             const preferredTechnicianDetails = technicians.find(t => t.name === customer.preferredTechnician);
 
             return (
@@ -522,7 +541,7 @@ export function CustomerClientPage() {
               onClick={() => openModal(customer)}
             >
               <CardHeader>
-                <CardTitle className="font-headline text-xl text-primary">{customer.name}</CardTitle>
+                <CardTitle className="font-headline text-xl text-primary">{toTitleCase(customer.name)}</CardTitle>
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
                 <p className="flex items-center text-sm">
@@ -534,7 +553,7 @@ export function CustomerClientPage() {
                   <p className="flex items-center text-sm">
                     <User className="mr-2 h-4 w-4 text-primary" />
                     <span className="font-medium text-muted-foreground mr-1">Contato:</span>
-                    <span>{customer.contactName}</span>
+                    <span>{toTitleCase(customer.contactName)}</span>
                   </p>
                 )}
                 <p className="flex items-center text-sm">
@@ -565,7 +584,7 @@ export function CustomerClientPage() {
                     >
                       {customer.phone}
                     </a>
-                    {customer.contactName && <span className="ml-1 text-muted-foreground/80 text-xs">(Contato: {customer.contactName})</span>}
+                    {customer.contactName && <span className="ml-1 text-muted-foreground/80 text-xs">(Contato: {toTitleCase(customer.contactName)})</span>}
                   </p>
                 )}
                 <div className="flex items-start text-sm">
@@ -594,7 +613,7 @@ export function CustomerClientPage() {
                   <p className="flex items-center text-sm">
                     <HardHat className="mr-2 h-4 w-4 text-primary" />
                     <span className="font-medium text-muted-foreground mr-1">Téc. Pref.:</span>
-                    <span>{preferredTechnicianDetails.name}</span>
+                    <span>{toTitleCase(preferredTechnicianDetails.name)}</span>
                   </p>
                 }
                 {customer.notes && (
