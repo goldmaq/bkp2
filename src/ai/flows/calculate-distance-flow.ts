@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview A Genkit flow to calculate driving distance between two addresses
@@ -85,8 +86,8 @@ async function fetchWithTimeout(resource: RequestInfo | URL, options: RequestIni
 // Helper function to geocode an address using Nominatim
 async function geocodeAddress(address: string): Promise<{ latitude: number; longitude: number } | null> {
   const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
+  console.log(`[DistanceFlow] Geocoding address: "${address}" with URL: ${nominatimUrl}`);
   try {
-    console.log(`Geocoding address: ${address} with URL: ${nominatimUrl}`);
     const response = await fetchWithTimeout(nominatimUrl, {
       headers: {
         'User-Agent': 'GoldMaqControlApp/1.0 (Firebase Studio Project; +gold-maq-control)',
@@ -95,22 +96,22 @@ async function geocodeAddress(address: string): Promise<{ latitude: number; long
     });
 
     if (!response.ok) {
-      console.error(`Nominatim API error for "${address}": ${response.status} ${response.statusText}`);
+      console.error(`[DistanceFlow] Nominatim API error for "${address}": ${response.status} ${response.statusText}`);
       return null;
     }
     const data = await response.json();
     if (data && data.length > 0) {
       const { lat, lon } = data[0];
-      console.log(`Geocoded "${address}" to: lat=${lat}, lon=${lon}`);
+      console.log(`[DistanceFlow] Geocoded "${address}" to: lat=${lat}, lon=${lon}`);
       return { latitude: parseFloat(lat), longitude: parseFloat(lon) };
     }
-    console.warn(`No geocoding results for address: ${address}`);
+    console.warn(`[DistanceFlow] No geocoding results for address: "${address}"`);
     return null;
   } catch (error: any) {
     if (error.name === 'AbortError') {
-      console.error(`Error geocoding address "${address}": Request timed out.`);
+      console.error(`[DistanceFlow] Error geocoding address "${address}": Request timed out.`);
     } else {
-      console.error(`Error geocoding address "${address}":`, error);
+      console.error(`[DistanceFlow] Error geocoding address "${address}":`, error);
     }
     return null;
   }
@@ -149,7 +150,7 @@ function getSimulatedDistance(): number {
 let calculateDistanceFlow: (input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>;
 
 if (ai && tollEstimationPrompt) {
-  console.log("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) IS available. Defining real flow with toll estimation.");
+  console.log("[DistanceFlow] Genkit AI instance (ai) IS available. Defining real flow with toll estimation.");
   calculateDistanceFlow = ai.defineFlow(
     {
       name: 'calculateDistanceFlow',
@@ -157,7 +158,9 @@ if (ai && tollEstimationPrompt) {
       outputSchema: CalculateDistanceOutputSchema,
     },
     async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
-      console.log("calculateDistanceFlow: Received input", input);
+      console.log("[DistanceFlow] Received input:", input);
+      console.log(`[DistanceFlow] Origin Address for Flow: "${input.originAddress}"`);
+      console.log(`[DistanceFlow] Destination Address for Flow: "${input.destinationAddress}"`);
       let estimatedTollCostOneWay: number | null = null;
 
       if (!input.originAddress || !input.destinationAddress) {
@@ -170,7 +173,7 @@ if (ai && tollEstimationPrompt) {
 
       const originCoords = await geocodeAddress(input.originAddress);
       if (!originCoords) {
-        console.warn("calculateDistanceFlow: Failed to geocode origin address. Falling back to simulation.");
+        console.warn("[DistanceFlow] Failed to geocode origin address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
           status: 'ERROR_GEOCODING_FAILED',
@@ -180,7 +183,7 @@ if (ai && tollEstimationPrompt) {
 
       const destinationCoords = await geocodeAddress(input.destinationAddress);
       if (!destinationCoords) {
-        console.warn("calculateDistanceFlow: Failed to geocode destination address. Falling back to simulation.");
+        console.warn("[DistanceFlow] Failed to geocode destination address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
           status: 'ERROR_GEOCODING_FAILED',
@@ -190,10 +193,14 @@ if (ai && tollEstimationPrompt) {
 
       try {
         const directDistanceKm = haversineDistance(originCoords, destinationCoords);
-        const estimatedDrivingDistanceKm = directDistanceKm * 1.4;
-
-        console.log(`calculateDistanceFlow: Direct distance: ${directDistanceKm.toFixed(2)} km, Estimated driving: ${estimatedDrivingDistanceKm.toFixed(2)} km`);
+        console.log(`[DistanceFlow] Haversine (direct) distance: ${directDistanceKm.toFixed(2)} km`);
+        
+        const estimatedDrivingDistanceKm = directDistanceKm * 1.3; // Adjusted factor from 1.4 to 1.3
+        console.log(`[DistanceFlow] Estimated driving distance (Haversine * 1.3): ${estimatedDrivingDistanceKm.toFixed(2)} km`);
+        
         const finalDistanceKm = parseFloat(estimatedDrivingDistanceKm.toFixed(1));
+        console.log(`[DistanceFlow] Final distance to be returned by flow (one-way): ${finalDistanceKm} km`);
+
 
         // Try to estimate toll costs using LLM
         try {
@@ -204,12 +211,12 @@ if (ai && tollEstimationPrompt) {
           });
           if (llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
             estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
-            console.log(`calculateDistanceFlow: LLM estimated one-way toll cost: ${estimatedTollCostOneWay}`);
+            console.log(`[DistanceFlow] LLM estimated one-way toll cost: ${estimatedTollCostOneWay}`);
           } else {
-             console.warn("calculateDistanceFlow: LLM did not return a valid 'estimatedTollOneWay' number.");
+             console.warn("[DistanceFlow] LLM did not return a valid 'estimatedTollOneWay' number.");
           }
         } catch (llmError: any) {
-          console.error("calculateDistanceFlow: Error during LLM toll estimation:", llmError);
+          console.error("[DistanceFlow] Error during LLM toll estimation:", llmError);
           // Non-fatal error for toll estimation, proceed without it
         }
 
@@ -219,7 +226,7 @@ if (ai && tollEstimationPrompt) {
           estimatedTollCostByAI: estimatedTollCostOneWay,
         };
       } catch (error: any) {
-        console.error("calculateDistanceFlow: Error during Haversine calculation or API interaction:", error);
+        console.error("[DistanceFlow] Error during Haversine calculation or API interaction:", error);
         return {
           distanceKm: getSimulatedDistance(),
           status: 'SIMULATED',
@@ -229,9 +236,9 @@ if (ai && tollEstimationPrompt) {
     }
   );
 } else {
-  console.warn("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) or tollEstimationPrompt is NOT available. Defining dummy flow (no toll estimation).");
+  console.warn("[DistanceFlow] Genkit AI instance (ai) or tollEstimationPrompt is NOT available. Defining dummy flow (no toll estimation).");
   calculateDistanceFlow = async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
-    console.warn("calculateDistanceFlow: Running DUMMY flow.");
+    console.warn("[DistanceFlow] Running DUMMY flow.");
     if (!input.originAddress || !input.destinationAddress) {
       return { distanceKm: 0, status: 'ERROR_NO_ADDRESS', errorMessage: "Origin or destination address is missing in dummy flow." };
     }
@@ -258,7 +265,7 @@ if (ai && tollEstimationPrompt) {
 // Exported wrapper function
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
   if (typeof calculateDistanceFlow !== 'function') {
-    console.error("calculateDistance Flow: calculateDistanceFlow is not defined or not a function. This indicates a severe initialization issue.");
+    console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. This indicates a severe initialization issue.");
     return {
         distanceKm: getSimulatedDistance(),
         status: 'SIMULATED',
@@ -269,7 +276,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   try {
     return await calculateDistanceFlow(input);
   } catch (error: any) {
-    console.error("Error executing calculateDistanceFlow:", error);
+    console.error("[DistanceFlow] Error executing calculateDistanceFlow:", error);
     return {
       distanceKm: getSimulatedDistance(),
       status: 'SIMULATED',

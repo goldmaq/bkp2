@@ -95,7 +95,7 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       phase: (serviceOrderPhaseOptions.includes(data.phase) ? data.phase : "Aguardando Avaliação Técnica") as ServiceOrderPhaseType,
       technicianId: data.technicianId || null,
       serviceType: data.serviceType || "Não especificado",
-      customServiceType: data.customServiceType, 
+      customServiceType: data.customServiceType,
       vehicleId: data.vehicleId || null,
       startDate: data.startDate ? formatDateForInput(data.startDate) : undefined,
       endDate: data.endDate ? formatDateForInput(data.endDate) : undefined,
@@ -309,7 +309,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   });
 
   const selectedCustomerId = useWatch({ control: form.control, name: 'customerId' });
-  const formEquipmentId = useWatch({ control: form.control, name: 'equipmentId' }); 
+  const formEquipmentId = useWatch({ control: form.control, name: 'equipmentId' });
   const formMediaUrls = useWatch({ control: form.control, name: 'mediaUrls' });
   const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
   const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
@@ -423,14 +423,14 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
       if (
         isModalOpen &&
-        (!editingOrder || (editingOrder && isEditMode)) && 
+        (!editingOrder || (editingOrder && isEditMode)) &&
         selectedCustomerId &&
-        formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && 
+        formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE &&
         !isCalculatingDistance &&
         typeof calculateDistance === 'function'
       ) {
         const customer = (customers || []).find(c => c.id === selectedCustomerId);
-        const equipment = (equipmentList || []).find(e => e.id === formEquipmentId); 
+        const equipment = (equipmentList || []).find(e => e.id === formEquipmentId);
 
         if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
           return;
@@ -441,7 +441,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
             !customer.street || !customer.city || !customer.state || !customer.cep) {
-          console.warn("Missing address details for origin company or destination customer. Automatic calculation skipped.");
+          console.warn("[OS ClientPage] Missing address details for origin company or destination customer. Automatic calculation skipped.");
           return;
         }
 
@@ -449,39 +449,49 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         const destinationAddress = formatAddressToString(customer);
 
         if (!originAddress || !destinationAddress) {
-            console.warn("Could not format origin or destination address strings. Automatic calculation skipped.");
+            console.warn("[OS ClientPage] Could not format origin or destination address strings. Automatic calculation skipped.");
             return;
         }
 
+        console.log(`[OS ClientPage] Attempting distance calculation. Origin: "${originAddress}", Destination: "${destinationAddress}"`);
+
         if (currentDistanceValue !== null && currentDistanceValue !== undefined) {
+            console.log(`[OS ClientPage] Distance already set to ${currentDistanceValue}km. Skipping automatic calculation.`);
             return;
         }
 
         setIsCalculatingDistance(true);
         try {
+          console.log(`[OS ClientPage] Calling calculateDistance flow with Origin: "${originAddress}", Destination: "${destinationAddress}"`);
           const result: CalculateDistanceOutput = await calculateDistance({ originAddress, destinationAddress });
+          console.log("[OS ClientPage] Flow result:", result);
+
 
           let toastMessage = "";
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
             const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
             form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
             toastMessage += `Distância (ida/volta): ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
+            console.log(`[OS ClientPage] Set estimatedTravelDistanceKm to: ${roundTripDistance}`);
 
             if ((currentTollValue === null || currentTollValue === undefined) &&
                 result.estimatedTollCostByAI && result.estimatedTollCostByAI > 0) {
               const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
               form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
               toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
+              console.log(`[OS ClientPage] Set estimatedTollCosts (AI) to: ${roundTripTollAI}`);
             } else if (result.estimatedTollCostByAI === 0) {
               toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00.`;
+               console.log(`[OS ClientPage] AI estimatedTollCostByAI is 0. No update to form field.`);
             }
             toast({ title: "Estimativas Calculadas", description: toastMessage.trim() });
 
           } else {
             toast({ title: "Falha ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância automaticamente.", variant: "default" });
+             console.warn(`[OS ClientPage] Distance calculation failed/returned non-success status: ${result.status}, Message: ${result.errorMessage}`);
           }
         } catch (e: any) {
-          console.error("Error calling calculateDistance flow:", e);
+          console.error("[OS ClientPage] Error calling calculateDistance flow:", e);
           toast({ title: "Erro no Cálculo de Distância", description: e.message || "Ocorreu um erro ao tentar calcular a distância.", variant: "destructive" });
         } finally {
           setIsCalculatingDistance(false);
@@ -491,17 +501,17 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
     if (isModalOpen && (!editingOrder || (editingOrder && isEditMode)) && !isCalculatingDistance) {
         attemptCalculateDistanceAndTolls().catch(err => {
-            console.error("Error in attemptCalculateDistanceAndTolls useEffect:", err);
+            console.error("[OS ClientPage] Error in attemptCalculateDistanceAndTolls useEffect:", err);
             setIsCalculatingDistance(false);
         });
     }
   }, [
-    isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId, 
+    isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId,
     isCalculatingDistance, customers, equipmentList, companies, form, toast
   ]);
 
 
-  if (!db || !storage) { 
+  if (!db || !storage) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -544,15 +554,15 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
 
     if (selectedCustomerId) {
-      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { 
+      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     } else {
-       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { 
+       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     }
-  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, formEquipmentId]); 
+  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, formEquipmentId]);
 
 
   const prepareDataForFirestore = (
@@ -1276,7 +1286,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   </FormItem>
                 )} />
               </div>
-              
+
               {selectedCustomerId && !isLoadingCustomers && customers.find(c => c.id === selectedCustomerId) && (
                 <div className="mt-2 p-3 border rounded-md bg-muted/20 text-sm space-y-1">
                   <h4 className="font-semibold mb-1 text-xs text-muted-foreground uppercase">Detalhes do Cliente Selecionado:</h4>
