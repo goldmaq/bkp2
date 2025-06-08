@@ -4,17 +4,19 @@
 import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { Archive, Loader2, User, ClipboardList, Wrench, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart } from "lucide-react";
+import { Archive, Loader2, User, ClipboardList, Wrench, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType } from "@/types";
+import { partsRequisitionItemStatusOptions } from "@/types";
 import { cn, formatDateForDisplay } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -34,6 +36,8 @@ const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+
+const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_WAREHOUSE_";
 
 interface ApprovedItem extends PartsRequisitionItem {
   requisitionId: string;
@@ -102,6 +106,8 @@ export function PartsWarehouseClientPage() {
   const [currentItemAction, setCurrentItemAction] = useState<CurrentItemAction | null>(null);
   const [warehouseNotesInput, setWarehouseNotesInput] = useState("");
   const [estimatedCostInput, setEstimatedCostInput] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<PartsRequisitionItemStatusType | typeof ALL_STATUSES_FILTER_VALUE>(ALL_STATUSES_FILTER_VALUE);
+  const [searchTerm, setSearchTerm] = useState("");
 
 
   const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitions } = useQuery<PartsRequisition[], Error>({
@@ -124,7 +130,7 @@ export function PartsWarehouseClientPage() {
     queryFn: fetchCustomers,
   });
 
-  const approvedItemsForSeparation = useMemo(() => {
+  const approvedItemsForWarehouseProcessing = useMemo(() => {
     const items: ApprovedItem[] = [];
     requisitions.forEach(req => {
       req.items.forEach(item => {
@@ -146,20 +152,40 @@ export function PartsWarehouseClientPage() {
           });
         }
       });
-    });
-     return items.sort((a, b) => {
+    
+    let filteredItems = items;
+
+    if (statusFilter !== ALL_STATUSES_FILTER_VALUE) {
+      filteredItems = filteredItems.filter(item => item.status === statusFilter);
+    }
+
+    if (searchTerm.trim()) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filteredItems = filteredItems.filter(item =>
+        item.partName.toLowerCase().includes(lowerSearchTerm) ||
+        item.requisitionNumber.toLowerCase().includes(lowerSearchTerm) ||
+        (item.serviceOrderNumber && item.serviceOrderNumber.toLowerCase().includes(lowerSearchTerm))
+      );
+    }
+    
+     return filteredItems.sort((a, b) => {
         const dateA = new Date(a.requisitionCreatedDate).getTime();
         const dateB = new Date(b.requisitionCreatedDate).getTime();
         if (dateA !== dateB) {
-            return dateA - dateB;
+            return dateA - dateB; // Mais antigo primeiro
         }
-        if (a.status === "Aprovado" && b.status !== "Aprovado") return -1;
-        if (b.status === "Aprovado" && a.status !== "Aprovado") return 1;
-        if (a.status === "Aguardando Compra" && b.status === "Separado") return -1;
-        if (b.status === "Aguardando Compra" && a.status === "Separado") return 1;
-        return 0;
+        // Prioridade de status: Aprovado > Aguardando Compra > Separado
+        const statusOrder: Record<PartsRequisitionItemStatusType, number> = {
+            "Pendente Aprovação": 0, // Não deve aparecer aqui, mas para completude
+            "Aprovado": 1,
+            "Aguardando Compra": 2,
+            "Separado": 3,
+            "Recusado": 4, // Não deve aparecer aqui
+            "Entregue": 5, // Não deve aparecer aqui
+        };
+        return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
     });
-  }, [requisitions, serviceOrders, technicians, customers]);
+  }, [requisitions, serviceOrders, technicians, customers, statusFilter, searchTerm]);
 
   const updateWarehouseItemActionMutation = useMutation({
     mutationFn: async (data: {
@@ -196,37 +222,34 @@ export function PartsWarehouseClientPage() {
             let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
 
             if (currentRequisition.status !== "Cancelada") {
-                const anyItemPendingApproval = updatedItems.some(i => i.status === "Pendente Aprovação");
-                if (anyItemPendingApproval) {
-                    newRequisitionStatus = "Pendente";
+                const anyItemPendingApprovalByTriage = updatedItems.some(i => i.status === "Pendente Aprovação");
+                if (anyItemPendingApprovalByTriage) {
+                    newRequisitionStatus = "Pendente"; // Back to pending if any item requires triage
                 } else {
-                    const actionableItems = updatedItems.filter(i => i.status !== "Recusado");
-                    if (actionableItems.length === 0) { // All items were recused by triage
-                        newRequisitionStatus = "Triagem Realizada";
+                    const actionableItems = updatedItems.filter(i => i.status !== "Recusado"); // Items not refused by triage
+                    if (actionableItems.length === 0 && !anyItemPendingApprovalByTriage) {
+                        newRequisitionStatus = "Triagem Realizada"; // All actionable items were refused, or no actionable items existed.
                     } else {
-                        const allActionableItemsProcessedByWarehouse = actionableItems.every(
+                        const allActionableItemsSeparated = actionableItems.every(
                             item => item.status === "Separado" || item.status === "Entregue"
                         );
-                        const anyActionableItemProcessedByWarehouse = actionableItems.some(
+                        const anyActionableItemSeparated = actionableItems.some(
                             item => item.status === "Separado" || item.status === "Entregue"
                         );
                         const anyActionableItemStillPendingForWarehouse = actionableItems.some(
                             item => item.status === "Aprovado" || item.status === "Aguardando Compra"
                         );
 
-                        if (allActionableItemsProcessedByWarehouse) {
+                        if (allActionableItemsSeparated) {
                             newRequisitionStatus = "Atendida Totalmente";
-                        } else if (anyActionableItemProcessedByWarehouse && anyActionableItemStillPendingForWarehouse) {
+                        } else if (anyActionableItemSeparated && anyActionableItemStillPendingForWarehouse) {
                             newRequisitionStatus = "Atendida Parcialmente";
-                        } else if (anyActionableItemProcessedByWarehouse && !anyActionableItemStillPendingForWarehouse) {
-                            //This implies items were processed and the rest were recused earlier
-                            newRequisitionStatus = "Atendida Totalmente";
-                        }
-                         else if (!anyActionableItemProcessedByWarehouse && anyActionableItemStillPendingForWarehouse) {
-                            newRequisitionStatus = "Triagem Realizada"; // Waiting for warehouse to act on approved/to-buy items
-                        } else if (!anyActionableItemProcessedByWarehouse && !anyActionableItemStillPendingForWarehouse) {
-                             // All actionable items were recused (or none existed that were not recused)
-                             newRequisitionStatus = "Triagem Realizada";
+                        } else if (anyActionableItemSeparated && !anyActionableItemStillPendingForWarehouse) {
+                            newRequisitionStatus = "Atendida Totalmente"; // All available items are separated/delivered
+                        } else if (!anyActionableItemSeparated && anyActionableItemStillPendingForWarehouse) {
+                            newRequisitionStatus = "Triagem Realizada"; // Items approved but not yet acted upon by warehouse
+                        } else if (!anyActionableItemSeparated && !anyActionableItemStillPendingForWarehouse && !anyItemPendingApprovalByTriage) {
+                             newRequisitionStatus = "Triagem Realizada"; // Only refused items exist or no items needed warehouse action
                         }
                     }
                 }
@@ -308,11 +331,41 @@ export function PartsWarehouseClientPage() {
     <>
       <PageHeader title="Almoxarifado - Peças para Separação e Compra" />
 
-      {approvedItemsForSeparation.length === 0 ? (
+      <div className="mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-grow">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Buscar por peça, requisição, OS..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10"
+          />
+        </div>
+        <div className="relative md:w-auto">
+           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+           <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as PartsRequisitionItemStatusType | typeof ALL_STATUSES_FILTER_VALUE)}
+          >
+            <SelectTrigger className="w-full md:w-[220px] pl-10">
+              <SelectValue placeholder="Filtrar por status do item..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_STATUSES_FILTER_VALUE}>Todos os Status (Aprovados)</SelectItem>
+              <SelectItem value="Aprovado">Aprovado (Aguardando Almox.)</SelectItem>
+              <SelectItem value="Aguardando Compra">Aguardando Compra</SelectItem>
+              <SelectItem value="Separado">Separado</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {approvedItemsForWarehouseProcessing.length === 0 ? (
         <DataTablePlaceholder
           icon={Archive}
-          title="Nenhuma Peça Aguardando Ação do Almoxarifado"
-          description="Aguardando peças aprovadas na triagem ou todas já foram processadas."
+          title="Nenhuma Peça Encontrada"
+          description={searchTerm.trim() || statusFilter !== ALL_STATUSES_FILTER_VALUE ? "Nenhuma peça corresponde aos filtros aplicados." : "Aguardando peças aprovadas na triagem ou todas já foram processadas."}
           buttonLabel="Atualizar Lista"
           onButtonClick={() => {
              queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] });
@@ -321,7 +374,7 @@ export function PartsWarehouseClientPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {approvedItemsForSeparation.map((item) => (
+          {approvedItemsForWarehouseProcessing.map((item) => (
             <Card key={`${item.requisitionId}-${item.id}`} className={cn("flex flex-col shadow-lg", {
                 "border-2 border-yellow-400": item.status === "Aguardando Compra",
                 "border-2 border-green-500": item.status === "Separado",
@@ -399,23 +452,22 @@ export function PartsWarehouseClientPage() {
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-4">
-                 <div className="flex gap-2 w-full">
+                 <div className="flex flex-col gap-2 w-full">
                     {item.status === "Aprovado" && (
                         <>
-                            <Button size="sm" variant="outline" className="flex-1 border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={() => handleOpenActionModal(item, "Separado")} disabled={isMutating}>
+                            <Button size="sm" variant="outline" className="w-full border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={() => handleOpenActionModal(item, "Separado")} disabled={isMutating}>
                                 <CheckCircle className="mr-1.5 h-4 w-4"/> Em Estoque (Separar)
                             </Button>
-                            <Button size="sm" variant="outline" className="flex-1 border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700" onClick={() => handleOpenActionModal(item, "Aguardando Compra")} disabled={isMutating}>
+                            <Button size="sm" variant="outline" className="w-full border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700" onClick={() => handleOpenActionModal(item, "Aguardando Compra")} disabled={isMutating}>
                                 <ShoppingCart className="mr-1.5 h-4 w-4"/> Aguardar Compra
                             </Button>
                         </>
                     )}
                     {item.status === "Aguardando Compra" && (
-                         <Button size="sm" variant="outline" className="flex-1 border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={() => handleOpenActionModal(item, "Separado")} disabled={isMutating}>
+                         <Button size="sm" variant="outline" className="w-full border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={() => handleOpenActionModal(item, "Separado")} disabled={isMutating}>
                             <CheckCircle className="mr-1.5 h-4 w-4"/> Peça Chegou (Separar)
                         </Button>
                     )}
-                    {/* O botão "Entregar ao Técnico" foi removido conforme solicitado */}
                  </div>
               </CardFooter>
             </Card>
@@ -487,3 +539,4 @@ export function PartsWarehouseClientPage() {
   );
 }
 
+    
