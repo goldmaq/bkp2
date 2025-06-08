@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type * as z from "zod";
-import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare, Layers, Tag, FileSignature, DollarSign, Users as UsersIcon } from "lucide-react"; // Adicionado FileSignature, DollarSign, UsersIcon
+import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare, Layers, Tag, FileSignature, DollarSign, Users as UsersIcon } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -17,8 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, doc, query, orderBy, Timestamp, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina, Budget } from "@/types"; // Adicionado Budget
-import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber, formatCurrency } from "@/lib/utils"; // Adicionado formatCurrency
+import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina, Budget } from "@/types";
+import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber, formatCurrency } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,7 +38,7 @@ const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
-const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets"; // Adicionado
+const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 
 async function fetchPartsRequisitions(): Promise<PartsRequisition[]> {
   if (!db) throw new Error("Firebase DB is not available");
@@ -101,7 +101,7 @@ async function fetchEquipmentList(): Promise<Maquina[]> {
   });
 }
 
-async function fetchBudgets(): Promise<Budget[]> { // NOVA FUNÇÃO
+async function fetchBudgets(): Promise<Budget[]> {
   if (!db) throw new Error("Firebase DB is not available");
   const q = query(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), orderBy("createdDate", "desc"));
   const querySnapshot = await getDocs(q);
@@ -158,7 +158,7 @@ export function PartsTriageClientPage() {
     queryFn: fetchEquipmentList,
   });
 
-  const { data: budgets = [], isLoading: isLoadingBudgets, isError: isErrorBudgets, error: errorBudgetsData } = useQuery<Budget[], Error>({ // NOVO QUERY
+  const { data: budgets = [], isLoading: isLoadingBudgets, isError: isErrorBudgets, error: errorBudgetsData } = useQuery<Budget[], Error>({
     queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME],
     queryFn: fetchBudgets,
   });
@@ -170,9 +170,8 @@ export function PartsTriageClientPage() {
     );
   }, [requisitions]);
 
-  const approvedBudgetsForOSTreation = useMemo(() => { // NOVO MEMO
+  const approvedBudgetsForOSTreation = useMemo(() => {
     return budgets.filter(budget => budget.status === "Aprovado");
-    // TODO: Adicionar lógica para não mostrar orçamentos que já geraram OS, se necessário.
   }, [budgets]);
 
   const updatePartItemStatusMutation = useMutation({
@@ -259,7 +258,7 @@ export function PartsTriageClientPage() {
     }
   };
 
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment || isLoadingBudgets; // Adicionado isLoadingBudgets
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment || isLoadingBudgets;
   const isMutating = updatePartItemStatusMutation.isPending;
 
   if (!db) {
@@ -281,14 +280,14 @@ export function PartsTriageClientPage() {
   if (isErrorRequisitions || !Array.isArray(requisitions)) {
     return <div className="text-red-500 p-4">Erro ao carregar requisições para triagem: {errorRequisitionsDataAll?.message || "Formato de dados inválido."}</div>;
   }
-  if (isErrorBudgets || !Array.isArray(budgets)) { // NOVO CHECK DE ERRO
+  if (isErrorBudgets || !Array.isArray(budgets)) {
     return <div className="text-red-500 p-4">Erro ao carregar orçamentos: {errorBudgetsData?.message || "Formato de dados inválido."}</div>;
   }
 
 
   return (
     <TooltipProvider>
-      <PageHeader title="Triagem de OS e Peças" /> {/* MODIFICADO */}
+      <PageHeader title="Triagem de Ordens e Peças" />
 
       <section className="mb-10">
         <h2 className="text-2xl font-headline font-semibold mb-4 border-b pb-2">Orçamentos Aprovados para Geração de OS</h2>
@@ -337,7 +336,7 @@ export function PartsTriageClientPage() {
                             <p className="flex items-center">
                                 <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                                 <span className="font-medium text-muted-foreground mr-1">Aprovado em:</span>
-                                {budget.validUntilDate ? formatDateForDisplay(budget.validUntilDate) : formatDateForDisplay(budget.createdDate)} {/* Adaptar se tiver data de aprovação */}
+                                {budget.validUntilDate ? formatDateForDisplay(budget.validUntilDate) : formatDateForDisplay(budget.createdDate)}
                             </p>
                             {budget.notes && (
                                 <p className="flex items-start">

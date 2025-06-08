@@ -49,7 +49,7 @@ const navItems: NavItem[] = [
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
   { href: "/budgets", icon: FileText, label: "Orçamentos" },
   { href: "/parts-requisitions", icon: Wrench, label: "Requisições Peças" },
-  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem OS e Peças" }, // MODIFICADO
+  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem de Ordens e Peças" }, // MODIFICADO
   { href: "/parts-warehouse", icon: Archive, label: "Almoxarifado Peças" },
   { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" },
   { href: "/vehicles", icon: CarFront, label: "Veículos" },
