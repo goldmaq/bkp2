@@ -5,15 +5,15 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil } from "lucide-react";
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardClock, ThumbsUp, PackageSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle } from "@/types";
-import { ServiceOrderSchema, serviceTypeOptionsList } from "@/types";
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType } from "@/types";
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -39,13 +39,13 @@ import { Label } from "@/components/ui/label";
 
 const MAX_FILES_ALLOWED = 5;
 
-const phaseOptions: ServiceOrder['phase'][] = ['Pendente', 'Em Progresso', 'Aguardando Peças', 'Concluída', 'Cancelada'];
-const phaseIcons = {
-  Pendente: <AlertIconLI className="h-4 w-4 text-yellow-400" />,
-  'Em Progresso': <Play className="h-4 w-4 text-blue-500" />,
-  'Aguardando Peças': <Pause className="h-4 w-4 text-orange-500" />,
-  Concluída: <Check className="h-4 w-4 text-green-500" />,
-  Cancelada: <X className="h-4 w-4 text-red-500" />,
+const phaseIcons: Record<ServiceOrderPhaseType, JSX.Element> = {
+  'Aguardando Avaliação Técnica': <ClipboardClock className="h-4 w-4 text-yellow-500" />,
+  'Avaliado, Aguardando Autorização': <ThumbsUp className="h-4 w-4 text-purple-500" />,
+  'Autorizado, Aguardando Peça': <PackageSearch className="h-4 w-4 text-orange-500" />,
+  'Em Execução': <Play className="h-4 w-4 text-blue-500" />,
+  'Concluída': <Check className="h-4 w-4 text-green-500" />,
+  'Cancelada': <X className="h-4 w-4 text-red-500" />,
 };
 
 const FIRESTORE_COLLECTION_NAME = "ordensDeServico";
@@ -152,7 +152,7 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       customerId: data.customerId || "N/A",
       equipmentId: data.equipmentId || "N/A",
       requesterName: data.requesterName || null,
-      phase: (phaseOptions.includes(data.phase) ? data.phase : "Pendente") as ServiceOrder['phase'],
+      phase: (serviceOrderPhaseOptions.includes(data.phase) ? data.phase : "Aguardando Avaliação Técnica") as ServiceOrderPhaseType,
       technicianId: data.technicianId || null,
       serviceType: data.serviceType || "Não especificado",
       vehicleId: data.vehicleId || null,
@@ -224,7 +224,7 @@ type DeadlineStatus = 'overdue' | 'due_today' | 'due_soon' | 'none';
 
 const getDeadlineStatusInfo = (
   endDateString?: string,
-  phase?: ServiceOrder['phase']
+  phase?: ServiceOrderPhaseType
 ): { status: DeadlineStatus; message?: string; icon?: JSX.Element; alertClass?: string } => {
   if (!endDateString || phase === 'Concluída' || phase === 'Cancelada') {
     return { status: 'none', alertClass: "" };
@@ -241,23 +241,22 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  console.log(`DEBUG: Order EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
-
+  console.log(`DEBUG: EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
-    console.log("DEBUG: Status Overdue - Dates:", {endDateNormalized, today, isBefore: isBefore(endDateNormalized, today), isToday: isToday(endDateNormalized)});
+    console.log("DEBUG: Status Overdue - isBefore:", isBefore(endDateNormalized, today), "isToday:", isToday(endDateNormalized));
     return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5 text-destructive" />, alertClass: "bg-destructive/20 border-destructive/50 text-destructive" };
   }
   if (isToday(endDateNormalized)) {
-    console.log("DEBUG: Status Due Today - Dates:", {endDateNormalized, today, isToday: isToday(endDateNormalized)});
+    console.log("DEBUG: Status Due Today - isToday:", isToday(endDateNormalized));
     return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
   const twoDaysFromNow = addDays(today, 2);
   if (isBefore(endDateNormalized, twoDaysFromNow)) {
-    console.log("DEBUG: Status Due Soon - Dates:", {endDateNormalized, twoDaysFromNow, isBefore: isBefore(endDateNormalized, twoDaysFromNow)});
+    console.log("DEBUG: Status Due Soon - isBefore (twoDaysFromNow):", isBefore(endDateNormalized, twoDaysFromNow));
      return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
-  console.log("DEBUG: Status None - Dates:", {endDateNormalized, today, twoDaysFromNow});
+  console.log("DEBUG: Status None");
   return { status: 'none', alertClass: "" };
 };
 
@@ -274,12 +273,13 @@ export function ServiceOrderClientPage() {
   const [isConclusionModalOpen, setIsConclusionModalOpen] = useState(false);
   const [technicalConclusionText, setTechnicalConclusionText] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<ServiceOrderPhaseType | "Todos">("Todos");
 
 
   const form = useForm<z.infer<typeof ServiceOrderSchema>>({
     resolver: zodResolver(ServiceOrderSchema),
     defaultValues: {
-      orderNumber: "", customerId: "", equipmentId: "", phase: "Pendente", technicianId: null,
+      orderNumber: "", customerId: "", equipmentId: "", phase: "Aguardando Avaliação Técnica", technicianId: null,
       requesterName: "", serviceType: "", customServiceType: "", vehicleId: null, description: "",
       notes: "", startDate: formatDateForInput(new Date().toISOString()), endDate: "",
       mediaUrls: [], technicalConclusion: null,
@@ -290,11 +290,19 @@ export function ServiceOrderClientPage() {
   const selectedEquipmentId = useWatch({ control: form.control, name: 'equipmentId' });
   const formMediaUrls = useWatch({ control: form.control, name: 'mediaUrls' });
 
-  const { data: serviceOrders = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
+  const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_COLLECTION_NAME],
     queryFn: fetchServiceOrders,
     enabled: !!db,
   });
+
+  const filteredServiceOrders = useMemo(() => {
+    if (selectedPhaseFilter === "Todos") {
+      return serviceOrdersRaw;
+    }
+    return serviceOrdersRaw.filter(order => order.phase === selectedPhaseFilter);
+  }, [serviceOrdersRaw, selectedPhaseFilter]);
+
 
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
@@ -550,10 +558,10 @@ export function ServiceOrderClientPage() {
     } else {
       setEditingOrder(null);
       setIsEditMode(true); 
-      const nextOrderNum = getNextOrderNumber(serviceOrders);
+      const nextOrderNum = getNextOrderNumber(serviceOrdersRaw);
       form.reset({
         orderNumber: nextOrderNum,
-        customerId: "", equipmentId: NO_EQUIPMENT_SELECTED_VALUE, phase: "Pendente", technicianId: null,
+        customerId: "", equipmentId: NO_EQUIPMENT_SELECTED_VALUE, phase: "Aguardando Avaliação Técnica", technicianId: null,
         requesterName: "", serviceType: "", customServiceType: "", vehicleId: null, description: "",
         notes: "", startDate: formatDateForInput(new Date().toISOString()), endDate: "",
         mediaUrls: [], technicalConclusion: null,
@@ -561,7 +569,7 @@ export function ServiceOrderClientPage() {
       setShowCustomServiceType(false);
     }
     setIsModalOpen(true);
-  }, [form, serviceOrders]);
+  }, [form, serviceOrdersRaw]);
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -718,28 +726,47 @@ export function ServiceOrderClientPage() {
         }
       />
 
-      {serviceOrders.length === 0 && !isLoadingServiceOrders ? (
+      <div className="mb-6">
+        <Label htmlFor="phase-filter" className="text-sm font-medium">Filtrar por Fase:</Label>
+        <Select
+          value={selectedPhaseFilter}
+          onValueChange={(value) => setSelectedPhaseFilter(value as ServiceOrderPhaseType | "Todos")}
+        >
+          <SelectTrigger id="phase-filter" className="w-full md:w-[280px] mt-1">
+            <SelectValue placeholder="Mostrar todas as fases" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Todos">Todas as Fases</SelectItem>
+            {serviceOrderPhaseOptions.map(phase => (
+              <SelectItem key={phase} value={phase}>{phase}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {filteredServiceOrders.length === 0 && !isLoadingServiceOrders ? (
         <DataTablePlaceholder
           icon={ClipboardList}
-          title="Nenhuma Ordem de Serviço Ainda"
-          description="Crie sua primeira ordem de serviço para gerenciar as operações."
+          title="Nenhuma Ordem de Serviço Encontrada"
+          description={selectedPhaseFilter === "Todos" ? "Crie sua primeira ordem de serviço para gerenciar as operações." : `Nenhuma OS encontrada para a fase "${selectedPhaseFilter}".`}
           buttonLabel="Criar Ordem de Serviço"
           onButtonClick={() => openModal()}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {serviceOrders.map((order) => {
+          {filteredServiceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
+            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
-                 <div className={cn(
+                <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
-                  deadlineInfo.alertClass 
+                  deadlineInfo.alertClass
                 )}>
                   {deadlineInfo.icon}
                   <span className="ml-2">{deadlineInfo.message}</span>
@@ -891,7 +918,7 @@ export function ServiceOrderClientPage() {
                   <FormItem><FormLabel>Fase</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value} disabled={isOrderConcludedOrCancelled}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
-                      <SelectContent>{phaseOptions.map(opt => <SelectItem key={opt} value={opt} disabled={opt === 'Concluída' && editingOrder?.phase !== 'Concluída'}>{opt}</SelectItem>)}</SelectContent>
+                      <SelectContent>{serviceOrderPhaseOptions.map(opt => <SelectItem key={opt} value={opt} disabled={opt === 'Concluída' && editingOrder?.phase !== 'Concluída'}>{opt}</SelectItem>)}</SelectContent>
                     </Select><FormMessage />
                   </FormItem>
                 )} />

@@ -78,6 +78,16 @@ export const serviceTypeOptionsList = [
   "Revisão Geral",
 ] as const;
 
+export const serviceOrderPhaseOptions = [
+  'Aguardando Avaliação Técnica',
+  'Avaliado, Aguardando Autorização',
+  'Autorizado, Aguardando Peça',
+  'Em Execução',
+  'Concluída',
+  'Cancelada',
+] as const;
+export type ServiceOrderPhaseType = typeof serviceOrderPhaseOptions[number];
+
 
 export interface ServiceOrder {
   id: string;
@@ -85,7 +95,7 @@ export interface ServiceOrder {
   customerId: string;
   equipmentId: string; // This ID refers to a 'Maquina' entity
   requesterName?: string | null; // Nome do solicitante do serviço
-  phase: 'Pendente' | 'Em Progresso' | 'Aguardando Peças' | 'Concluída' | 'Cancelada';
+  phase: ServiceOrderPhaseType;
   technicianId?: string | null;
   serviceType: string;
   customServiceType?: string;
@@ -224,7 +234,7 @@ export const MaquinaSchema = z.object({
 
 export const TechnicianSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
-  role: z.string().min(1, "Cargo é obrigatório"), // Added role
+  role: z.string().min(1, "Cargo é obrigatório"), 
   specialization: z.string().optional(),
   phone: z.string().optional(),
 });
@@ -246,7 +256,7 @@ export const ServiceOrderSchema = z.object({
   customerId: z.string().min(1, "Cliente é obrigatório"),
   equipmentId: z.string().min(1, "Máquina é obrigatória"),
   requesterName: z.string().optional().nullable(),
-  phase: z.enum(['Pendente', 'Em Progresso', 'Aguardando Peças', 'Concluída', 'Cancelada']),
+  phase: z.enum(serviceOrderPhaseOptions),
   technicianId: z.string().nullable().optional(),
   serviceType: z.string().min(1, "Tipo de serviço é obrigatório"),
   customServiceType: z.string().optional(),
