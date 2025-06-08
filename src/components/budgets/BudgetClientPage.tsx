@@ -27,7 +27,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
 import { format, parseISO, isValid as isValidDateFn, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { cn, formatAddressForDisplay, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay, toTitleCase } from "@/lib/utils";
+import { cn, formatAddressForDisplay, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay, toTitleCase, formatCurrency } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,11 +50,6 @@ const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
 const NO_SERVICE_ORDER_SELECTED = "_NO_SERVICE_ORDER_SELECTED_";
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_BUDGET_";
 const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
-
-const formatCurrency = (value?: number | null): string => {
-  if (value === null || value === undefined) return "R$ 0,00";
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
 
 async function fetchBudgets(): Promise<Budget[]> {
   if (!db) throw new Error("Firebase DB is not available");

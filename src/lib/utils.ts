@@ -187,3 +187,9 @@ export const generateGoogleMapsUrl = (addressSource: Customer | Company | null |
 
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressParts)}`;
 };
+
+// Currency Formatting Utility
+export const formatCurrency = (value?: number | null): string => {
+  if (value === null || value === undefined) return "R$ 0,00";
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
