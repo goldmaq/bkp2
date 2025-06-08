@@ -436,7 +436,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           return;
         }
 
-        const companyOwnerId = equipment.ownerReference as CompanyId;
+        // const companyOwnerId = equipment.ownerReference as CompanyId; // Not used currently, but kept for potential future use
         const originCompany = goldmaqCompanyDetails;
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
@@ -1129,6 +1129,35 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     );
   }
 
+  const additionalFooterActions = (
+    <>
+      {editingOrder && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => handlePrintForTechnician(editingOrder)}
+          disabled={isMutating || isLoadingGoldmaqCompany}
+          className="border-primary text-primary hover:bg-primary/10"
+        >
+          <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
+        </Button>
+      )}
+      {editingOrder && editingOrder.phase === 'Concluída' && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => handlePrintForCustomer(editingOrder)}
+          disabled={isMutating || isLoadingGoldmaqCompany}
+          className="border-primary text-primary hover:bg-primary/10 ml-2"
+        >
+          <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
+        </Button>
+      )}
+    </>
+  );
+
 
   return (
     <TooltipProvider>
@@ -1191,7 +1220,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const customer = getCustomerDetails(order.customerId);
             const equipment = getEquipmentDetails(order.equipmentId);
             const technicianName = getTechnicianName(order.technicianId);
-            const PhaseIcon = phaseIcons[order.phase] || ClipboardList;
+            // const PhaseIcon = phaseIcons[order.phase] || ClipboardList; // Not directly used in card display anymore
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             const whatsappNumber = getWhatsAppNumber(customer?.phone);
             const whatsappLink = whatsappNumber && customer
@@ -1335,15 +1364,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                             >
                                 <Check className="mr-2 h-4 w-4" /> Concluir OS
                             </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleOpenCancelModal(order); }}
-                                disabled={isMutating}
-                                className="border-destructive text-destructive hover:bg-destructive/10"
-                            >
-                                <X className="mr-2 h-4 w-4" /> Cancelar OS
-                            </Button>
                         </>
                     )}
                 </CardFooter>
@@ -1366,10 +1386,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         deleteButtonLabel="Excluir OS"
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
+        additionalFooterActions={additionalFooterActions}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
-            <fieldset disabled={!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled} className="space-y-4">
+            <fieldset disabled={!!editingOrder && !isEditMode && (editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada')} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="orderNumber" render={({ field }) => (
                   <FormItem><FormLabel>Número da OS</FormLabel><FormControl><Input {...field} readOnly className="bg-muted/50" /></FormControl><FormMessage /></FormItem>
@@ -1404,7 +1425,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="phase" render={({ field }) => (
                   <FormItem><FormLabel>Fase da OS</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={isOrderConcludedOrCancelled && !!editingOrder}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={(editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
                       <SelectContent>
                         {serviceOrderPhaseOptions.map(phase => <SelectItem key={phase} value={phase}>{phase}</SelectItem>)}
@@ -1536,7 +1557,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     multiple
                     accept="image/*,video/*"
                     onChange={handleFileChange}
-                    disabled={(formMediaUrls?.length || 0) + mediaFiles.length >= MAX_FILES_ALLOWED || (isOrderConcludedOrCancelled && !!editingOrder)}
+                    disabled={(formMediaUrls?.length || 0) + mediaFiles.length >= MAX_FILES_ALLOWED || ((editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder)}
                   />
                 </FormControl>
                 <FormDescription>
@@ -1550,7 +1571,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                       <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex items-center gap-1">
                         <LinkIconLI className="h-3 w-3"/> {getFileNameFromUrl(url)} (Salvo)
                       </a>
-                      {(!isOrderConcludedOrCancelled || !editingOrder) && (
+                      {(!((editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder)) && (
                         <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveExistingUrl(url)} className="text-destructive hover:text-destructive">
                           <XCircle className="h-4 w-4 mr-1"/> Remover
                         </Button>
@@ -1623,3 +1644,4 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     </TooltipProvider>
   );
 }
+
