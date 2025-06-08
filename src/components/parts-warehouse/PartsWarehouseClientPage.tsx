@@ -109,7 +109,7 @@ export function PartsWarehouseClientPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
 
-  const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitions } = useQuery<PartsRequisition[], Error>({
+  const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitionsDataAll } = useQuery<PartsRequisition[], Error>({
     queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME],
     queryFn: fetchPartsRequisitions,
   });
@@ -225,19 +225,19 @@ export function PartsWarehouseClientPage() {
                 const actionableItems = updatedItems.filter(i => i.status !== "Recusado" && i.status !== "Pendente Aprovação");
                 
                 if (actionableItems.length === 0) { 
-                     if (updatedItems.every(i => i.status === "Recusado" || i.status === "Pendente Aprovação")){
-                        newRequisitionStatus = updatedItems.some(i => i.status === "Pendente Aprovação") ? "Pendente" : "Triagem Realizada";
-                     } else {
-                        newRequisitionStatus = "Triagem Realizada"; 
-                     }
+                    if (updatedItems.every(i => i.status === "Recusado" || i.status === "Pendente Aprovação")){
+                       newRequisitionStatus = updatedItems.some(i => i.status === "Pendente Aprovação") ? "Pendente" : "Triagem Realizada";
+                    } else {
+                       newRequisitionStatus = "Triagem Realizada"; 
+                    }
                 } else if (actionableItems.every(item => item.status === "Separado" || item.status === "Entregue")) {
-                    newRequisitionStatus = "Atendida Totalmente";
+                   newRequisitionStatus = "Atendida Totalmente";
                 } else if (actionableItems.some(item => item.status === "Separado" || item.status === "Entregue")) {
-                    newRequisitionStatus = "Atendida Parcialmente";
+                   newRequisitionStatus = "Atendida Parcialmente";
                 } else if (actionableItems.every(item => item.status === "Aprovado" || item.status === "Aguardando Compra")) {
-                     newRequisitionStatus = "Triagem Realizada";
-                } else {
                     newRequisitionStatus = "Triagem Realizada";
+                } else {
+                   newRequisitionStatus = "Triagem Realizada"; // Default if other conditions aren't met
                 }
             }
             transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
@@ -311,13 +311,12 @@ export function PartsWarehouseClientPage() {
 
   if (isErrorRequisitions || isErrorServiceOrders || isErrorTechnicians || isErrorCustomers) {
     const errorMessages = [];
-    if (isErrorRequisitions && errorRequisitions) errorMessages.push(`Requisições: ${errorRequisitions.message}`);
+    if (isErrorRequisitions && errorRequisitionsDataAll) errorMessages.push(`Requisições: ${errorRequisitionsDataAll.message}`);
     if (isErrorServiceOrders && errorServiceOrdersData) errorMessages.push(`Ordens de Serviço: ${errorServiceOrdersData.message}`);
     if (isErrorTechnicians && errorTechniciansData) errorMessages.push(`Técnicos: ${errorTechniciansData.message}`);
     if (isErrorCustomers && errorCustomersData) errorMessages.push(`Clientes: ${errorCustomersData.message}`);
     return <div className="text-red-500 p-4">Erro ao carregar dados do almoxarifado: {errorMessages.join("; ")}. Verifique o console.</div>;
   }
-
 
   return (
     <>
