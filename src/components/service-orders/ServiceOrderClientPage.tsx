@@ -371,19 +371,50 @@ export function ServiceOrderClientPage() {
     enabled: !!db,
   });
 
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
+    queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
+    queryFn: fetchCustomers,
+    enabled: !!db,
+  });
+
+  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchEquipment,
+    enabled: !!db,
+  });
+
+  const { data: technicians = [], isLoading: isLoadingTechnicians } = useQuery<Technician[], Error>({
+    queryKey: [FIRESTORE_TECHNICIAN_COLLECTION_NAME],
+    queryFn: fetchTechnicians,
+    enabled: !!db,
+  });
+
+  const { data: vehicles = [], isLoading: isLoadingVehicles } = useQuery<Vehicle[], Error>({
+    queryKey: [FIRESTORE_VEHICLE_COLLECTION_NAME],
+    queryFn: fetchVehicles,
+    enabled: !!db,
+  });
+
+  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<Company[], Error>({
+      queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME],
+      queryFn: fetchCompanies,
+      enabled: !!db,
+  });
+
+
   const getCustomerDetails = useCallback((id: string): { name: string; phone?: string; id: string; } => {
-    const customer = customers.find(c => c.id === id);
+    const customer = (customers || []).find(c => c.id === id);
     return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
   }, [customers]);
 
   const getEquipmentDetails = useCallback((id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
-    const eq = equipmentList.find(e => e.id === id);
+    const eq = (equipmentList || []).find(e => e.id === id);
     return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id, ownerReference: eq.ownerReference, customerId: eq.customerId } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
   }, [equipmentList]);
 
   const getTechnicianName = useCallback((id?: string | null) => {
     if (!id) return "Não Atribuído";
-    return technicians.find(t => t.id === id)?.name || id;
+    return (technicians || []).find(t => t.id === id)?.name || id;
   }, [technicians]);
 
   const filteredServiceOrders = useMemo(() => {
@@ -417,36 +448,6 @@ export function ServiceOrderClientPage() {
     return tempOrders;
   }, [serviceOrdersRaw, selectedPhaseFilter, searchTerm, getCustomerDetails, getEquipmentDetails, getTechnicianName]);
 
-
-  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
-    queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
-    queryFn: fetchCustomers,
-    enabled: !!db,
-  });
-
-  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
-    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
-    queryFn: fetchEquipment,
-    enabled: !!db,
-  });
-
-  const { data: technicians = [], isLoading: isLoadingTechnicians } = useQuery<Technician[], Error>({
-    queryKey: [FIRESTORE_TECHNICIAN_COLLECTION_NAME],
-    queryFn: fetchTechnicians,
-    enabled: !!db,
-  });
-
-  const { data: vehicles = [], isLoading: isLoadingVehicles } = useQuery<Vehicle[], Error>({
-    queryKey: [FIRESTORE_VEHICLE_COLLECTION_NAME],
-    queryFn: fetchVehicles,
-    enabled: !!db,
-  });
-
-  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<Company[], Error>({
-      queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME],
-      queryFn: fetchCompanies,
-      enabled: !!db,
-  });
 
   useEffect(() => {
     if (formVehicleId && typeof formEstimatedTravelDistanceKm === 'number') {
@@ -967,7 +968,7 @@ export function ServiceOrderClientPage() {
 
   const getVehicleDetails = (id?: string | null): { identifier: string, id?: string } => {
     if (!id) return { identifier: "N/A" };
-    const vehicle = vehicles.find(v => v.id === id);
+    const vehicle = (vehicles || []).find(v => v.id === id);
     return vehicle ? { identifier: `${vehicle.model} (${vehicle.licensePlate})`, id: vehicle.id } : { identifier: id };
   };
 
