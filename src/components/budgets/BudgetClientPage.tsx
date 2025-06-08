@@ -5,8 +5,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send, Layers, Tag } from "lucide-react";
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send, Layers, Tag, FileDown } from "lucide-react";
 import Link from "next/link";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,8 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType } from "@/types";
-import { BudgetSchema, BudgetItemSchema, budgetStatusOptions } from "@/types";
+import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType, Company, CompanyId } from "@/types";
+import { BudgetSchema, BudgetItemSchema, budgetStatusOptions, companyIds } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -38,15 +40,17 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { toTitleCase, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils";
+import { toTitleCase, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay } from "@/lib/utils";
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
+const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_SERVICE_ORDER_SELECTED_";
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_BUDGET_";
+const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
 
 const formatCurrency = (value?: number | null): string => {
   if (value === null || value === undefined) return "R$ 0,00";
@@ -89,11 +93,26 @@ async function fetchEquipment(): Promise<Maquina[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Maquina));
 }
 
+async function fetchCompanyById(companyId: CompanyId): Promise<Company | null> {
+  if (!db) {
+    console.error(`fetchCompanyById (${companyId}): Firebase DB is not available.`);
+    throw new Error("Firebase DB is not available");
+  }
+  const docRef = doc(db, FIRESTORE_COMPANY_COLLECTION_NAME, companyId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    return { id: docSnap.id as CompanyId, ...docSnap.data() } as Company;
+  }
+  console.warn(`fetchCompanyById: Company with ID ${companyId} not found.`);
+  return null;
+}
+
+
 const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); // Regex to get only the number part
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
       if (!isNaN(num) && num > maxNum) {
@@ -101,7 +120,7 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
       }
     }
   });
-  return (maxNum + 1).toString().padStart(4, '0');
+  return (maxNum + 1).toString().padStart(4, '0'); // Return only the number, padded
 };
 
 const generateDetailedWhatsAppMessage = (
@@ -148,6 +167,180 @@ const generateDetailedWhatsAppMessage = (
 
   message += "\nAgradecemos a preferência!";
   return message;
+};
+
+const generateBudgetPDF = (
+  budget: Budget,
+  customer: Customer | undefined,
+  equipment: Maquina | undefined,
+  serviceOrder: ServiceOrder | undefined,
+  companyDetails: Company | null
+) => {
+  const doc = new jsPDF();
+  let yPos = 15;
+  const lineSpacing = 6;
+  const sectionSpacing = 10;
+  const smallText = 9;
+  const normalText = 10;
+  const largeText = 12;
+  const titleText = 16;
+
+  // Header - Company Details
+  if (companyDetails) {
+    doc.setFontSize(largeText);
+    doc.setFont("helvetica", "bold");
+    doc.text(companyDetails.name, 14, yPos);
+    yPos += lineSpacing;
+    doc.setFontSize(smallText);
+    doc.setFont("helvetica", "normal");
+    doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
+    yPos += lineSpacing / 2;
+    doc.text(formatAddressForDisplay(companyDetails), 14, yPos);
+    yPos += lineSpacing;
+  } else {
+    doc.setFontSize(largeText);
+    doc.text("Gold Maq Empilhadeiras (Detalhes não encontrados)", 14, yPos);
+    yPos += sectionSpacing;
+  }
+
+  // Title
+  doc.setFontSize(titleText);
+  doc.setFont("helvetica", "bold");
+  doc.text(`ORÇAMENTO Nº ${budget.budgetNumber}`, 105, yPos, { align: "center" });
+  yPos += sectionSpacing;
+
+  // Dates
+  doc.setFontSize(normalText);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Data de Emissão: ${formatDateForDisplay(budget.createdDate)}`, 14, yPos);
+  let validityDisplay = "7 dias (a partir da emissão)";
+  if (budget.validUntilDate && isValidDateFn(parseISO(budget.validUntilDate))) {
+    validityDisplay = formatDateForDisplay(budget.validUntilDate);
+  } else if (budget.createdDate && isValidDateFn(parseISO(budget.createdDate))) {
+     const creationDate = parseISO(budget.createdDate);
+     const validityEndDate = addDays(creationDate, 7);
+     validityDisplay = formatDateForDisplay(validityEndDate);
+  }
+  doc.text(`Validade da Proposta: ${validityDisplay}`, 120, yPos);
+  yPos += sectionSpacing;
+
+  // Customer Details
+  doc.setFontSize(largeText);
+  doc.setFont("helvetica", "bold");
+  doc.text("Dados do Cliente:", 14, yPos);
+  yPos += lineSpacing;
+  doc.setFontSize(normalText);
+  doc.setFont("helvetica", "normal");
+  if (customer) {
+    doc.text(`Nome/Razão Social: ${toTitleCase(customer.name)}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`CNPJ: ${customer.cnpj}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Endereço: ${formatAddressForDisplay(customer)}`, 14, yPos);
+  } else {
+    doc.text("Cliente não especificado.", 14, yPos);
+  }
+  yPos += sectionSpacing;
+
+  // Equipment Details
+  if (equipment) {
+    doc.setFontSize(largeText);
+    doc.setFont("helvetica", "bold");
+    doc.text("Dados da Máquina:", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFontSize(normalText);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Marca/Modelo: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Chassi: ${equipment.chassisNumber || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    if (equipment.manufactureYear) {
+      doc.text(`Ano: ${equipment.manufactureYear}`, 14, yPos);
+      yPos += lineSpacing;
+    }
+  }
+  if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
+    doc.setFontSize(normalText);
+    doc.text(`Referente à Ordem de Serviço Nº: ${serviceOrder.orderNumber}`, 14, yPos);
+    yPos += lineSpacing;
+  }
+  yPos += (lineSpacing / 2); // Extra small space before table
+
+  // Items Table
+  const tableColumn = ["Descrição", "Qtd.", "Preço Unit.", "Subtotal"];
+  const tableRows: any[][] = [];
+  budget.items.forEach(item => {
+    const itemData = [
+      item.description,
+      item.quantity.toString(),
+      formatCurrency(item.unitPrice),
+      formatCurrency(item.quantity * item.unitPrice)
+    ];
+    tableRows.push(itemData);
+  });
+
+  autoTable(doc, {
+    head: [tableColumn],
+    body: tableRows,
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [249, 115, 22] }, // Orange header
+    styles: { fontSize: 9, cellPadding: 1.5 },
+    columnStyles: {
+        0: { cellWidth: 'auto'},
+        1: { cellWidth: 15, halign: 'right' },
+        2: { cellWidth: 30, halign: 'right' },
+        3: { cellWidth: 30, halign: 'right' },
+    }
+  });
+
+  // @ts-ignore
+  yPos = doc.lastAutoTable.finalY + sectionSpacing;
+
+  // Totals
+  doc.setFontSize(normalText);
+  doc.text(`Subtotal Itens: ${formatCurrency(budget.subtotal)}`, 140, yPos, { align: 'left' });
+  yPos += lineSpacing;
+  if (budget.shippingCost && budget.shippingCost > 0) {
+    doc.text(`Frete: ${formatCurrency(budget.shippingCost)}`, 140, yPos, { align: 'left' });
+    yPos += lineSpacing;
+  }
+  doc.setFont("helvetica", "bold");
+  doc.text(`Valor Total: ${formatCurrency(budget.totalAmount)}`, 140, yPos, { align: 'left' });
+  yPos += sectionSpacing;
+  doc.setFont("helvetica", "normal");
+
+  // Notes
+  if (budget.notes) {
+    doc.setFontSize(largeText);
+    doc.setFont("helvetica", "bold");
+    doc.text("Observações:", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFontSize(normalText);
+    doc.setFont("helvetica", "normal");
+    const splitNotes = doc.splitTextToSize(budget.notes, 180);
+    doc.text(splitNotes, 14, yPos);
+    yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+  }
+
+  // Bank Details
+  if (companyDetails && (companyDetails.bankName || companyDetails.bankPixKey)) {
+    doc.setFontSize(largeText);
+    doc.setFont("helvetica", "bold");
+    doc.text("Dados para Pagamento:", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFontSize(smallText);
+    doc.setFont("helvetica", "normal");
+    if (companyDetails.bankName && companyDetails.bankAgency && companyDetails.bankAccount) {
+        doc.text(`Banco: ${companyDetails.bankName} | Agência: ${companyDetails.bankAgency} | Conta: ${companyDetails.bankAccount}`, 14, yPos);
+        yPos += lineSpacing / 1.5;
+    }
+    if (companyDetails.bankPixKey) {
+        doc.text(`Chave PIX (CNPJ): ${companyDetails.bankPixKey}`, 14, yPos);
+        yPos += lineSpacing / 1.5;
+    }
+  }
+  doc.save(`orcamento_${budget.budgetNumber}.pdf`);
 };
 
 
@@ -228,6 +421,13 @@ export function BudgetClientPage() {
     enabled: !!db,
   });
 
+  const { data: goldmaqCompanyDetails, isLoading: isLoadingCompanyDetails } = useQuery<Company | null, Error>({
+    queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME, GOLDMAQ_COMPANY_ID],
+    queryFn: () => fetchCompanyById(GOLDMAQ_COMPANY_ID),
+    enabled: !!db,
+  });
+
+
   const selectedServiceOrderId = useWatch({ control: form.control, name: 'serviceOrderId' });
 
   useEffect(() => {
@@ -249,7 +449,7 @@ export function BudgetClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const dataToSave = {
         ...newBudgetData,
-        createdDate: serverTimestamp(), // Use serverTimestamp for creation
+        createdDate: serverTimestamp(),
         validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(parseISO(newBudgetData.validUntilDate)) : null,
         items: newBudgetData.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
@@ -279,7 +479,7 @@ export function BudgetClientPage() {
 
       const dataToSave = {
         ...dataToUpdate,
-        createdDate: originalCreatedDate, // Preserve original creation date
+        createdDate: originalCreatedDate,
         validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(parseISO(dataToUpdate.validUntilDate)) : null,
         items: dataToUpdate.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
@@ -476,8 +676,23 @@ export function BudgetClientPage() {
     setSelectedBudgetForWhatsApp(null);
   };
 
+  const handleGeneratePdfClick = (budget: Budget) => {
+    if (isLoadingCompanyDetails) {
+      toast({ title: "Aguarde", description: "Carregando detalhes da empresa para gerar o PDF." });
+      return;
+    }
+    if (!goldmaqCompanyDetails) {
+      toast({ title: "Erro", description: "Detalhes da empresa não encontrados para gerar o PDF.", variant: "destructive" });
+      return;
+    }
+    const customer = getCustomerInfo(budget.customerId);
+    const equipment = getEquipmentInfo(budget.equipmentId);
+    const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
+    generateBudgetPDF(budget, customer, equipment, serviceOrder, goldmaqCompanyDetails);
+  };
 
-  const isLoadingPageData = isLoadingBudgets || isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment;
+
+  const isLoadingPageData = isLoadingBudgets || isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingCompanyDetails;
   const isMutating = addBudgetMutation.isPending || updateBudgetMutation.isPending || deleteBudgetMutation.isPending || updateBudgetStatusMutation.isPending;
 
   if (!db) {
@@ -560,7 +775,7 @@ export function BudgetClientPage() {
 
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
             const canDeny = budget.status === "Pendente" || budget.status === "Enviado";
-            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; // Can cancel if not already cancelled or refused
+            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado";
             const canReopen = budget.status === "Aprovado" || budget.status === "Recusado" || budget.status === "Cancelado";
 
             return (
@@ -673,6 +888,15 @@ export function BudgetClientPage() {
                           className="w-full sm:w-auto justify-start sm:justify-center"
                       >
                           <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handleGeneratePdfClick(budget); }}
+                        disabled={isMutating || isLoadingCompanyDetails}
+                        className="w-full sm:w-auto justify-start sm:justify-center"
+                      >
+                        <FileDown className="mr-1.5 h-3.5 w-3.5" /> PDF
                       </Button>
                   </div>
                 </CardFooter>
