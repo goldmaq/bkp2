@@ -953,10 +953,10 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     if (technicianName !== "Não Atribuído") {
       message += `*Técnico Designado:* ${toTitleCase(technicianName)}\n`;
     }
-    if (order.startDate && isValid(parseISO(order.startDate))) {
+    if (order.startDate && typeof order.startDate === 'string' && isValid(parseISO(order.startDate))) {
       message += `*Data de Início:* ${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\n`;
     }
-    if (order.endDate && isValid(parseISO(order.endDate))) {
+    if (order.endDate && typeof order.endDate === 'string' && isValid(parseISO(order.endDate))) {
       message += `*Previsão de Conclusão:* ${format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}\n`;
     }
     message += `\nAtenciosamente,\nEquipe Gold Maq`;
@@ -1166,8 +1166,8 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   </p>
                 )}
                 <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {toTitleCase(order.serviceType)}</p>
-                {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
-                {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
+                {order.startDate && typeof order.startDate === 'string' && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
+                {order.endDate && typeof order.endDate === 'string' && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Problema Relatado:</span> <span className="whitespace-pre-wrap break-words">{order.description}</span></p>
                 {order.technicalConclusion && <p className="flex items-start"><Check className="mr-2 mt-0.5 h-4 w-4 text-green-500 flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Técnica:</span> <span className="whitespace-pre-wrap break-words">{order.technicalConclusion}</span></p>}
                 {order.notes && <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Obs.:</span> <span className="whitespace-pre-wrap break-words">{order.notes}</span></p>}
