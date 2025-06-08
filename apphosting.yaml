@@ -23,3 +23,5 @@ env:
     secret: projects/gold-maq-control/secrets/NEXT_PUBLIC_FIREBASE_APP_ID
   - variable: GOOGLE_MAPS_API_KEY
     secret: projects/gold-maq-control/secrets/GOOGLE_MAPS_API_KEY
+  - variable: GEMINI_API_KEY 
+    secret: projects/gold-maq-control/secrets/GEMINI_API_KEY 

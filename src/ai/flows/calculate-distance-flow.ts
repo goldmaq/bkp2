@@ -11,6 +11,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import type { ExecutablePrompt } from 'genkit/prompt'; // Import for ExecutablePrompt type
 
 const CalculateDistanceInputSchema = z.object({
   originAddress: z.string().describe("The full starting address."),
@@ -45,29 +46,7 @@ const TollEstimationLLMOutputSchema = z.object({
   reasoning: z.string().optional().describe('Brief reasoning for the toll estimation.'),
 });
 
-
-const tollEstimationPrompt = ai.definePrompt({
-  name: 'tollEstimationPrompt',
-  input: { schema: TollEstimationLLMInputSchema },
-  output: { schema: TollEstimationLLMOutputSchema },
-  prompt: `Você é um especialista em estimar custos de pedágio para rotas no Brasil.
-Dada a origem, destino e distância, estime o custo de pedágio APENAS DE IDA em BRL (Reais Brasileiros).
-Considere os tipos de veículos mais comuns (carros de passeio).
-Se não houver pedágios ou a estimativa não for confiável, retorne null para estimatedTollOneWay.
-
-Origem: {{{origin}}}
-Destino: {{{destination}}}
-Distância: {{{distanceKm}}} km
-País: {{{country}}}
-
-Forneça sua estimativa e uma breve justificativa.
-Exemplo de saída se houver pedágio:
-{ "estimatedTollOneWay": 25.50, "reasoning": "Estimativa baseada na distância e rotas comuns com pedágios entre as cidades." }
-Exemplo de saída se não houver pedágio provável:
-{ "estimatedTollOneWay": null, "reasoning": "Rota provavelmente não possui pedágios significativos." }
-`,
-});
-
+let tollEstimationPrompt: ExecutablePrompt<z.infer<typeof TollEstimationLLMInputSchema>, z.infer<typeof TollEstimationLLMOutputSchema>, any>;
 
 async function fetchRouteFromGoogleMaps(
   origin: string,
@@ -125,6 +104,29 @@ let calculateDistanceFlow: (input: CalculateDistanceInput) => Promise<CalculateD
 
 if (ai) {
   console.log("[DistanceFlow] Genkit AI instance (ai) IS available. Defining real flow with Google Maps and AI Toll Estimation.");
+  
+  tollEstimationPrompt = ai.definePrompt({
+    name: 'tollEstimationPrompt',
+    input: { schema: TollEstimationLLMInputSchema },
+    output: { schema: TollEstimationLLMOutputSchema },
+    prompt: `Você é um especialista em estimar custos de pedágio para rotas no Brasil.
+Dada a origem, destino e distância, estime o custo de pedágio APENAS DE IDA em BRL (Reais Brasileiros).
+Considere os tipos de veículos mais comuns (carros de passeio).
+Se não houver pedágios ou a estimativa não for confiável, retorne null para estimatedTollOneWay.
+
+Origem: {{{origin}}}
+Destino: {{{destination}}}
+Distância: {{{distanceKm}}} km
+País: {{{country}}}
+
+Forneça sua estimativa e uma breve justificativa.
+Exemplo de saída se houver pedágio:
+{ "estimatedTollOneWay": 25.50, "reasoning": "Estimativa baseada na distância e rotas comuns com pedágios entre as cidades." }
+Exemplo de saída se não houver pedágio provável:
+{ "estimatedTollOneWay": null, "reasoning": "Rota provavelmente não possui pedágios significativos." }
+`,
+  });
+
   calculateDistanceFlow = ai.defineFlow(
     {
       name: 'calculateDistanceFlow',
@@ -159,7 +161,7 @@ if (ai) {
 
       console.log(`[DistanceFlow] Google Maps API indicated tolls: ${googleIndicatesTolls}`);
 
-      if (googleIndicatesTolls) {
+      if (googleIndicatesTolls && tollEstimationPrompt) { // Ensure tollEstimationPrompt is defined
         try {
           const tollInput = {
             origin: input.originAddress,
@@ -168,21 +170,22 @@ if (ai) {
             country: "Brasil",
           };
           console.log("[DistanceFlow] Input for tollEstimationPrompt:", JSON.stringify(tollInput, null, 2));
-          const { response: llmResponse } = await ai.generate({ // Changed from prompt() to ai.generate()
-            prompt: tollEstimationPrompt.prompt!, // Access the raw prompt string
-            context: tollInput, // Pass input as context
-            model: 'googleai/gemini-pro', // Specify a model if not implicitly configured
-            config: { output: { schema: TollEstimationLLMOutputSchema }} // Define output schema here
+          
+          const llmGenerateResponse = await ai.generate({
+            prompt: tollEstimationPrompt, // Pass the prompt object
+            input: tollInput, // Pass input data to the prompt
+            model: 'googleai/gemini-pro', 
+            config: { output: { schema: TollEstimationLLMOutputSchema }}
           });
 
-          console.log("[DistanceFlow] Full LLM response for toll estimation:", JSON.stringify(llmResponse, null, 2));
+          console.log("[DistanceFlow] Full LLM response for toll estimation:", JSON.stringify(llmGenerateResponse, null, 2));
 
-          if (llmResponse && llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
-            estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
-          } else if (llmResponse && llmResponse.output && llmResponse.output.estimatedTollOneWay === null) {
+          if (llmGenerateResponse && llmGenerateResponse.output && typeof llmGenerateResponse.output.estimatedTollOneWay === 'number') {
+            estimatedTollCostOneWay = llmGenerateResponse.output.estimatedTollOneWay;
+          } else if (llmGenerateResponse && llmGenerateResponse.output && llmGenerateResponse.output.estimatedTollOneWay === null) {
             estimatedTollCostOneWay = null; // Explicitly set to null if AI says no tolls
           } else {
-            console.warn("[DistanceFlow] AI toll estimation did not return a valid number or null. Response:", llmResponse?.output);
+            console.warn("[DistanceFlow] AI toll estimation did not return a valid number or null. Response:", llmGenerateResponse?.output);
             estimatedTollCostOneWay = 0; // Fallback
             aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
           }
@@ -192,14 +195,14 @@ if (ai) {
           aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
         }
       } else {
-         console.log("[DistanceFlow] Google Maps did not indicate tolls. Skipping AI toll estimation.");
+         console.log("[DistanceFlow] Google Maps did not indicate tolls or tollEstimationPrompt not defined. Skipping AI toll estimation.");
       }
 
       console.log(`[DistanceFlow] Final estimatedTollCostOneWay before returning: ${estimatedTollCostOneWay}`);
       
       return {
         distanceKm: distanceKm,
-        status: aiEstimationStatus, // Use the status from AI estimation if it ran, otherwise it's 'SUCCESS'
+        status: aiEstimationStatus, 
         estimatedTollCostByAI: estimatedTollCostOneWay,
         googleMapsApiIndicstedTolls: googleIndicatesTolls,
         errorMessage: aiEstimationStatus === 'ERROR_AI_TOLL_ESTIMATION_FAILED' ? "AI toll estimation failed." : undefined,
