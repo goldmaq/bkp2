@@ -16,7 +16,6 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType } from "@/types";
-import { partsRequisitionItemStatusOptions } from "@/types";
 import { cn, formatDateForDisplay } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -93,7 +92,7 @@ async function fetchTechnicians(): Promise<Technician[]> {
 
 async function fetchCustomers(): Promise<Customer[]> {
   if (!db) throw new Error("Firebase DB is not available");
-  const q = query(collection(db, FIRESTORE_CUSTOMER_COLLECTION_NAME), orderBy("name", "asc"));
+  const q = query(collection(db!, FIRESTORE_CUSTOMER_COLLECTION_NAME), orderBy("name", "asc"));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
@@ -115,17 +114,17 @@ export function PartsWarehouseClientPage() {
     queryFn: fetchPartsRequisitions,
   });
 
-  const { data: serviceOrders = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
+  const { data: serviceOrders = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrdersData } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_SERVICE_ORDER_COLLECTION_NAME],
     queryFn: fetchServiceOrders,
   });
 
-  const { data: technicians = [], isLoading: isLoadingTechnicians, isError: isErrorTechnicians, error: errorTechnicians } = useQuery<Technician[], Error>({
+  const { data: technicians = [], isLoading: isLoadingTechnicians, isError: isErrorTechnicians, error: errorTechniciansData } = useQuery<Technician[], Error>({
     queryKey: [FIRESTORE_TECHNICIAN_COLLECTION_NAME],
     queryFn: fetchTechnicians,
   });
 
-  const { data: customers = [], isLoading: isLoadingCustomers, isError: isErrorCustomers, error: errorCustomers } = useQuery<Customer[], Error>({
+  const { data: customers = [], isLoading: isLoadingCustomers, isError: isErrorCustomers, error: errorCustomersData } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
   });
@@ -164,7 +163,9 @@ export function PartsWarehouseClientPage() {
       filteredItems = filteredItems.filter(item =>
         item.partName.toLowerCase().includes(lowerSearchTerm) ||
         item.requisitionNumber.toLowerCase().includes(lowerSearchTerm) ||
-        (item.serviceOrderNumber && item.serviceOrderNumber.toLowerCase().includes(lowerSearchTerm))
+        (item.serviceOrderNumber && item.serviceOrderNumber.toLowerCase().includes(lowerSearchTerm)) ||
+        (item.technicianName && item.technicianName.toLowerCase().includes(lowerSearchTerm)) ||
+        (item.customerName && item.customerName.toLowerCase().includes(lowerSearchTerm))
       );
     }
     
@@ -172,16 +173,15 @@ export function PartsWarehouseClientPage() {
         const dateA = new Date(a.requisitionCreatedDate).getTime();
         const dateB = new Date(b.requisitionCreatedDate).getTime();
         if (dateA !== dateB) {
-            return dateA - dateB; // Mais antigo primeiro
+            return dateA - dateB; 
         }
-        // Prioridade de status: Aprovado > Aguardando Compra > Separado
         const statusOrder: Record<PartsRequisitionItemStatusType, number> = {
-            "Pendente Aprovação": 0, // Não deve aparecer aqui, mas para completude
+            "Pendente Aprovação": 0, 
             "Aprovado": 1,
             "Aguardando Compra": 2,
             "Separado": 3,
-            "Recusado": 4, // Não deve aparecer aqui
-            "Entregue": 5, // Não deve aparecer aqui
+            "Recusado": 4, 
+            "Entregue": 5, 
         };
         return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
     });
@@ -222,36 +222,22 @@ export function PartsWarehouseClientPage() {
             let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
 
             if (currentRequisition.status !== "Cancelada") {
-                const anyItemPendingApprovalByTriage = updatedItems.some(i => i.status === "Pendente Aprovação");
-                if (anyItemPendingApprovalByTriage) {
-                    newRequisitionStatus = "Pendente"; // Back to pending if any item requires triage
+                const actionableItems = updatedItems.filter(i => i.status !== "Recusado" && i.status !== "Pendente Aprovação");
+                
+                if (actionableItems.length === 0) { 
+                     if (updatedItems.every(i => i.status === "Recusado" || i.status === "Pendente Aprovação")){
+                        newRequisitionStatus = updatedItems.some(i => i.status === "Pendente Aprovação") ? "Pendente" : "Triagem Realizada";
+                     } else {
+                        newRequisitionStatus = "Triagem Realizada"; 
+                     }
+                } else if (actionableItems.every(item => item.status === "Separado" || item.status === "Entregue")) {
+                    newRequisitionStatus = "Atendida Totalmente";
+                } else if (actionableItems.some(item => item.status === "Separado" || item.status === "Entregue")) {
+                    newRequisitionStatus = "Atendida Parcialmente";
+                } else if (actionableItems.every(item => item.status === "Aprovado" || item.status === "Aguardando Compra")) {
+                     newRequisitionStatus = "Triagem Realizada";
                 } else {
-                    const actionableItems = updatedItems.filter(i => i.status !== "Recusado"); // Items not refused by triage
-                    if (actionableItems.length === 0 && !anyItemPendingApprovalByTriage) {
-                        newRequisitionStatus = "Triagem Realizada"; // All actionable items were refused, or no actionable items existed.
-                    } else {
-                        const allActionableItemsSeparated = actionableItems.every(
-                            item => item.status === "Separado" || item.status === "Entregue"
-                        );
-                        const anyActionableItemSeparated = actionableItems.some(
-                            item => item.status === "Separado" || item.status === "Entregue"
-                        );
-                        const anyActionableItemStillPendingForWarehouse = actionableItems.some(
-                            item => item.status === "Aprovado" || item.status === "Aguardando Compra"
-                        );
-
-                        if (allActionableItemsSeparated) {
-                            newRequisitionStatus = "Atendida Totalmente";
-                        } else if (anyActionableItemSeparated && anyActionableItemStillPendingForWarehouse) {
-                            newRequisitionStatus = "Atendida Parcialmente";
-                        } else if (anyActionableItemSeparated && !anyActionableItemStillPendingForWarehouse) {
-                            newRequisitionStatus = "Atendida Totalmente"; // All available items are separated/delivered
-                        } else if (!anyActionableItemSeparated && anyActionableItemStillPendingForWarehouse) {
-                            newRequisitionStatus = "Triagem Realizada"; // Items approved but not yet acted upon by warehouse
-                        } else if (!anyActionableItemSeparated && !anyActionableItemStillPendingForWarehouse && !anyItemPendingApprovalByTriage) {
-                             newRequisitionStatus = "Triagem Realizada"; // Only refused items exist or no items needed warehouse action
-                        }
-                    }
+                    newRequisitionStatus = "Triagem Realizada";
                 }
             }
             transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
@@ -324,8 +310,14 @@ export function PartsWarehouseClientPage() {
   }
 
   if (isErrorRequisitions || isErrorServiceOrders || isErrorTechnicians || isErrorCustomers) {
-    return <div className="text-red-500 p-4">Erro ao carregar dados do almoxarifado. Verifique o console.</div>;
+    const errorMessages = [];
+    if (isErrorRequisitions && errorRequisitions) errorMessages.push(`Requisições: ${errorRequisitions.message}`);
+    if (isErrorServiceOrders && errorServiceOrdersData) errorMessages.push(`Ordens de Serviço: ${errorServiceOrdersData.message}`);
+    if (isErrorTechnicians && errorTechniciansData) errorMessages.push(`Técnicos: ${errorTechniciansData.message}`);
+    if (isErrorCustomers && errorCustomersData) errorMessages.push(`Clientes: ${errorCustomersData.message}`);
+    return <div className="text-red-500 p-4">Erro ao carregar dados do almoxarifado: {errorMessages.join("; ")}. Verifique o console.</div>;
   }
+
 
   return (
     <>
@@ -336,7 +328,7 @@ export function PartsWarehouseClientPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Buscar por peça, requisição, OS..."
+            placeholder="Buscar por peça, req., OS, técnico, cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
@@ -422,7 +414,7 @@ export function PartsWarehouseClientPage() {
                 {item.imageUrl && (
                   <div className="mt-2">
                     <Link href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block group">
-                      <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image"/>
+                      <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image" />
                       <span className="text-xs text-primary hover:underline block mt-1 group-hover:text-primary/80 transition-colors">Ver Imagem</span>
                     </Link>
                   </div>
@@ -441,7 +433,7 @@ export function PartsWarehouseClientPage() {
                     </p>
                      {item.estimatedCost !== null && item.estimatedCost !== undefined && (
                         <p className="text-xs text-muted-foreground mt-1">
-                            <span className="font-medium">Custo:</span> R$ {item.estimatedCost.toFixed(2)}
+                            <span className="font-medium">Custo:</span> R$ {Number(item.estimatedCost).toFixed(2)}
                         </p>
                     )}
                     {item.warehouseNotes && (
