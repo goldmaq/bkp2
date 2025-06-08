@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain } from "lucide-react";
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -343,6 +343,7 @@ export function ServiceOrderClientPage() {
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<ServiceOrderPhaseType | "Todos">("Todos");
   const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false);
   const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
 
   const form = useForm<z.infer<typeof ServiceOrderSchema>>({
@@ -370,12 +371,51 @@ export function ServiceOrderClientPage() {
     enabled: !!db,
   });
 
+  const getCustomerDetails = useCallback((id: string): { name: string; phone?: string; id: string; } => {
+    const customer = customers.find(c => c.id === id);
+    return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
+  }, [customers]);
+
+  const getEquipmentDetails = useCallback((id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
+    const eq = equipmentList.find(e => e.id === id);
+    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id, ownerReference: eq.ownerReference, customerId: eq.customerId } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
+  }, [equipmentList]);
+
+  const getTechnicianName = useCallback((id?: string | null) => {
+    if (!id) return "Não Atribuído";
+    return technicians.find(t => t.id === id)?.name || id;
+  }, [technicians]);
+
   const filteredServiceOrders = useMemo(() => {
-    if (selectedPhaseFilter === "Todos") {
-      return serviceOrdersRaw;
+    let tempOrders = serviceOrdersRaw;
+
+    if (selectedPhaseFilter !== "Todos") {
+      tempOrders = tempOrders.filter(order => order.phase === selectedPhaseFilter);
     }
-    return serviceOrdersRaw.filter(order => order.phase === selectedPhaseFilter);
-  }, [serviceOrdersRaw, selectedPhaseFilter]);
+
+    if (searchTerm.trim()) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      tempOrders = tempOrders.filter(order => {
+        const customer = getCustomerDetails(order.customerId);
+        const equipment = getEquipmentDetails(order.equipmentId);
+        const technicianName = getTechnicianName(order.technicianId);
+
+        return (
+          order.orderNumber.toLowerCase().includes(lowerSearchTerm) ||
+          (customer?.name.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.brand.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.model.toLowerCase().includes(lowerSearchTerm)) ||
+          (equipment?.chassisNumber.toLowerCase().includes(lowerSearchTerm)) ||
+          (technicianName && technicianName !== "Não Atribuído" && technicianName.toLowerCase().includes(lowerSearchTerm)) ||
+          (order.requesterName && order.requesterName.toLowerCase().includes(lowerSearchTerm)) ||
+          order.serviceType.toLowerCase().includes(lowerSearchTerm) ||
+          (order.customServiceType && order.customServiceType.toLowerCase().includes(lowerSearchTerm)) ||
+          order.description.toLowerCase().includes(lowerSearchTerm)
+        );
+      });
+    }
+    return tempOrders;
+  }, [serviceOrdersRaw, selectedPhaseFilter, searchTerm, getCustomerDetails, getEquipmentDetails, getTechnicianName]);
 
 
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
@@ -924,18 +964,7 @@ export function ServiceOrderClientPage() {
     );
   }
 
-  const getCustomerDetails = (id: string): { name: string; phone?: string; id: string; } => {
-    const customer = customers.find(c => c.id === id);
-    return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
-  };
-  const getEquipmentDetails = (id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
-    const eq = equipmentList.find(e => e.id === id);
-    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id, ownerReference: eq.ownerReference, customerId: eq.customerId } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
-  };
-  const getTechnicianName = (id?: string | null) => {
-    if (!id) return "Não Atribuído";
-    return technicians.find(t => t.id === id)?.name || id;
-  };
+
   const getVehicleDetails = (id?: string | null): { identifier: string, id?: string } => {
     if (!id) return { identifier: "N/A" };
     const vehicle = vehicles.find(v => v.id === id);
@@ -980,32 +1009,57 @@ export function ServiceOrderClientPage() {
         }
       />
 
-      <div className="mb-6">
-        <Label htmlFor="phase-filter" className="text-sm font-medium">Filtrar por Fase:</Label>
-        <Select
-          value={selectedPhaseFilter}
-          onValueChange={(value) => setSelectedPhaseFilter(value as ServiceOrderPhaseType | "Todos")}
-        >
-          <SelectTrigger id="phase-filter" className="w-full md:w-[280px] mt-1">
-            <SelectValue placeholder="Mostrar todas as fases" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Todos">Todas as Fases</SelectItem>
-            {serviceOrderPhaseOptions.map(phase => (
-              <SelectItem key={phase} value={phase}>{phase}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-grow">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Buscar por OS, cliente, equip., técnico..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10"
+          />
+        </div>
+        <div className="relative md:w-auto">
+          <Label htmlFor="phase-filter" className="sr-only">Filtrar por Fase:</Label>
+          <Select
+            value={selectedPhaseFilter}
+            onValueChange={(value) => setSelectedPhaseFilter(value as ServiceOrderPhaseType | "Todos")}
+          >
+            <SelectTrigger id="phase-filter" className="w-full md:w-[280px]">
+              <SelectValue placeholder="Mostrar todas as fases" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Todos">Todas as Fases</SelectItem>
+              {serviceOrderPhaseOptions.map(phase => (
+                <SelectItem key={phase} value={phase}>{phase}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {filteredServiceOrders.length === 0 && !isLoadingServiceOrders ? (
+      {isLoadingServiceOrders && !isModalOpen ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-2">Carregando ordens de serviço...</p>
+          </div>
+        ) : serviceOrdersRaw.length === 0 && !isLoadingServiceOrders && selectedPhaseFilter === "Todos" && !searchTerm.trim() ? (
         <DataTablePlaceholder
           icon={ClipboardList}
-          title="Nenhuma Ordem de Serviço Encontrada"
-          description={selectedPhaseFilter === "Todos" ? "Crie sua primeira ordem de serviço para gerenciar as operações." : `Nenhuma OS encontrada para a fase "${selectedPhaseFilter}".`}
+          title="Nenhuma Ordem de Serviço Criada"
+          description="Crie sua primeira ordem de serviço para gerenciar as operações."
           buttonLabel="Criar Ordem de Serviço"
           onButtonClick={() => openModal()}
         />
+      ) : filteredServiceOrders.length === 0 ? (
+        <div className="text-center py-10">
+          <SearchIcon className="mx-auto h-12 w-12 text-muted-foreground" />
+          <h3 className="mt-2 text-lg font-semibold">Nenhuma Ordem de Serviço Encontrada</h3>
+          <p className="text-sm text-muted-foreground">
+            Sua busca ou filtro não retornou resultados. Tente um termo diferente ou ajuste os filtros.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServiceOrders.map((order) => {
@@ -1584,3 +1638,4 @@ export function ServiceOrderClientPage() {
     </TooltipProvider>
   );
 }
+
