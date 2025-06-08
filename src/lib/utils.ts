@@ -1,6 +1,8 @@
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { format, parseISO, isValid as isValidDate, Timestamp } from 'date-fns';
+import { format, parseISO, isValid as isValidDate } from 'date-fns';
+import { Timestamp } from 'firebase/firestore'; // Corrigida a importação
 import { ptBR } from 'date-fns/locale';
 
 export function cn(...inputs: ClassValue[]) {
@@ -121,3 +123,4 @@ export const formatDateForDisplay = (dateValue?: string | Timestamp | Date | nul
     return "Erro na Data";
   }
 };
+
