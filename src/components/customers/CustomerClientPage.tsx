@@ -1,5 +1,4 @@
 
-      
 "use client";
 
 import { useState, useEffect } from "react";
@@ -335,15 +334,8 @@ export function CustomerClientPage() {
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
         toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
-        form.setValue("name", "");
-        form.setValue("street", "");
-        form.setValue("number", "");
-        form.setValue("complement", "");
-        form.setValue("neighborhood", "");
-        form.setValue("city", "");
-        form.setValue("state", "");
-        form.setValue("cep", "");
-        form.setValue("phone", "");
+        // Potentially clear only some fields or leave them, depending on preference
+        form.setValue("name", form.getValues("name") || ""); // Keep if user typed something
       } else {
         form.setValue("name", data.razao_social || "");
         form.setValue("street", data.logradouro || "");
@@ -355,12 +347,13 @@ export function CustomerClientPage() {
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
 
         let primaryPhone = data.ddd_telefone_1 || "";
-        if (!primaryPhone && (data as any).ddd_telefone_2) { // BrasilAPI might have ddd_telefone_2
+        // BrasilAPI might have ddd_telefone_2 instead of ddd_telefone_1
+        if (!primaryPhone && (data as any).ddd_telefone_2) { 
           primaryPhone = (data as any).ddd_telefone_2;
         }
         form.setValue("phone", primaryPhone ? formatPhoneNumberForInputDisplay(primaryPhone) : "");
-
-        // Optionally, set other fields like email if available, though BrasilAPI doesn't usually provide it
+        
+        // Optionally, set other fields like email if available (BrasilAPI doesn't usually provide it)
         // form.setValue("email", data.email || form.getValues("email")); // Keep existing email if API doesn't provide
 
         toast({ title: "CNPJ Encontrado", description: "Os dados do cliente foram preenchidos." });
@@ -797,6 +790,4 @@ export function CustomerClientPage() {
     </>
   );
 }
-
-
     
