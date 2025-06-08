@@ -1,16 +1,16 @@
 
 "use client";
 
-import React from 'react';
+import React, { useMemo } from 'react'; // Added useMemo
 import { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch } from "lucide-react"; // Added PackageSearch
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon } from "lucide-react"; // Added PackageSearch, SearchIcon
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input"; // Added Input
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { Maquina, Customer, CompanyId, OwnerReferenceType, AuxiliaryEquipment } from "@/types";
@@ -178,6 +178,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
 
   const [showCustomFields, setShowCustomFields] = useState({
@@ -219,6 +220,36 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     queryFn: fetchAllAuxiliaryEquipments,
     enabled: !!db,
   });
+
+  const getOwnerDisplayString = useCallback((ownerRef?: OwnerReferenceType | null, customerId?: string | null, customersList?: Customer[]): string => {
+    if (ownerRef === OWNER_REF_CUSTOMER) {
+      const customer = customersList?.find(c => c.id === customerId);
+      return customer ? `${customer.name}` : 'Cliente (Não Vinculado)';
+    }
+    if (companyIds.includes(ownerRef as CompanyId)) {
+      const company = companyDisplayOptions.find(c => c.id === ownerRef);
+      return company ? `${company.name}` : 'Empresa Desconhecida';
+    }
+    return 'Não Especificado';
+  }, []);
+
+
+  const filteredMaquinaList = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return maquinaList;
+    }
+    const lowercasedSearchTerm = searchTerm.toLowerCase();
+    return maquinaList.filter((maq) => {
+      const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
+      return (
+        maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
+        maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
+        maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
+        ownerDisplay.toLowerCase().includes(lowercasedSearchTerm)
+      );
+    });
+  }, [searchTerm, maquinaList, customers, getOwnerDisplayString]);
+
 
   const openModal = useCallback((maquina?: Maquina) => {
     setPartsCatalogFile(null);
@@ -576,18 +607,6 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     }
   };
 
-  const getOwnerDisplayString = (ownerRef?: OwnerReferenceType | null, customerId?: string | null, customersList?: Customer[]): string => {
-    if (ownerRef === OWNER_REF_CUSTOMER) {
-      const customer = customersList?.find(c => c.id === customerId);
-      return customer ? `${customer.name}` : 'Cliente (Não Vinculado)';
-    }
-    if (companyIds.includes(ownerRef as CompanyId)) {
-      const company = companyDisplayOptions.find(c => c.id === ownerRef);
-      return company ? `${company.name}` : 'Empresa Desconhecida';
-    }
-    return 'Não Especificado';
-  };
-
   const getOwnerIcon = (ownerRef?: OwnerReferenceType | null): LucideIcon => {
     if (ownerRef === OWNER_REF_CUSTOMER) return UserCog;
     if (companyIds.includes(ownerRef as CompanyId)) return Building;
@@ -645,7 +664,17 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         }
       />
 
-      {maquinaList.length === 0 && !isLoadingMaquinas ? (
+      <div className="mb-6 relative">
+        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por marca, modelo, frota ou chassi..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-full md:max-w-md pl-10"
+        />
+      </div>
+
+      {maquinaList.length === 0 && !isLoadingMaquinas && !searchTerm.trim() ? (
         <DataTablePlaceholder
           icon={Construction}
           title="Nenhuma Máquina Registrada"
@@ -653,9 +682,17 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
           buttonLabel="Adicionar Máquina"
           onButtonClick={() => openModal()}
         />
+      ) : filteredMaquinaList.length === 0 && searchTerm.trim() ? (
+          <div className="text-center py-10">
+            <SearchIcon className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-2 text-lg font-semibold">Nenhuma Máquina Encontrada</h3>
+            <p className="text-sm text-muted-foreground">
+              Sua busca por "{searchTerm}" não retornou resultados. Tente um termo diferente.
+            </p>
+          </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {maquinaList.map((maq) => {
+          {filteredMaquinaList.map((maq) => {
             const customer = maq.customerId ? customers.find(c => c.id === maq.customerId) : null;
             const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
             const OwnerIconComponent = getOwnerIcon(maq.ownerReference);
@@ -1133,3 +1170,4 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
     </>
   );
 }
+
