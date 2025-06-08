@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId } from "@/types";
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types";
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -1116,11 +1116,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                 ) : equipmentDetails ? (
                   <>
                     <p className="flex items-center">
-                      <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline flex items-center truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
                         <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                         <span className="font-medium text-muted-foreground mr-1">Marca/Modelo:</span>
-                        {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)}
-                      </Link>
+                         <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
+                             {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)}
+                         </Link>
                     </p>
                     <p className="flex items-center">
                       <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
