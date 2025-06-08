@@ -90,10 +90,11 @@ async function fetchEquipment(): Promise<Maquina[]> {
 }
 
 const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
-  if (!currentBudgets || currentBudgets.length === 0) return "ORC-0001";
+  if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/ORC-(\d+)/);
+    // Tenta extrair apenas a parte numérica, independentemente do prefixo
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
       if (!isNaN(num) && num > maxNum) {
@@ -101,7 +102,7 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
       }
     }
   });
-  return `ORC-${(maxNum + 1).toString().padStart(4, '0')}`;
+  return (maxNum + 1).toString().padStart(4, '0');
 };
 
 const generateDetailedWhatsAppMessage = (
@@ -119,6 +120,10 @@ const generateDetailedWhatsAppMessage = (
   message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\n`;
   if (equipment) {
     message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\n`;
+    message += `Chassi: *${equipment.chassisNumber || 'N/A'}*\n`;
+    if (equipment.manufactureYear) {
+        message += `Ano: *${equipment.manufactureYear}*\n`;
+    }
   }
   message += `Valor Total: *${formatCurrency(budget.totalAmount)}*\n`;
   message += `Data de Criação: *${formatDateForDisplay(budget.createdDate)}*\n`;
