@@ -111,16 +111,17 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); // Regex to find numbers at the end of the string
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
-      if (!isNaN(num) && num > maxNum) {
+      if (!isNaN(num) && num > maxNum) { // Check if num is a valid number and greater than maxNum
         maxNum = num;
       }
     }
   });
-  return (maxNum + 1).toString().padStart(4, '0');
+  return (maxNum + 1).toString().padStart(4, '0'); // Return next number formatted to 4 digits
 };
+
 
 const generateDetailedWhatsAppMessage = (
   budget: Budget,
@@ -500,13 +501,12 @@ export function BudgetClientPage() {
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
       };
       await updateDoc(budgetRef, dataToSave as { [x: string]: any });
-      return budgetData; // Return original budgetData passed in to access serviceOrderId
+      return budgetData; 
     },
-    onSuccess: (updatedBudgetData) => { // updatedBudgetData is what we returned from mutationFn
+    onSuccess: (updatedBudgetData) => { 
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
       toast({ title: "Orçamento Atualizado", description: `Orçamento ${updatedBudgetData.budgetNumber} foi atualizado.` });
       closeModal();
-      // No automatic OS status change on general update, only on status-specific change
     },
     onError: (err: Error, variables) => {
       toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar o orçamento ${variables.budgetNumber}. Detalhes: ${err.message}`, variant: "destructive" });
@@ -536,7 +536,7 @@ export function BudgetClientPage() {
       if (!budgetSnap.exists()) throw new Error("Orçamento não encontrado.");
       const budgetData = budgetSnap.data() as Budget;
       await updateDoc(budgetRef, { status: newStatus });
-      return { budgetData, newStatus }; // Pass budgetData for serviceOrderId
+      return { budgetData, newStatus }; 
     },
     onSuccess: ({ budgetData, newStatus }) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
@@ -609,7 +609,7 @@ export function BudgetClientPage() {
     };
 
     if (editingBudget && editingBudget.id) {
-      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate, serviceOrderId: editingBudget.serviceOrderId } as Budget);
+      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate } as Budget);
     } else {
       addBudgetMutation.mutate(budgetData);
     }
@@ -1134,6 +1134,5 @@ export function BudgetClientPage() {
     </>
   );
 }
-
 
     
