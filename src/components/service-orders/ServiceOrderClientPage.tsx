@@ -424,9 +424,7 @@ export function ServiceOrderClientPage() {
         const equipment = equipmentList.find(e => e.id === selectedEquipmentId);
 
         if (!customer || !equipment || !equipment.ownerReference || equipment.ownerReference === OWNER_REF_CUSTOMER) {
-          // Cannot calculate if customer/equipment not found, or equipment is customer-owned (no company origin)
-          if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) { // Only clear if it's a new OS and not manually set
-             // Do not clear if it was manually set or is an existing order.
+          if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) {
           }
           return;
         }
@@ -452,29 +450,29 @@ export function ServiceOrderClientPage() {
         try {
           const result = await calculateDistance({ originAddress, destinationAddress });
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
-            form.setValue('estimatedTravelDistanceKm', parseFloat((result.distanceKm * 2).toFixed(1)), { shouldValidate: true }); // Ida e volta
-            toast({ title: "Distância Estimada", description: `Distância (ida e volta) calculada: ${(result.distanceKm * 2).toFixed(1)} km (Simulado).` });
+            form.setValue('estimatedTravelDistanceKm', parseFloat((result.distanceKm * 2).toFixed(1)), { shouldValidate: true }); 
+            toast({ title: "Distância Estimada", description: `Distância (ida e volta) calculada: ${(result.distanceKm * 2).toFixed(1)} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).` });
           } else {
             toast({ title: "Erro ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância.", variant: "destructive" });
             if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) {
-                // Do not clear if it was manually set or is an existing order.
             }
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error("Error calling calculateDistance flow:", e);
-          toast({ title: "Erro no Cálculo de Distância", description: "Ocorreu um erro ao tentar calcular a distância.", variant: "destructive" });
+          toast({ title: "Erro no Cálculo de Distância", description: e.message || "Ocorreu um erro ao tentar calcular a distância.", variant: "destructive" });
         } finally {
           setIsCalculatingDistance(false);
         }
       }
     };
 
-    // Only trigger if not editing and it's a new form or relevant fields change
     if (isModalOpen && (!editingOrder || (editingOrder && isEditMode))) {
-      attemptCalculateDistance();
+      attemptCalculateDistance().catch(err => {
+        console.error("Error in attemptCalculateDistance useEffect:", err);
+        setIsCalculatingDistance(false); 
+      });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCustomerId, selectedEquipmentId, customers, equipmentList, companies, form, isModalOpen, editingOrder, isEditMode, isCalculatingDistance]);
+  }, [selectedCustomerId, selectedEquipmentId, customers, equipmentList, companies, form, isModalOpen, editingOrder, isEditMode, isCalculatingDistance, ai, calculateDistance, toast]);
 
 
 
@@ -500,14 +498,13 @@ export function ServiceOrderClientPage() {
         (eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção"))
       );
     }
-    // If no customer is selected, show only company-owned available/maintenance equipment
     return equipmentList.filter(eq =>
       eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção")
     );
   }, [equipmentList, selectedCustomerId, isLoadingEquipment]);
 
   useEffect(() => {
-    if (!editingOrder) { // Only set preferred technician for new orders
+    if (!editingOrder) { 
         if (selectedCustomerId) {
             const customer = customers.find(c => c.id === selectedCustomerId);
             if (customer?.preferredTechnician) {
@@ -517,16 +514,15 @@ export function ServiceOrderClientPage() {
                 form.setValue('technicianId', null, { shouldValidate: true });
             }
         } else {
-             form.setValue('technicianId', null, { shouldValidate: true }); // Clear if no customer selected
+             form.setValue('technicianId', null, { shouldValidate: true }); 
         }
     }
 
-    // Reset equipment if current selection is no longer valid for the selected customer
     if (selectedCustomerId) {
       if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
-    } else { // No customer selected, reset if current equipment is not in the general available list
+    } else { 
        if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
@@ -1413,7 +1409,7 @@ export function ServiceOrderClientPage() {
                 </FormDescription>
               )}
               {isEditMode && !isOrderConcludedOrCancelled && ((formMediaUrls?.length || 0) + mediaFiles.length) > MAX_FILES_ALLOWED && (
-                <p className="text-sm font-medium text-destructive mt-1">Limite de {MAX_FILES_ALLOWED} arquivos excedido.</p>
+                <p className="text-sm font-medium text-destructive mt-1">Limite de ${MAX_FILES_ALLOWED} arquivos excedido.</p>
               )}
               <FormMessage />
             </FormItem>

@@ -29,6 +29,7 @@ const nextConfig: NextConfig = {
         tls: false, // Mocks 'tls' for client-side
         net: false, // Mocks 'net' for client-side
         http2: false, // Mocks 'http2' for client-side
+        dns: false, // Mocks 'dns' for client-side
       };
     }
     return config;
