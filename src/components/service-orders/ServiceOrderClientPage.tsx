@@ -7,6 +7,8 @@ import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
 import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails, MapPin, Printer } from "lucide-react";
 import Link from "next/link";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable"; // Import autoTable even if not heavily used in OS for consistency
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +19,7 @@ import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrder
 import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { FormModal } from "@/components/ui/FormModal"; // Corrected import path
+import { FormModal } from "@/components/ui/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, type DocumentData, getDoc, limit } from "firebase/firestore";
@@ -37,8 +39,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-import { DialogFooter } from "@/components/ui/dialog"; // Ensure DialogFooter is imported if used directly (though it should be part of FormModal)
-import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
 
@@ -60,6 +60,7 @@ const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_VEHICLE_COLLECTION_NAME = "veiculos";
 const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
+const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
 
 
 const NO_VEHICLE_SELECTED_VALUE = "_NO_VEHICLE_SELECTED_";
@@ -167,21 +168,20 @@ async function fetchVehicles(): Promise<Vehicle[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Vehicle));
 }
 
-async function fetchCompanies(): Promise<Company[]> {
+async function fetchCompanyById(companyId: CompanyId): Promise<Company | null> {
   if (!db) {
-    console.error("fetchCompanies: Firebase DB is not available.");
+    console.error(`fetchCompanyById (${companyId}): Firebase DB is not available.`);
     throw new Error("Firebase DB is not available");
   }
-  const companyDocs: Company[] = [];
-  for (const id of companyIds) {
-    const docRef = doc(db, FIRESTORE_COMPANY_COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      companyDocs.push({ id, ...docSnap.data() } as Company);
-    }
+  const docRef = doc(db, FIRESTORE_COMPANY_COLLECTION_NAME, companyId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    return { id: docSnap.id as CompanyId, ...docSnap.data() } as Company;
   }
-  return companyDocs;
+  console.warn(`fetchCompanyById: Company with ID ${companyId} not found.`);
+  return null;
 }
+
 
 const getNextOrderNumber = (currentOrders: ServiceOrder[]): string => {
   let maxOrderNum = 3999;
@@ -279,30 +279,6 @@ interface ServiceOrderClientPageProps {
   serviceOrderIdFromUrl?: string | null;
 }
 
-const printHTML = (htmlContent: string, documentTitle: string) => {
-  console.log("[PrintDebug] printHTML called with title:", documentTitle);
-  if (!htmlContent || htmlContent.trim() === "") {
-    console.error("[PrintDebug] HTML content for printing is empty.");
-    // Optionally, show a toast to the user
-    // toast({ title: "Erro de Impressão", description: "Conteúdo para impressão está vazio.", variant: "destructive" });
-    return;
-  }
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    // Delay print to allow content to render, especially images
-    // setTimeout(() => {
-    //   printWindow.print();
-    //   printWindow.onafterprint = function() { printWindow.close(); }
-    // }, 250);
-  } else {
-    console.error("[PrintDebug] Failed to open print window. It might be blocked.");
-    alert("Seu navegador bloqueou a abertura da janela de impressão. Por favor, desabilite o bloqueador de pop-ups para este site.");
-  }
-};
-
-
 export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderClientPageProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -370,9 +346,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     enabled: !!db,
   });
 
-  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<Company[], Error>({
-      queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME],
-      queryFn: fetchCompanies,
+  const { data: goldmaqCompanyDetails, isLoading: isLoadingGoldmaqCompany } = useQuery<Company | null, Error>({
+      queryKey: [FIRESTORE_COMPANY_COLLECTION_NAME, GOLDMAQ_COMPANY_ID],
+      queryFn: () => fetchCompanyById(GOLDMAQ_COMPANY_ID),
       enabled: !!db,
   });
 
@@ -461,7 +437,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         }
 
         const companyOwnerId = equipment.ownerReference as CompanyId;
-        const originCompany = (companies || []).find(comp => comp.id === companyOwnerId);
+        const originCompany = goldmaqCompanyDetails; // Use fetched goldmaq details
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
             !customer.street || !customer.city || !customer.state || !customer.cep) {
@@ -477,42 +453,32 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             return;
         }
 
-        console.log(`[OS ClientPage] Attempting distance calculation. Origin: "${originAddress}", Destination: "${destinationAddress}"`);
-
         if (currentDistanceValue !== null && currentDistanceValue !== undefined) {
-            console.log(`[OS ClientPage] Distance already set to ${currentDistanceValue}km. Skipping automatic calculation.`);
             return;
         }
 
         setIsCalculatingDistance(true);
         try {
-          console.log(`[OS ClientPage] Calling calculateDistance flow with Origin: "${originAddress}", Destination: "${destinationAddress}"`);
           const result: CalculateDistanceOutput = await calculateDistance({ originAddress, destinationAddress });
-          console.log("[OS ClientPage] Flow result:", result);
-
 
           let toastMessage = "";
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
             const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
             form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
             toastMessage += `Distância (ida/volta): ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
-            console.log(`[OS ClientPage] Set estimatedTravelDistanceKm to: ${roundTripDistance}`);
 
             if ((currentTollValue === null || currentTollValue === undefined) &&
                 result.estimatedTollCostByAI && result.estimatedTollCostByAI > 0) {
               const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
               form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
               toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
-              console.log(`[OS ClientPage] Set estimatedTollCosts (AI) to: ${roundTripTollAI}`);
             } else if (result.estimatedTollCostByAI === 0) {
               toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00.`;
-               console.log(`[OS ClientPage] AI estimatedTollCostByAI is 0. No update to form field.`);
             }
             toast({ title: "Estimativas Calculadas", description: toastMessage.trim() });
 
           } else {
             toast({ title: "Falha ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância automaticamente.", variant: "default" });
-             console.warn(`[OS ClientPage] Distance calculation failed/returned non-success status: ${result.status}, Message: ${result.errorMessage}`);
           }
         } catch (e: any) {
           console.error("[OS ClientPage] Error calling calculateDistance flow:", e);
@@ -523,7 +489,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       }
     };
 
-    if (isModalOpen && (!editingOrder || (editingOrder && isEditMode)) && !isCalculatingDistance) {
+    if (isModalOpen && (!editingOrder || (editingOrder && isEditMode)) && !isCalculatingDistance && goldmaqCompanyDetails) {
         attemptCalculateDistanceAndTolls().catch(err => {
             console.error("[OS ClientPage] Error in attemptCalculateDistanceAndTolls useEffect:", err);
             setIsCalculatingDistance(false);
@@ -531,7 +497,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
   }, [
     isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId,
-    isCalculatingDistance, customers, equipmentList, companies, form, toast
+    isCalculatingDistance, customers, equipmentList, goldmaqCompanyDetails, form, toast
   ]);
 
 
@@ -717,7 +683,10 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Concluída", description: `A OS foi marcada como concluída.` });
       setIsConclusionModalOpen(false);
-      closeModal();
+      // Do not close main modal if concluding from card, only if `editingOrder` matches.
+      if (editingOrder && editingOrder.id === orderId) {
+        closeModal();
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Erro ao Concluir OS", description: `Não foi possível concluir a OS. Detalhe: ${err.message}`, variant: "destructive" });
@@ -737,7 +706,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Cancelada", description: `A OS foi marcada como cancelada.` });
       setIsCancelConfirmModalOpen(false);
-      closeModal();
+      if (editingOrder && editingOrder.id === orderId) {
+        closeModal();
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Erro ao Cancelar OS", description: `Não foi possível cancelar a OS. Detalhe: ${err.message}`, variant: "destructive" });
@@ -903,15 +874,14 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
   };
 
-  const handleOpenConclusionModal = () => {
-    if (editingOrder) {
-      setTechnicalConclusionText(form.getValues("technicalConclusion") || editingOrder.technicalConclusion || "");
-      setIsConclusionModalOpen(true);
-    }
+  const handleOpenConclusionModal = (orderToConclude: ServiceOrder) => {
+    setEditingOrder(orderToConclude); // Set the order being concluded
+    setTechnicalConclusionText(orderToConclude.technicalConclusion || "");
+    setIsConclusionModalOpen(true);
   };
 
   const handleFinalizeConclusion = () => {
-    if (editingOrder && editingOrder.id) {
+    if (editingOrder && editingOrder.id) { // Use editingOrder which was set by handleOpenConclusionModal
       if (!technicalConclusionText.trim()) {
         toast({ title: "Campo Obrigatório", description: "A conclusão técnica não pode estar vazia.", variant: "destructive"});
         return;
@@ -919,317 +889,317 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       concludeServiceOrderMutation.mutate({
         orderId: editingOrder.id,
         conclusionText: technicalConclusionText,
-        currentEndDate: form.getValues("endDate"),
+        currentEndDate: editingOrder.endDate, // Pass the current end date from the editingOrder
       });
     }
   };
 
-  const handleOpenCancelConfirmModal = () => {
-    if (editingOrder) {
-      setIsCancelConfirmModalOpen(true);
-    }
+  const handleOpenCancelConfirmModal = (orderToCancel: ServiceOrder) => {
+    setEditingOrder(orderToCancel); // Set the order being cancelled
+    setIsCancelConfirmModalOpen(true);
   };
 
   const handleFinalizeCancellation = () => {
-    if (editingOrder && editingOrder.id) {
+    if (editingOrder && editingOrder.id) { // Use editingOrder
       cancelServiceOrderMutation.mutate(editingOrder.id);
     }
   };
 
-  const generatePrintHTMLForTechnician = (
+  const generateTechnicianOsPDF = (
     order: ServiceOrder,
-    customer?: Customer,
-    equipment?: Maquina,
-    technicianName?: string,
-    vehicle?: { identifier: string }
-  ): string => {
-    console.log("[PrintDebug] generatePrintHTMLForTechnician called for OS:", order.orderNumber);
-    if (!order) {
-      console.error("[PrintDebug] Order is undefined in generatePrintHTMLForTechnician");
-      return "Erro: Ordem de Serviço não encontrada.";
+    customer: Customer | undefined,
+    equipment: Maquina | undefined,
+    technicianName: string,
+    companyDetails: Company | null
+  ) => {
+    const doc = new jsPDF();
+    let yPos = 15;
+    const lineSpacing = 7;
+    const sectionSpacing = 10;
+    const smallText = 9;
+    const normalText = 10;
+    const largeText = 12;
+    const titleText = 16;
+    const primaryColor = "#F97316";
+
+    doc.setFont("helvetica", "normal");
+
+    // Header
+    if (companyDetails) {
+        doc.setFontSize(largeText);
+        doc.setTextColor(primaryColor);
+        doc.text(companyDetails.name, 14, yPos);
+        yPos += lineSpacing;
+        doc.setFontSize(smallText);
+        doc.setTextColor(50);
+        doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
+        yPos += lineSpacing / 1.5;
+        doc.text(formatAddressForDisplay(companyDetails) || "Endereço não disponível", 14, yPos);
+        yPos += lineSpacing;
     }
-    const companyInfo = companies?.find(c => c.id === 'goldmaq');
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>OS Técnico: ${order.orderNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
-            .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
-            .print-header { text-align: center; margin-bottom: 20px; }
-            .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
-            .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
-            .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-            .section:last-child { border-bottom: none; }
-            .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
-            .field-group { margin-bottom: 6px; }
-            .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
-            .field-value { color: #666; }
-            .two-columns { display: flex; justify-content: space-between; flex-wrap: wrap; }
-            .column { width: 100%; margin-bottom: 5px; }
-            @media screen and (min-width: 600px) { .column { width: 48%; } }
-            .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
-            .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
-            .signature-label { text-align: center; font-size: 10px; color: #555; }
-            .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
-            .notes-section { margin-top:15px; }
-            .notes-section textarea { width: 98%; min-height: 80px; border: 1px solid #ccc; padding: 5px; font-size: 11px; box-sizing: border-box; }
-            @media print {
-              body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .print-header h1 { color: #F97316 !important; }
-              .no-print { display: none !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            <div class="print-header">
-              <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Ordem de Serviço Técnico</h1>
-              <p>${formatAddressToString(companyInfo)}</p>
-              <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
-            </div>
-            <div class="section">
-              <div class="section-title">Informações da OS</div>
-              <div class="two-columns">
-                <div class="column">
-                  <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
-                  <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
-                </div>
-                <div class="column">
-                  <div class="field-group"><span class="field-label">Data Prev. Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
-                  <div class="field-group"><span class="field-label">Técnico Designado:</span> <span class="field-value">${toTitleCase(technicianName) || 'Não Atribuído'}</span></div>
-                </div>
-              </div>
-              <div class="field-group"><span class="field-label">Tipo de Serviço:</span> <span class="field-value">${toTitleCase(order.serviceType)}</span></div>
-            </div>
-            <div class="section">
-              <div class="section-title">Dados do Cliente</div>
-              <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">Solicitante:</span> <span class="field-value">${toTitleCase(order.requesterName) || 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">Telefone:</span> <span class="field-value">${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
-            </div>
-            <div class="section">
-              <div class="section-title">Dados da Máquina</div>
-              <div class="two-columns">
-                <div class="column">
-                  <div class="field-group"><span class="field-label">Marca:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'}</span></div>
-                  <div class="field-group"><span class="field-label">Modelo:</span> <span class="field-value">${toTitleCase(equipment?.model) || 'N/A'}</span></div>
-                </div>
-                <div class="column">
-                  <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
-                  <div class="field-group"><span class="field-label">Ano:</span> <span class="field-value">${equipment?.manufactureYear || 'N/A'}</span></div>
-                </div>
-              </div>
-            </div>
-            <div class="section">
-              <div class="section-title">Problema Relatado / Solicitação</div>
-              <p class="field-value" style="white-space: pre-wrap;">${order.description || 'Nenhum problema relatado.'}</p>
-            </div>
-            ${order.notes ? `<div class="section">
-              <div class="section-title">Observações da OS</div>
-              <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
-            </div>` : ''}
-            <div class="section notes-section">
-              <div class="section-title">Diagnóstico Técnico / Serviços Realizados</div>
-              <textarea rows="5"></textarea>
-            </div>
-            <div class="section notes-section">
-              <div class="section-title">Peças Utilizadas</div>
-              <textarea rows="3"></textarea>
-            </div>
-            <div class="signature-area">
-              <div class="signature-line"></div>
-              <div class="signature-label">Assinatura do Técnico</div>
-            </div>
-            <div class="signature-area">
-              <div class="signature-line"></div>
-              <div class="signature-label">Assinatura do Cliente / Responsável</div>
-            </div>
-             <div class="footer-notes">
-               Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-    console.log("[PrintDebug] generatePrintHTMLForTechnician finished. HTML valid:", !!html);
-    return html;
+
+    doc.setFontSize(titleText);
+    doc.setTextColor(primaryColor);
+    doc.text(`ORDEM DE SERVIÇO TÉCNICO: ${order.orderNumber}`, 105, yPos, { align: "center" });
+    yPos += sectionSpacing;
+
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
+    doc.text(`Previsão Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 120, yPos);
+    yPos += lineSpacing;
+    doc.text(`Técnico Designado: ${toTitleCase(technicianName) || 'Não Atribuído'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Tipo de Serviço: ${toTitleCase(order.serviceType)}`, 14, yPos);
+    yPos += sectionSpacing;
+
+    // Customer Details
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Dados do Cliente", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Empresa: ${toTitleCase(customer?.name) || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`CNPJ: ${customer?.cnpj || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Solicitante: ${toTitleCase(order.requesterName) || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Telefone: ${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    const customerAddress = formatAddressForDisplay(customer);
+    const splitAddress = doc.splitTextToSize(customerAddress, 180);
+    doc.text(`Endereço: ${splitAddress[0]}`, 14, yPos);
+    if (splitAddress.length > 1) {
+      for(let i = 1; i < splitAddress.length; i++) {
+        yPos += (lineSpacing / 1.5);
+        doc.text(splitAddress[i], 28, yPos);
+      }
+    }
+    yPos += sectionSpacing;
+
+    // Equipment Details
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Dados da Máquina", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Marca/Modelo: ${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}`, 14, yPos);
+    doc.text(`Nº Chassi: ${equipment?.chassisNumber || 'N/A'}`, 120, yPos);
+    yPos += lineSpacing;
+    doc.text(`Ano: ${equipment?.manufactureYear || 'N/A'}`, 14, yPos);
+    yPos += sectionSpacing;
+
+    // Problem Description
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Problema Relatado / Solicitação", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    const splitDescription = doc.splitTextToSize(order.description || 'Nenhum problema relatado.', 180);
+    doc.text(splitDescription, 14, yPos);
+    yPos += splitDescription.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+
+
+    if (order.notes) {
+        doc.setFontSize(largeText);
+        doc.setTextColor(primaryColor);
+        doc.text("Observações da OS", 14, yPos);
+        yPos += lineSpacing;
+        doc.setTextColor(0);
+        doc.setFontSize(normalText);
+        const splitNotes = doc.splitTextToSize(order.notes, 180);
+        doc.text(splitNotes, 14, yPos);
+        yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    }
+    
+    // Technical Diagnosis / Services Performed (Empty for technician)
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Diagnóstico Técnico / Serviços Realizados", 14, yPos);
+    yPos += lineSpacing;
+    doc.rect(14, yPos, 182, 30); // Empty box for notes
+    yPos += 30 + sectionSpacing;
+
+    // Parts Used (Empty for technician)
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Peças Utilizadas", 14, yPos);
+    yPos += lineSpacing;
+    doc.rect(14, yPos, 182, 20); // Empty box for notes
+    yPos += 20 + sectionSpacing;
+    
+    // Signatures
+    yPos = Math.max(yPos, doc.internal.pageSize.height - 60); // Ensure space for signatures
+    doc.setFontSize(normalText);
+    doc.line(30, yPos, 90, yPos); // Technician signature line
+    doc.text("Assinatura do Técnico", 45, yPos + 5, { align: "center" });
+    doc.line(120, yPos, 180, yPos); // Customer signature line
+    doc.text("Assinatura do Cliente / Responsável", 130, yPos + 5);
+    yPos += 15;
+
+    doc.setFontSize(smallText);
+    doc.setTextColor(150);
+    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 105, doc.internal.pageSize.height - 10, { align: "center" });
+
+    doc.save(`OS_Tecnico_${order.orderNumber}.pdf`);
   };
 
-  const generatePrintHTMLForCustomer = (
+  const generateCustomerReceiptPDF = (
     order: ServiceOrder,
-    customer?: Customer,
-    equipment?: Maquina
-  ): string => {
-    console.log("[PrintDebug] generatePrintHTMLForCustomer called for OS:", order.orderNumber);
-    if (!order) {
-      console.error("[PrintDebug] Order is undefined in generatePrintHTMLForCustomer");
-      return "Erro: Ordem de Serviço não encontrada.";
+    customer: Customer | undefined,
+    equipment: Maquina | undefined,
+    companyDetails: Company | null
+  ) => {
+    const doc = new jsPDF();
+    let yPos = 15;
+    const lineSpacing = 7;
+    const sectionSpacing = 10;
+    const smallText = 9;
+    const normalText = 10;
+    const largeText = 12;
+    const titleText = 16;
+    const primaryColor = "#F97316";
+
+    doc.setFont("helvetica", "normal");
+
+    // Header
+    if (companyDetails) {
+        doc.setFontSize(largeText);
+        doc.setTextColor(primaryColor);
+        doc.text(companyDetails.name, 14, yPos);
+        yPos += lineSpacing;
+        doc.setFontSize(smallText);
+        doc.setTextColor(50);
+        doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
+        yPos += lineSpacing / 1.5;
+        doc.text(formatAddressForDisplay(companyDetails) || "Endereço não disponível", 14, yPos);
+        yPos += lineSpacing;
     }
-    const companyInfo = companies?.find(c => c.id === 'goldmaq');
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Comprovante OS: ${order.orderNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
-            .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
-            .print-header { text-align: center; margin-bottom: 20px; }
-            .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
-            .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
-            .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-            .section:last-child { border-bottom: none; }
-            .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
-            .field-group { margin-bottom: 6px; }
-            .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
-            .field-value { color: #666; }
-            .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
-            .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
-            .signature-label { text-align: center; font-size: 10px; color: #555; }
-            .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
-            @media print {
-              body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .print-header h1 { color: #F97316 !important; }
-              .no-print { display: none !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            <div class="print-header">
-              <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Comprovante de Atendimento</h1>
-               <p>${formatAddressToString(companyInfo)}</p>
-              <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
-            </div>
-            <div class="section">
-              <div class="section-title">Informações do Atendimento</div>
-              <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
-              <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">Data Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
-            </div>
-            <div class="section">
-              <div class="section-title">Dados do Cliente</div>
-              <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
-               <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
-              <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
-            </div>
-            <div class="section">
-              <div class="section-title">Dados da Máquina</div>
-               <div class="field-group"><span class="field-label">Marca/Modelo:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}</span></div>
-              <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
-            </div>
-            <div class="section">
-              <div class="section-title">Problema Relatado</div>
-              <p class="field-value" style="white-space: pre-wrap;">${order.description || 'N/A'}</p>
-            </div>
-            ${order.technicalConclusion ? `<div class="section">
-              <div class="section-title">Conclusão Técnica / Serviços Realizados</div>
-              <p class="field-value" style="white-space: pre-wrap;">${order.technicalConclusion}</p>
-            </div>` : ''}
-            ${order.notes ? `<div class="section">
-              <div class="section-title">Observações Adicionais</div>
-              <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
-            </div>` : ''}
-            <div class="signature-area">
-              <div class="signature-line"></div>
-              <div class="signature-label">Assinatura do Cliente / Responsável</div>
-            </div>
-            <div class="footer-notes">
-              Agradecemos a preferência! <br/>
-              Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-    console.log("[PrintDebug] generatePrintHTMLForCustomer finished. HTML valid:", !!html);
-    return html;
+    
+    doc.setFontSize(titleText);
+    doc.setTextColor(primaryColor);
+    doc.text(`COMPROVANTE DE ATENDIMENTO OS: ${order.orderNumber}`, 105, yPos, { align: "center" });
+    yPos += sectionSpacing;
+
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
+    doc.text(`Data Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 120, yPos);
+    yPos += sectionSpacing;
+
+    // Customer Details
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Dados do Cliente", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Empresa: ${toTitleCase(customer?.name) || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`CNPJ: ${customer?.cnpj || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    const customerAddress = formatAddressForDisplay(customer);
+    const splitAddress = doc.splitTextToSize(customerAddress, 180);
+    doc.text(`Endereço: ${splitAddress[0]}`, 14, yPos);
+     if (splitAddress.length > 1) {
+      for(let i = 1; i < splitAddress.length; i++) {
+        yPos += (lineSpacing / 1.5);
+        doc.text(splitAddress[i], 28, yPos);
+      }
+    }
+    yPos += sectionSpacing;
+
+    // Equipment Details
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Dados da Máquina", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    doc.text(`Marca/Modelo: ${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text(`Nº Chassi: ${equipment?.chassisNumber || 'N/A'}`, 14, yPos);
+    yPos += sectionSpacing;
+
+    // Problem Description
+    doc.setFontSize(largeText);
+    doc.setTextColor(primaryColor);
+    doc.text("Problema Relatado", 14, yPos);
+    yPos += lineSpacing;
+    doc.setTextColor(0);
+    doc.setFontSize(normalText);
+    const splitDescription = doc.splitTextToSize(order.description || 'N/A', 180);
+    doc.text(splitDescription, 14, yPos);
+    yPos += splitDescription.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+
+    // Technical Conclusion
+    if (order.technicalConclusion) {
+        doc.setFontSize(largeText);
+        doc.setTextColor(primaryColor);
+        doc.text("Conclusão Técnica / Serviços Realizados", 14, yPos);
+        yPos += lineSpacing;
+        doc.setTextColor(0);
+        doc.setFontSize(normalText);
+        const splitConclusion = doc.splitTextToSize(order.technicalConclusion, 180);
+        doc.text(splitConclusion, 14, yPos);
+        yPos += splitConclusion.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    }
+
+    // Additional Notes
+    if (order.notes) {
+        doc.setFontSize(largeText);
+        doc.setTextColor(primaryColor);
+        doc.text("Observações Adicionais", 14, yPos);
+        yPos += lineSpacing;
+        doc.setTextColor(0);
+        doc.setFontSize(normalText);
+        const splitNotes = doc.splitTextToSize(order.notes, 180);
+        doc.text(splitNotes, 14, yPos);
+        yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    }
+
+    // Signature
+    yPos = Math.max(yPos, doc.internal.pageSize.height - 40);
+    doc.setFontSize(normalText);
+    doc.line(120, yPos, 180, yPos); // Customer signature line
+    doc.text("Assinatura do Cliente / Responsável", 130, yPos + 5);
+    yPos += 15;
+
+    doc.setFontSize(smallText);
+    doc.setTextColor(150);
+    doc.text(`Agradecemos a preferência! Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 105, doc.internal.pageSize.height - 10, { align: "center" });
+
+    doc.save(`Comprovante_OS_${order.orderNumber}.pdf`);
   };
 
-  const handlePrintForTechnician = () => {
-    console.log("[PrintDebug] handlePrintForTechnician called");
-    if (!editingOrder) {
-      console.error("[PrintDebug] editingOrder is null in handlePrintForTechnician");
-      toast({ title: "Erro de Impressão", description: "Nenhuma OS selecionada para imprimir.", variant: "destructive" });
-      return;
+  const handlePrintForTechnician = (order: ServiceOrder) => {
+    if (isLoadingGoldmaqCompany || !goldmaqCompanyDetails) {
+        toast({ title: "Aguarde", description: "Carregando dados da empresa para gerar PDF.", variant: "default"});
+        return;
     }
-    const customer = getCustomerDetails(editingOrder.customerId);
-    const equipment = getEquipmentDetails(editingOrder.equipmentId);
-    const technicianName = getTechnicianName(editingOrder.technicianId);
-    const vehicleInfo = getVehicleDetails(editingOrder.vehicleId);
-
-    console.log("[PrintDebug] Data for technician print:", { editingOrder, customer, equipment, technicianName, vehicleInfo });
-
-    const htmlContent = generatePrintHTMLForTechnician(editingOrder, customer, equipment, technicianName, vehicleInfo);
-    console.log("[PrintDebug] HTML content for technician:", !!htmlContent);
-    if (htmlContent && htmlContent.trim() !== "") {
-      printHTML(htmlContent, `OS_Tecnico_${editingOrder.orderNumber}`);
-      console.log("[PrintDebug] printHTML called for technician.");
-    } else {
-      console.error("[PrintDebug] HTML content for technician is empty or invalid.");
-      toast({ title: "Erro de Impressão", description: "Não foi possível gerar o conteúdo para impressão do técnico.", variant: "destructive" });
-    }
+    const customer = getCustomerDetails(order.customerId);
+    const equipment = getEquipmentDetails(order.equipmentId);
+    const technicianName = getTechnicianName(order.technicianId);
+    generateTechnicianOsPDF(order, customer, equipment, technicianName, goldmaqCompanyDetails);
   };
 
-
-  const handlePrintForCustomer = () => {
-    console.log("[PrintDebug] handlePrintForCustomer called");
-    if (!editingOrder) {
-      console.error("[PrintDebug] editingOrder is null in handlePrintForCustomer");
-      toast({ title: "Erro de Impressão", description: "Nenhuma OS selecionada para imprimir.", variant: "destructive" });
-      return;
+  const handlePrintForCustomer = (order: ServiceOrder) => {
+     if (isLoadingGoldmaqCompany || !goldmaqCompanyDetails) {
+        toast({ title: "Aguarde", description: "Carregando dados da empresa para gerar PDF.", variant: "default"});
+        return;
     }
-    const customer = getCustomerDetails(editingOrder.customerId);
-    const equipment = getEquipmentDetails(editingOrder.equipmentId);
-    const htmlContent = generatePrintHTMLForCustomer(editingOrder, customer, equipment);
-    console.log("[PrintDebug] HTML content for customer:", !!htmlContent);
-    if (htmlContent && htmlContent.trim() !== "") {
-      printHTML(htmlContent, `Comprovante_OS_${editingOrder.orderNumber}`);
-      console.log("[PrintDebug] printHTML called for customer.");
-    } else {
-       console.error("[PrintDebug] HTML content for customer is empty or invalid.");
-       toast({ title: "Erro de Impressão", description: "Não foi possível gerar o conteúdo para impressão do cliente.", variant: "destructive" });
-    }
+    const customer = getCustomerDetails(order.customerId);
+    const equipment = getEquipmentDetails(order.equipmentId);
+    generateCustomerReceiptPDF(order, customer, equipment, goldmaqCompanyDetails);
   };
-
 
   const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
   const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
-  const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingCompanies;
-
-  // TEST: Unconditional print buttons
-  const printButtons = (
-    <>
-      {editingOrder && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handlePrintForTechnician}
-          disabled={isMutating}
-          className="border-primary text-primary hover:bg-primary/10"
-        >
-          <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
-        </Button>
-      )}
-      {editingOrder && editingOrder.phase === 'Concluída' && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handlePrintForCustomer}
-          disabled={isMutating}
-          className="border-primary text-primary hover:bg-primary/10 ml-2"
-        >
-          <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
-        </Button>
-      )}
-    </>
-  );
+  const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingGoldmaqCompany;
 
 
   if (isLoadingPageData && !isModalOpen) {
@@ -1358,7 +1328,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           {filteredServiceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             const cardClasses = cn(
-              "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
+              "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300", // Removed cursor-pointer here
             );
             const customerDetails = getCustomerDetails(order.customerId);
             const equipmentDetails = getEquipmentDetails(order.equipmentId);
@@ -1373,7 +1343,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
             let equipmentOwnerDisplay = null;
             if (equipmentDetails?.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
-                const company = (companies || []).find(c => c.id === equipmentDetails.ownerReference);
+                const company = goldmaqCompanyDetails && goldmaqCompanyDetails.id === equipmentDetails.ownerReference ? goldmaqCompanyDetails : null; // Simplified
                 equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
             } else if (equipmentDetails?.ownerReference === OWNER_REF_CUSTOMER) {
                  const ownerCustomer = (customers || []).find(c => c.id === equipmentDetails.customerId);
@@ -1382,7 +1352,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
 
             return (
-            <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
+            <Card key={order.id} className={cardClasses} >
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
                  <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
@@ -1392,7 +1362,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   <span className="ml-2">{deadlineInfo.message}</span>
                 </div>
               )}
-              <CardHeader className={cn(deadlineInfo.status !== 'none' && deadlineInfo.message ? "pt-2" : "")}>
+              <CardHeader className={cn("cursor-pointer", deadlineInfo.status !== 'none' && deadlineInfo.message ? "pt-2" : "")} onClick={() => openModal(order)}>
                 <div className="flex justify-between items-start">
                   <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
                 </div>
@@ -1402,7 +1372,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   <span className="text-base font-semibold">{order.phase}</span>
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex-grow space-y-2 text-sm">
+              <CardContent className="flex-grow space-y-2 text-sm cursor-pointer" onClick={() => openModal(order)}>
                 <p className="flex items-center">
                   <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
@@ -1547,7 +1517,43 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   </div>
                 )}
               </CardContent>
-              <CardFooter className="border-t pt-4 flex justify-end gap-2">
+              <CardFooter className="border-t pt-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); handlePrintForTechnician(order); }}
+                    disabled={isMutating || isLoadingGoldmaqCompany}
+                    className="border-primary text-primary hover:bg-primary/10"
+                  >
+                    <Printer className="mr-1.5 h-3.5 w-3.5" /> Imprimir (Técnico)
+                  </Button>
+                  {order.phase === 'Concluída' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); handlePrintForCustomer(order); }}
+                      disabled={isMutating || isLoadingGoldmaqCompany}
+                      className="border-primary text-primary hover:bg-primary/10"
+                    >
+                      <Printer className="mr-1.5 h-3.5 w-3.5" /> Imprimir (Cliente)
+                    </Button>
+                  )}
+                </div>
+                {order.phase !== 'Concluída' && order.phase !== 'Cancelada' && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); handleOpenConclusionModal(order); }}
+                    disabled={isMutating || concludeServiceOrderMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
+                  >
+                    <Check className="mr-1.5 h-3.5 w-3.5" /> Concluir OS
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           )})}
@@ -1568,7 +1574,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         submitButtonLabel={editingOrder && !isEditMode ? undefined : (editingOrder ? "Salvar Alterações" : "Criar OS")}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        additionalFooterActions={printButtons}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
@@ -1670,7 +1675,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   <FormItem><FormLabel>Fase</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value} disabled={isOrderConcludedOrCancelled}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
-                      <SelectContent>{serviceOrderPhaseOptions.map(opt => <SelectItem key={opt} value={opt} disabled={opt === 'Concluída' && editingOrder?.phase !== 'Concluída'}>{opt}</SelectItem>)}</SelectContent>
+                      <SelectContent>{serviceOrderPhaseOptions.map(opt => <SelectItem key={opt} value={opt} disabled={(opt === 'Concluída' || opt === 'Cancelada') && editingOrder?.phase !== opt}>{opt}</SelectItem>)}</SelectContent>
                     </Select><FormMessage />
                   </FormItem>
                 )} />
@@ -1846,12 +1851,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             </fieldset>
 
             <div className="pt-4 space-y-2">
-              {editingOrder && isEditMode && !isOrderConcludedOrCancelled && (
+              {editingOrder && isEditMode && !isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada' && (
                 <div className="flex flex-col sm:flex-row gap-2">
-                   <Button type="button" variant="outline" onClick={handleOpenConclusionModal} disabled={isMutating} className="w-full sm:w-auto">
-                    <Check className="mr-2 h-4 w-4" /> Concluir OS
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={handleOpenCancelConfirmModal} disabled={isMutating} className="w-full sm:w-auto">
+                  <Button type="button" variant="destructive" onClick={() => handleOpenCancelConfirmModal(editingOrder)} disabled={isMutating} className="w-full sm:w-auto">
                     <Ban className="mr-2 h-4 w-4" /> Cancelar OS
                   </Button>
                 </div>
@@ -2003,3 +2005,4 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     </TooltipProvider>
   );
 }
+
