@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp } from "firebase/firestore";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query"; // Added useQueryClient
 import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem } from "@/types";
 import { cn, formatDateForDisplay } from "@/lib/utils";
 import Link from "next/link";
@@ -71,23 +71,24 @@ async function fetchCustomers(): Promise<Customer[]> {
 
 export function PartsWarehouseClientPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient(); // Initialize queryClient
 
   const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitions } = useQuery<PartsRequisition[], Error>({
     queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME],
     queryFn: fetchPartsRequisitions,
   });
 
-  const { data: serviceOrders = [], isLoading: isLoadingServiceOrders } = useQuery<ServiceOrder[], Error>({
+  const { data: serviceOrders = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_SERVICE_ORDER_COLLECTION_NAME],
     queryFn: fetchServiceOrders,
   });
 
-  const { data: technicians = [], isLoading: isLoadingTechnicians } = useQuery<Technician[], Error>({
+  const { data: technicians = [], isLoading: isLoadingTechnicians, isError: isErrorTechnicians, error: errorTechnicians } = useQuery<Technician[], Error>({
     queryKey: [FIRESTORE_TECHNICIAN_COLLECTION_NAME],
     queryFn: fetchTechnicians,
   });
 
-  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
+  const { data: customers = [], isLoading: isLoadingCustomers, isError: isErrorCustomers, error: errorCustomers } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
   });
@@ -263,3 +264,5 @@ export function PartsWarehouseClientPage() {
     </>
   );
 }
+
+    
