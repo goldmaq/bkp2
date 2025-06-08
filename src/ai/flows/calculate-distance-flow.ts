@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A Genkit flow to calculate driving distance between two addresses
@@ -13,7 +12,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z, type Flow } from 'genkit'; // Ensure Flow is imported if its type is used
+import { z } from 'genkit'; // Flow type is not needed if we simplify the variable type
 
 // Define Zod schemas based on the interfaces from types/index.ts
 const CalculateDistanceInputSchema = z.object({
@@ -146,8 +145,8 @@ function getSimulatedDistance(): number {
   return Math.floor(Math.random() * 450) + 50;
 }
 
-// Declare calculateDistanceFlow with its type
-let calculateDistanceFlow: Flow<typeof CalculateDistanceInputSchema, typeof CalculateDistanceOutputSchema>;
+// Declare calculateDistanceFlow with its type as a simple function
+let calculateDistanceFlow: (input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>;
 
 if (ai && tollEstimationPrompt) {
   console.log("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) IS available. Defining real flow with toll estimation.");
