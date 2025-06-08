@@ -20,7 +20,7 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase"; // Added storage
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, type DocumentData, getDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, type DocumentData, getDoc, limit } from "firebase/firestore"; // Added limit
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isBefore, isToday, addDays, parseISO, isValid, format } from 'date-fns';
@@ -82,7 +82,8 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
     console.error("fetchServiceOrders: Firebase DB is not available.");
     throw new Error("Firebase DB is not available");
   }
-  const q = query(collection(db, FIRESTORE_COLLECTION_NAME), orderBy("startDate", "desc"), orderBy("orderNumber", "desc"));
+  // Added limit(50) to fetch only the latest 50 service orders initially
+  const q = query(collection(db, FIRESTORE_COLLECTION_NAME), orderBy("startDate", "desc"), orderBy("orderNumber", "desc"), limit(50));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => {
     const data = docSnap.data() as DocumentData;
@@ -1572,7 +1573,3 @@ export function ServiceOrderClientPage() {
     </TooltipProvider>
   );
 }
-
-
-
-    
