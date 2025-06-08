@@ -27,17 +27,34 @@ const CalculateDistanceOutputSchema = z.object({
   errorMessage: z.string().optional().describe("Error message if the status is an error."),
 });
 
+// Helper function to fetch with timeout
+async function fetchWithTimeout(resource: RequestInfo | URL, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
+  const { timeout = 5000 } = options; // Default timeout 5 seconds
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  const response = await fetch(resource, {
+    ...options,
+    signal: controller.signal
+  });
+  clearTimeout(id);
+  return response;
+}
+
 // Helper function to geocode an address using Nominatim
 async function geocodeAddress(address: string): Promise<{ latitude: number; longitude: number } | null> {
   const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
   try {
     console.log(`Geocoding address: ${address} with URL: ${nominatimUrl}`);
-    const response = await fetch(nominatimUrl, {
+    const response = await fetchWithTimeout(nominatimUrl, {
       headers: {
         // IMPORTANT: Provide a User-Agent as per Nominatim's usage policy
         'User-Agent': 'GoldMaqControlApp/1.0 (Firebase Studio Project; +gold-maq-control)',
       },
+      timeout: 5000, // 5 seconds timeout
     });
+
     if (!response.ok) {
       console.error(`Nominatim API error for "${address}": ${response.status} ${response.statusText}`);
       return null;
@@ -50,8 +67,12 @@ async function geocodeAddress(address: string): Promise<{ latitude: number; long
     }
     console.warn(`No geocoding results for address: ${address}`);
     return null;
-  } catch (error) {
-    console.error(`Error geocoding address "${address}":`, error);
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.error(`Error geocoding address "${address}": Request timed out.`);
+    } else {
+      console.error(`Error geocoding address "${address}":`, error);
+    }
     return null;
   }
 }
@@ -87,7 +108,7 @@ function getSimulatedDistance(): number {
 
 // Exported wrapper function
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
-  if (!ai || !calculateDistanceFlow) { // Also check if calculateDistanceFlow is defined
+  if (!ai || !calculateDistanceFlow) { 
     console.error("calculateDistance Flow: Genkit AI instance or flow is not available.");
     return {
       distanceKm: getSimulatedDistance(), 
@@ -99,7 +120,6 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
 }
 
 // Genkit Flow Definition
-// Declare calculateDistanceFlow with a broader type initially
 let calculateDistanceFlow: GenkitFlow<z.infer<typeof CalculateDistanceInputSchema>, z.infer<typeof CalculateDistanceOutputSchema>> | ((input: z.infer<typeof CalculateDistanceInputSchema>) => Promise<z.infer<typeof CalculateDistanceOutputSchema>>);
 
 if (ai) {
@@ -125,7 +145,7 @@ if (ai) {
         console.warn("calculateDistanceFlow: Failed to geocode origin address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED',
+          status: 'ERROR_GEOCODING_FAILED', // More specific status
           errorMessage: "Failed to geocode origin address. Using simulated distance.",
         };
       }
@@ -135,7 +155,7 @@ if (ai) {
         console.warn("calculateDistanceFlow: Failed to geocode destination address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED',
+          status: 'ERROR_GEOCODING_FAILED', // More specific status
           errorMessage: "Failed to geocode destination address. Using simulated distance.",
         };
       }
@@ -153,12 +173,12 @@ if (ai) {
           distanceKm: parseFloat(estimatedDrivingDistanceKm.toFixed(1)),
           status: 'SUCCESS',
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error("calculateDistanceFlow: Error during Haversine calculation or API interaction:", error);
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED',
-          errorMessage: "Error during distance calculation. Using simulated distance.",
+          status: 'SIMULATED', // Fallback to SIMULATED if haversine fails for some reason
+          errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
         };
       }
     }
@@ -174,3 +194,4 @@ if (ai) {
     };
   };
 }
+
