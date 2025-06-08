@@ -3,23 +3,35 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type * as z from "zod";
-import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye } from "lucide-react";
+import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input"; // Potentially for triage notes later
-import { Textarea } from "@/components/ui/textarea"; // Potentially for triage notes later
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { FormModal } from "@/components/shared/FormModal"; // May be used for triage notes modal later
+// FormModal might not be needed if using AlertDialog for simple notes
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, query, orderBy, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, query, orderBy, Timestamp, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType } from "@/types";
+import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType } from "@/types";
 import { cn, formatDateForDisplay } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -65,16 +77,20 @@ async function fetchCustomers(): Promise<Customer[]> {
     return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
 
-
 export function PartsTriageClientPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [isItemStatusModalOpen, setIsItemStatusModalOpen] = useState(false);
-  const [selectedRequisition, setSelectedRequisition] = useState<PartsRequisition | null>(null);
-  const [selectedItemForTriage, setSelectedItemForTriage] = useState<PartsRequisitionItem | null>(null);
+  const [currentTriageData, setCurrentTriageData] = useState<{
+    requisitionId: string;
+    requisitionNumber: string;
+    itemId: string;
+    partName: string;
+    newStatus: PartsRequisitionItemStatusType;
+    currentNotes: string | null | undefined;
+  } | null>(null);
   const [triageNotes, setTriageNotes] = useState("");
-  const [newStatusForSelectedItem, setNewStatusForSelectedItem] = useState<PartsRequisitionItemStatusType | null>(null);
 
 
   const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitions } = useQuery<PartsRequisition[], Error>({
@@ -97,16 +113,120 @@ export function PartsTriageClientPage() {
     queryFn: fetchCustomers,
   });
 
-  // TODO: Implement filtering for requisitions that need triage
   const requisitionsForTriage = useMemo(() => {
-    return requisitions.filter(req => 
+    return requisitions.filter(req =>
       req.status !== "Cancelada" && req.status !== "Atendida Totalmente" &&
       req.items.some(item => item.status === "Pendente Aprovação")
     );
   }, [requisitions]);
 
+  const updatePartItemStatusMutation = useMutation({
+    mutationFn: async (data: {
+      requisitionId: string;
+      itemId: string;
+      newStatus: PartsRequisitionItemStatusType;
+      notes?: string | null;
+    }) => {
+      if (!db) throw new Error("Firebase DB is not available.");
+      const reqRef = doc(db, FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME, data.requisitionId);
+
+      await runTransaction(db, async (transaction) => {
+        const reqDoc = await transaction.get(reqRef);
+        if (!reqDoc.exists()) {
+          throw new Error("Requisição não encontrada.");
+        }
+
+        const currentRequisition = reqDoc.data() as PartsRequisition;
+        const itemIndex = currentRequisition.items.findIndex(item => item.id === data.itemId);
+
+        if (itemIndex === -1) {
+          throw new Error("Item da requisição não encontrado.");
+        }
+
+        const updatedItems = [...currentRequisition.items];
+        updatedItems[itemIndex] = {
+          ...updatedItems[itemIndex],
+          status: data.newStatus,
+          triageNotes: data.notes || updatedItems[itemIndex].triageNotes || null,
+        };
+
+        // Determine overall requisition status
+        let allApproved = true;
+        let someApproved = false;
+        let allTriaged = true;
+
+        updatedItems.forEach(item => {
+          if (item.status === "Pendente Aprovação") {
+            allTriaged = false;
+            allApproved = false;
+          } else if (item.status === "Aprovado" || item.status === "Aguardando Compra" || item.status === "Separado" || item.status === "Entregue") {
+            someApproved = true;
+          } else if (item.status === "Recusado") {
+            allApproved = false;
+          }
+        });
+        
+        let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
+        if (allTriaged) {
+            if (allApproved && someApproved) { // All items triaged and all of them are approved (or further)
+                newRequisitionStatus = "Triagem Realizada"; // Could also be more specific like "Totalmente Aprovada"
+            } else if (someApproved) { // All items triaged, some approved, some might be refused
+                newRequisitionStatus = "Triagem Realizada"; // Or "Parcialmente Aprovada"
+            } else { // All items triaged, but none approved (all refused)
+                newRequisitionStatus = "Triagem Realizada"; // Or "Totalmente Recusada"
+            }
+        } else {
+            newRequisitionStatus = "Pendente"; // Still items pending triage
+        }
+
+
+        transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] });
+      toast({ title: "Status do Item Atualizado", description: "O status do item foi atualizado com sucesso." });
+      setIsItemStatusModalOpen(false);
+      setCurrentTriageData(null);
+      setTriageNotes("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Erro ao Atualizar Status", description: error.message, variant: "destructive" });
+    }
+  });
+
+
+  const handleOpenTriageModal = (
+    requisitionId: string,
+    requisitionNumber: string,
+    item: PartsRequisitionItem,
+    newStatus: PartsRequisitionItemStatusType
+  ) => {
+    setCurrentTriageData({
+      requisitionId,
+      requisitionNumber,
+      itemId: item.id,
+      partName: item.partName,
+      newStatus,
+      currentNotes: item.triageNotes,
+    });
+    setTriageNotes(item.triageNotes || "");
+    setIsItemStatusModalOpen(true);
+  };
+
+  const handleConfirmTriage = () => {
+    if (currentTriageData) {
+      updatePartItemStatusMutation.mutate({
+        requisitionId: currentTriageData.requisitionId,
+        itemId: currentTriageData.itemId,
+        newStatus: currentTriageData.newStatus,
+        notes: triageNotes.trim() || null,
+      });
+    }
+  };
 
   const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers;
+  const isMutating = updatePartItemStatusMutation.isPending;
 
   if (!db) {
     return (
@@ -120,7 +240,7 @@ export function PartsTriageClientPage() {
     );
   }
 
-  if (isLoadingPageData) {
+  if (isLoadingPageData && !isItemStatusModalOpen) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2">Carregando dados de triagem...</p></div>;
   }
 
@@ -132,7 +252,7 @@ export function PartsTriageClientPage() {
     <>
       <PageHeader title="Triagem de Requisições de Peças" />
 
-      {requisitionsForTriage.length === 0 ? (
+      {requisitionsForTriage.length === 0 && !isLoadingRequisitions ? (
         <DataTablePlaceholder
           icon={ClipboardCheck}
           title="Nenhuma Requisição Pendente de Triagem"
@@ -208,14 +328,18 @@ export function PartsTriageClientPage() {
                           )}
                           {item.status === "Pendente Aprovação" && (
                              <div className="mt-2 flex gap-2">
-                                {/* Placeholder for Approve/Deny buttons - to be implemented next */}
-                                <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 flex-1">
+                                <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Aprovado");}} disabled={isMutating}>
                                     <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
                                 </Button>
-                                <Button size="sm" variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 flex-1">
+                                <Button size="sm" variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Recusado");}} disabled={isMutating}>
                                    <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
                                 </Button>
                             </div>
+                          )}
+                           {item.triageNotes && (
+                            <p className="text-xs text-muted-foreground mt-1.5 border-t pt-1.5">
+                                <span className="font-medium">Nota Triagem:</span> {item.triageNotes}
+                            </p>
                           )}
                         </li>
                       ))}
@@ -228,7 +352,53 @@ export function PartsTriageClientPage() {
           })}
         </div>
       )}
+
+      <AlertDialog open={isItemStatusModalOpen} onOpenChange={setIsItemStatusModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirmar Triagem: {currentTriageData?.partName} (Req: {currentTriageData?.requisitionNumber})
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a marcar este item como "{currentTriageData?.newStatus}".
+              Adicione uma observação para esta triagem (opcional).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4 space-y-2">
+            <Label htmlFor="triage-notes" className="text-sm font-medium">
+              Observações da Triagem (Opcional)
+            </Label>
+            <Textarea
+              id="triage-notes"
+              value={triageNotes}
+              onChange={(e) => setTriageNotes(e.target.value)}
+              placeholder="Ex: Peça disponível em estoque, Necessário encomendar..."
+              rows={3}
+            />
+            {updatePartItemStatusMutation.isError && (
+                <p className="text-sm text-destructive mt-2">
+                    Erro: {(updatePartItemStatusMutation.error as Error)?.message || "Não foi possível atualizar o item."}
+                </p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsItemStatusModalOpen(false); setCurrentTriageData(null); setTriageNotes("");}} disabled={isMutating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+                onClick={handleConfirmTriage}
+                disabled={isMutating}
+                className={cn(
+                    currentTriageData?.newStatus === "Aprovado" && buttonVariants({className: "bg-green-600 hover:bg-green-700"}),
+                    currentTriageData?.newStatus === "Recusado" && buttonVariants({variant: "destructive"}),
+                )}
+            >
+              {isMutating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (currentTriageData?.newStatus === "Aprovado" ? <ThumbsUp className="mr-2 h-4 w-4"/> : <Ban className="mr-2 h-4 w-4"/>)}
+              Confirmar {currentTriageData?.newStatus}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
+
     
