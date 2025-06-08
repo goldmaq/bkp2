@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
 import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban } from "lucide-react"; // Added Ban icon & ClipboardEdit
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
+import { buttonVariants } from "@/components/ui/button"; 
 
 const MAX_FILES_ALLOWED = 5;
 
@@ -243,7 +244,7 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  console.log(`DEBUG: getDeadlineStatusInfo - OrderPhase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
+  console.log(`DEBUG: getDeadlineStatusInfo for OrderPhase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
 
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
@@ -524,7 +525,6 @@ export function ServiceOrderClientPage() {
       const orderRef = doc(db, FIRESTORE_COLLECTION_NAME, orderId);
       await updateDoc(orderRef, {
         phase: "Cancelada",
-        // Consider if endDate or technicalConclusion should be nulled or handled differently
       });
       return orderId;
     },
@@ -613,7 +613,6 @@ export function ServiceOrderClientPage() {
     const newFilesToUpload = mediaFiles;
     const originalMediaUrls = editingOrder?.mediaUrls || [];
 
-    // If the order is already concluded or cancelled, but we are saving (e.g. adding notes to a concluded OS)
     if (editingOrder?.id && (editingOrder.phase === 'Concluída' || editingOrder.phase === 'Cancelada')) {
         updateServiceOrderMutation.mutate({
           id: editingOrder.id,
@@ -739,19 +738,22 @@ export function ServiceOrderClientPage() {
     );
   }
 
-  const getCustomerName = (id: string) => customers.find(c => c.id === id)?.name || id;
-  const getEquipmentIdentifier = (id: string) => {
+  const getCustomerDetails = (id: string): { name: string; cnpj: string } => {
+    const customer = customers.find(c => c.id === id);
+    return customer ? { name: customer.name, cnpj: customer.cnpj } : { name: id, cnpj: "CNPJ não encontrado" };
+  };
+  const getEquipmentDetails = (id: string): { identifier: string, id: string } => {
     const eq = equipmentList.find(e => e.id === id);
-    return eq ? `${eq.brand} ${eq.model} (Chassi: ${eq.chassisNumber})` : id;
+    return eq ? { identifier: `${eq.brand} ${eq.model} (Chassi: ${eq.chassisNumber})`, id: eq.id } : { identifier: id, id };
   };
   const getTechnicianName = (id?: string | null) => {
     if (!id) return "Não Atribuído";
     return technicians.find(t => t.id === id)?.name || id;
   };
-  const getVehicleIdentifier = (id?: string | null) => {
-    if (!id) return "N/A";
+  const getVehicleDetails = (id?: string | null): { identifier: string, id?: string } => {
+    if (!id) return { identifier: "N/A" };
     const vehicle = vehicles.find(v => v.id === id);
-    return vehicle ? `${vehicle.model} (${vehicle.licensePlate})` : id;
+    return vehicle ? { identifier: `${vehicle.model} (${vehicle.licensePlate})`, id: vehicle.id } : { identifier: id };
   };
 
   return (
@@ -798,6 +800,9 @@ export function ServiceOrderClientPage() {
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
+            const customerDetails = getCustomerDetails(order.customerId);
+            const equipmentDetails = getEquipmentDetails(order.equipmentId);
+            const vehicleDetails = getVehicleDetails(order.vehicleId);
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
@@ -821,7 +826,16 @@ export function ServiceOrderClientPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
-                <p className="flex items-center"><User className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Cliente:</span> {isLoadingCustomers ? 'Carregando...' : getCustomerName(order.customerId)}</p>
+                <p className="flex items-center">
+                  <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                  <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
+                  {isLoadingCustomers ? 'Carregando...' : (
+                    <Link href={`/customers?openCustomerId=${order.customerId}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${customerDetails.name}`}>
+                      {customerDetails.name}
+                    </Link>
+                  )}
+                  <span className="text-muted-foreground/80 ml-1">({customerDetails.cnpj || 'CNPJ não disp.'})</span>
+                </p>
                 {order.requesterName && (
                   <p className="flex items-start">
                     <User className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
@@ -829,9 +843,27 @@ export function ServiceOrderClientPage() {
                     <span className="whitespace-pre-wrap break-words">{order.requesterName}</span>
                   </p>
                 )}
-                <p className="flex items-center"><Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Equip.:</span> {isLoadingEquipment ? 'Carregando...' : getEquipmentIdentifier(order.equipmentId)}</p>
+                <p className="flex items-center">
+                  <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                  <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
+                  {isLoadingEquipment ? 'Carregando...' : (
+                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${equipmentDetails.identifier}`}>
+                       {equipmentDetails.identifier}
+                     </Link>
+                  )}
+                </p>
                 <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : getTechnicianName(order.technicianId)}</p>
-                {order.vehicleId && <p className="flex items-center"><VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Veículo:</span> {isLoadingVehicles ? 'Carregando...' : getVehicleIdentifier(order.vehicleId)}</p>}
+                {order.vehicleId && (
+                  <p className="flex items-center">
+                    <VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">Veículo:</span>
+                    {isLoadingVehicles ? 'Carregando...' : (
+                       <Link href={`/vehicles?openVehicleId=${vehicleDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver veículo: ${vehicleDetails.identifier}`}>
+                         {vehicleDetails.identifier}
+                       </Link>
+                    )}
+                  </p>
+                )}
                 <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}</p>
                 {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
@@ -912,7 +944,7 @@ export function ServiceOrderClientPage() {
                       <SelectContent>
                         {isLoadingCustomers ? <SelectItem value="loading" disabled>Carregando...</SelectItem> :
                          customers.map(customer => (
-                          <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
+                          <SelectItem key={customer.id} value={customer.id}>{customer.name} ({customer.cnpj})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1061,7 +1093,6 @@ export function ServiceOrderClientPage() {
               )} />
             </fieldset>
 
-            {/* Moved action buttons here, to be inside the Form but outside the first fieldset */}
             <div className="pt-4 space-y-2">
               {editingOrder && isEditMode && !isOrderConcludedOrCancelled && (
                 <div className="flex flex-col sm:flex-row gap-2">
