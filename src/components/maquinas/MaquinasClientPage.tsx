@@ -1,16 +1,16 @@
 
 "use client";
 
-import React, { useMemo } from 'react'; // Added useMemo
+import React, { useMemo } from 'react'; 
 import { useState, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon } from "lucide-react"; // Added PackageSearch, SearchIcon
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter } from "lucide-react"; 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input"; // Added Input
+import { Input } from "@/components/ui/input"; 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { Maquina, Customer, CompanyId, OwnerReferenceType, AuxiliaryEquipment } from "@/types";
@@ -41,6 +41,7 @@ const FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME = "equipamentosAuxiliares";
 const NO_CUSTOMER_SELECT_ITEM_VALUE = "_NO_CUSTOMER_SELECTED_";
 const LOADING_CUSTOMERS_SELECT_ITEM_VALUE = "_LOADING_CUSTOMERS_";
 const NO_OWNER_REFERENCE_VALUE = "_NOT_SPECIFIED_";
+const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_";
 
 
 const operationalStatusIcons: Record<typeof maquinaOperationalStatusOptions[number], React.JSX.Element> = {
@@ -179,6 +180,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<typeof maquinaOperationalStatusOptions[number] | typeof ALL_STATUSES_FILTER_VALUE>(ALL_STATUSES_FILTER_VALUE);
 
 
   const [showCustomFields, setShowCustomFields] = useState({
@@ -235,20 +237,26 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
 
 
   const filteredMaquinaList = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return maquinaList;
+    let filtered = maquinaList;
+
+    if (statusFilter !== ALL_STATUSES_FILTER_VALUE) {
+      filtered = filtered.filter(maq => maq.operationalStatus === statusFilter);
     }
-    const lowercasedSearchTerm = searchTerm.toLowerCase();
-    return maquinaList.filter((maq) => {
-      const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
-      return (
-        maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
-        maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
-        maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
-        ownerDisplay.toLowerCase().includes(lowercasedSearchTerm)
-      );
-    });
-  }, [searchTerm, maquinaList, customers, getOwnerDisplayString]);
+
+    if (searchTerm.trim()) {
+      const lowercasedSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter((maq) => {
+        const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
+        return (
+          maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
+          maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
+          maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
+          ownerDisplay.toLowerCase().includes(lowercasedSearchTerm)
+        );
+      });
+    }
+    return filtered;
+  }, [searchTerm, maquinaList, customers, getOwnerDisplayString, statusFilter]);
 
 
   const openModal = useCallback((maquina?: Maquina) => {
@@ -664,17 +672,36 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         }
       />
 
-      <div className="mb-6 relative">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por marca, modelo, frota ou chassi..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-full md:max-w-md pl-10"
-        />
+      <div className="mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-grow">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por marca, modelo, frota ou chassi..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10"
+          />
+        </div>
+        <div className="relative md:w-auto">
+           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as any)}
+          >
+            <SelectTrigger className="w-full md:w-[200px] pl-10">
+              <SelectValue placeholder="Filtrar por status..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_STATUSES_FILTER_VALUE}>Todos os Status</SelectItem>
+              {maquinaOperationalStatusOptions.map(status => (
+                <SelectItem key={status} value={status}>{status}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {maquinaList.length === 0 && !isLoadingMaquinas && !searchTerm.trim() ? (
+      {maquinaList.length === 0 && !isLoadingMaquinas && !searchTerm.trim() && statusFilter === ALL_STATUSES_FILTER_VALUE ? (
         <DataTablePlaceholder
           icon={Construction}
           title="Nenhuma Máquina Registrada"
@@ -682,12 +709,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
           buttonLabel="Adicionar Máquina"
           onButtonClick={() => openModal()}
         />
-      ) : filteredMaquinaList.length === 0 && searchTerm.trim() ? (
+      ) : filteredMaquinaList.length === 0 ? (
           <div className="text-center py-10">
             <SearchIcon className="mx-auto h-12 w-12 text-muted-foreground" />
             <h3 className="mt-2 text-lg font-semibold">Nenhuma Máquina Encontrada</h3>
             <p className="text-sm text-muted-foreground">
-              Sua busca por "{searchTerm}" não retornou resultados. Tente um termo diferente.
+              Sua busca ou filtro não retornou resultados. Tente um termo diferente ou ajuste os filtros.
             </p>
           </div>
       ) : (
