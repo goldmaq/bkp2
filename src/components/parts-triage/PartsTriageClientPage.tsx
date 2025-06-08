@@ -18,8 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, doc, query, orderBy, Timestamp, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType } from "@/types";
-import { cn, formatDateForDisplay } from "@/lib/utils";
+import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina } from "@/types";
+import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +39,7 @@ const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 async function fetchPartsRequisitions(): Promise<PartsRequisition[]> {
   if (!db) throw new Error("Firebase DB is not available");
@@ -79,6 +80,28 @@ async function fetchCustomers(): Promise<Customer[]> {
     return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
 
+async function fetchEquipmentList(): Promise<Maquina[]> {
+  if (!db) {
+    throw new Error("Firebase Firestore connection not available.");
+  }
+  const q = query(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"), orderBy("model", "asc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      brand: data.brand || "Marca Desconhecida",
+      model: data.model || "Modelo Desconhecido",
+      chassisNumber: data.chassisNumber || "N/A",
+      equipmentType: data.equipmentType,
+      manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
+      operationalStatus: data.operationalStatus,
+      customerId: data.customerId || null,
+      ownerReference: data.ownerReference || null,
+    } as Maquina;
+  });
+}
+
 export function PartsTriageClientPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -113,6 +136,11 @@ export function PartsTriageClientPage() {
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
+  });
+
+  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchEquipmentList,
   });
 
   const requisitionsForTriage = useMemo(() => {
@@ -151,7 +179,7 @@ export function PartsTriageClientPage() {
           status: data.newStatus,
           triageNotes: data.notes || updatedItems[itemIndex].triageNotes || null,
         };
-        
+
         let newRequisitionStatus: PartsRequisitionStatusType = currentRequisition.status;
         const allItemsTriaged = updatedItems.every(item => item.status !== "Pendente Aprovação");
 
@@ -160,7 +188,7 @@ export function PartsTriageClientPage() {
         } else {
           newRequisitionStatus = "Pendente";
         }
-        
+
         transaction.update(reqRef, { items: updatedItems, status: newRequisitionStatus });
       });
     },
@@ -206,7 +234,7 @@ export function PartsTriageClientPage() {
     }
   };
 
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers;
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment;
   const isMutating = updatePartItemStatusMutation.isPending;
 
   if (!db) {
@@ -237,8 +265,8 @@ export function PartsTriageClientPage() {
         <DataTablePlaceholder
           icon={ClipboardCheck}
           title="Nenhuma Requisição Pendente de Triagem"
- buttonLabel="Create Part Triage"
- onButtonClick={() => {}}
+          buttonLabel="Atualizar Lista"
+          onButtonClick={() => queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] })}
           description="Aguardando novas requisições de peças dos técnicos ou todas já foram triadas."
         />
       ) : (
@@ -247,6 +275,7 @@ export function PartsTriageClientPage() {
             const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
             const technician = technicians?.find(t => t.id === req.technicianId);
             const customer = customers?.find(c => c.id === serviceOrder?.customerId);
+            const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
             return (
               <Card key={req.id} className="flex flex-col shadow-lg">
                 <CardHeader>
@@ -291,6 +320,30 @@ export function PartsTriageClientPage() {
                     <span className="font-medium text-muted-foreground mr-1">Data:</span>
                     {formatDateForDisplay(req.createdDate)}
                   </p>
+                  {equipment ? (
+                    <p className="flex items-center">
+                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                       <Tooltip>
+                        <TooltipTrigger asChild>
+                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
+                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
+                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </p>
+                  ) : isLoadingEquipment ? (
+                    <p className="flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
+                    </p>
+                  ) : serviceOrder?.equipmentId ? (
+                    <p className="flex items-center text-xs text-destructive">
+                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
+                    </p>
+                  ) : null}
                   {req.generalNotes && (
                     <p className="flex items-start">
                         <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />

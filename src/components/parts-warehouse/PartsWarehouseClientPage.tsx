@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { Archive, Loader2, User, ClipboardList, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter } from "lucide-react";
+import { Archive, Loader2, User, ClipboardList, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter, Construction } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType } from "@/types";
-import { cn, formatDateForDisplay } from "@/lib/utils";
+import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina } from "@/types";
+import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -29,12 +29,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_WAREHOUSE_";
 
@@ -97,6 +99,28 @@ async function fetchCustomers(): Promise<Customer[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
 
+async function fetchEquipmentList(): Promise<Maquina[]> {
+  if (!db) {
+    throw new Error("Firebase Firestore connection not available.");
+  }
+  const q = query(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"), orderBy("model", "asc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      brand: data.brand || "Marca Desconhecida",
+      model: data.model || "Modelo Desconhecido",
+      chassisNumber: data.chassisNumber || "N/A",
+      equipmentType: data.equipmentType,
+      manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
+      operationalStatus: data.operationalStatus,
+      customerId: data.customerId || null,
+      ownerReference: data.ownerReference || null,
+    } as Maquina;
+  });
+}
+
 export function PartsWarehouseClientPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -131,6 +155,11 @@ export function PartsWarehouseClientPage() {
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
     enabled: !!db,
+  });
+
+  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchEquipmentList,
   });
 
   const approvedItemsForWarehouseProcessing = useMemo(() => {
@@ -295,7 +324,7 @@ export function PartsWarehouseClientPage() {
   };
 
 
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers;
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment;
   const isMutating = updateWarehouseItemActionMutation.isPending;
 
   if (!db) {
@@ -327,7 +356,7 @@ export function PartsWarehouseClientPage() {
 
 
   return (
-    <>
+    <TooltipProvider>
       <PageHeader title="Almoxarifado - Peças para Separação e Compra" />
 
       <div className="mb-6 flex flex-col md:flex-row gap-4">
@@ -373,7 +402,10 @@ export function PartsWarehouseClientPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {approvedItemsForWarehouseProcessing.map((item) => (
+          {approvedItemsForWarehouseProcessing.map((item) => {
+            const serviceOrder = serviceOrders?.find(os => os.id === item.serviceOrderId);
+            const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
+            return (
             <Card key={`${item.requisitionId}-${item.id}`} className={cn("flex flex-col shadow-lg", {
                 "border-2 border-yellow-400": item.status === "Aguardando Compra",
                 "border-2 border-green-500": item.status === "Separado",
@@ -408,6 +440,30 @@ export function PartsWarehouseClientPage() {
                         {item.customerName}
                     </p>
                 )}
+                {equipment ? (
+                    <p className="flex items-center">
+                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                       <Tooltip>
+                        <TooltipTrigger asChild>
+                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
+                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
+                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </p>
+                  ) : isLoadingEquipment ? (
+                    <p className="flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
+                    </p>
+                  ) : serviceOrder?.equipmentId ? (
+                    <p className="flex items-center text-xs text-destructive">
+                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
+                    </p>
+                  ) : null}
                  {item.notes && (
                   <p className="text-xs text-muted-foreground mt-1">
                     <span className="font-medium">Obs. Técnico:</span> {item.notes}
@@ -534,6 +590,6 @@ export function PartsWarehouseClientPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </TooltipProvider>
   );
 }

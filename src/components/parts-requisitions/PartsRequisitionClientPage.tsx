@@ -23,16 +23,17 @@ import { db, storage } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp, Timestamp, setDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, PartsRequisitionItem, ServiceOrder, Technician, Customer } from "@/types";
+import type { PartsRequisition, PartsRequisitionItem, ServiceOrder, Technician, Customer, Maquina } from "@/types";
 import { PartsRequisitionSchema } from "@/types";
-import { cn, formatDateForDisplay, getFileNameFromUrl } from "@/lib/utils";
+import { cn, formatDateForDisplay, getFileNameFromUrl, toTitleCase, parseNumericToNullOrNumber } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
-const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes"; 
+const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_OS_SELECTED_";
 const NO_TECHNICIAN_SELECTED = "_NO_TECHNICIAN_SELECTED_";
@@ -68,7 +69,7 @@ async function fetchTechnicians(): Promise<Technician[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Technician));
 }
 
-async function fetchCustomers(): Promise<Customer[]> { 
+async function fetchCustomers(): Promise<Customer[]> {
     if (!db) {
       console.error("fetchCustomers: Firebase DB is not available.");
       throw new Error("Firebase DB is not available");
@@ -77,6 +78,30 @@ async function fetchCustomers(): Promise<Customer[]> {
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
+
+async function fetchEquipmentList(): Promise<Maquina[]> {
+  if (!db) {
+    throw new Error("Firebase Firestore connection not available.");
+  }
+  const q = query(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"), orderBy("model", "asc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      brand: data.brand || "Marca Desconhecida",
+      model: data.model || "Modelo Desconhecido",
+      chassisNumber: data.chassisNumber || "N/A",
+      equipmentType: data.equipmentType,
+      manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
+      operationalStatus: data.operationalStatus,
+      customerId: data.customerId || null,
+      ownerReference: data.ownerReference || null,
+      // Add other fields as needed by Maquina type, or ensure they are optional
+    } as Maquina;
+  });
+}
+
 
 const getNextRequisitionNumber = (currentRequisitions: PartsRequisition[]): string => {
   if (!currentRequisitions || currentRequisitions.length === 0) return "REQ-0001";
@@ -160,10 +185,16 @@ export function PartsRequisitionClientPage() {
     queryFn: fetchTechnicians,
   });
 
-  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({ 
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
   });
+
+  const { data: equipmentList = [], isLoading: isLoadingEquipment } = useQuery<Maquina[], Error>({
+    queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
+    queryFn: fetchEquipmentList,
+  });
+
 
   const openModal = useCallback((requisition?: PartsRequisition) => {
     setPartImageFiles({});
@@ -190,7 +221,7 @@ export function PartsRequisitionClientPage() {
       setEditingRequisition(null);
       setIsEditMode(true);
       form.reset({
-        id: undefined, 
+        id: undefined,
         requisitionNumber: getNextRequisitionNumber(requisitions),
         serviceOrderId: NO_SERVICE_ORDER_SELECTED,
         technicianId: NO_TECHNICIAN_SELECTED,
@@ -228,18 +259,18 @@ export function PartsRequisitionClientPage() {
       }
     }
   };
-  
+
   const handleRemoveItemImage = async (itemId: string, itemIndex: number) => {
     setPartImageFiles(prev => ({ ...prev, [itemId]: null }));
-    setImagePreviews(prev => ({ ...prev, [itemId]: null })); 
+    setImagePreviews(prev => ({ ...prev, [itemId]: null }));
 
     const currentItem = form.getValues(`items.${itemIndex}`);
-    
+
     if (currentItem) {
         update(itemIndex, { ...currentItem, imageUrl: null });
     }
 
-    if (editingRequisition && currentItem?.imageUrl) { 
+    if (editingRequisition && currentItem?.imageUrl) {
         toast({ title: "Imagem Marcada para Remoção", description: "A imagem será removida ao salvar a requisição."});
     }
   };
@@ -273,12 +304,12 @@ export function PartsRequisitionClientPage() {
   const addRequisitionMutation = useMutation({
     mutationFn: async (newRequisitionData: z.infer<typeof PartsRequisitionSchema>) => {
       if (!db) throw new Error("Firebase DB is not available.");
-      
-      const requisitionId = crypto.randomUUID(); 
+
+      const requisitionId = crypto.randomUUID();
 
       const itemsWithImageUrls = await Promise.all(
         newRequisitionData.items.map(async (item) => {
-          let imageUrl = item.imageUrl || null; 
+          let imageUrl = item.imageUrl || null;
           const imageFile = item.id ? partImageFiles[item.id] : null;
           if (imageFile && item.id) {
             if (imageUrl) await deletePartImageFromStorage(imageUrl);
@@ -287,14 +318,14 @@ export function PartsRequisitionClientPage() {
           return { ...item, imageUrl };
         })
       );
-      const { id: formId, ...dataFromForm } = newRequisitionData; 
+      const { id: formId, ...dataFromForm } = newRequisitionData;
 
       const dataToSave = {
         ...dataFromForm,
         createdDate: serverTimestamp(),
         items: itemsWithImageUrls,
       };
-      
+
       await setDoc(doc(db, FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME, requisitionId), dataToSave);
       return { ...dataToSave, id: requisitionId };
     },
@@ -311,7 +342,7 @@ export function PartsRequisitionClientPage() {
   const updateRequisitionMutation = useMutation({
     mutationFn: async (requisitionData: PartsRequisition) => {
       if (!db) throw new Error("Firebase DB is not available.");
-      const { id, items, createdDate, ...dataToUpdate } = requisitionData; 
+      const { id, items, createdDate, ...dataToUpdate } = requisitionData;
       if (!id) throw new Error("ID da requisição é necessário.");
 
       const originalRequisition = requisitions.find(r => r.id === id);
@@ -323,18 +354,18 @@ export function PartsRequisitionClientPage() {
           const imageFile = item.id ? partImageFiles[item.id] : null;
           const originalItem = originalRequisition.items.find(orig => orig.id === item.id);
 
-          if (imageFile && item.id) { 
-            if (originalItem?.imageUrl) { 
+          if (imageFile && item.id) {
+            if (originalItem?.imageUrl) {
               await deletePartImageFromStorage(originalItem.imageUrl);
             }
             imageUrl = await uploadPartImageToStorage(imageFile, id, item.id);
-          } else if (!imageUrl && originalItem?.imageUrl && item.id) { 
+          } else if (!imageUrl && originalItem?.imageUrl && item.id) {
             await deletePartImageFromStorage(originalItem.imageUrl);
           }
           return { ...item, imageUrl };
         })
       );
-      
+
       const currentItemIds = items.map(item => item.id);
       for (const originalItem of originalRequisition.items) {
           if (originalItem.id && !currentItemIds.includes(originalItem.id) && originalItem.imageUrl) {
@@ -362,7 +393,7 @@ export function PartsRequisitionClientPage() {
       const reqToDelete = requisitions.find(r => r.id === requisitionId);
       if (reqToDelete?.items) {
         for (const item of reqToDelete.items) {
-          if (item.imageUrl && item.id) { 
+          if (item.imageUrl && item.id) {
             await deletePartImageFromStorage(item.imageUrl);
           }
         }
@@ -382,13 +413,13 @@ export function PartsRequisitionClientPage() {
   const onSubmit = async (values: z.infer<typeof PartsRequisitionSchema>) => {
     if (editingRequisition && editingRequisition.id) {
       const updatedRequisition: PartsRequisition = {
-        ...editingRequisition, 
-        ...values, 
-        id: editingRequisition.id, 
+        ...editingRequisition,
+        ...values,
+        id: editingRequisition.id,
       };
       updateRequisitionMutation.mutate(updatedRequisition);
     } else {
-      addRequisitionMutation.mutate(values); 
+      addRequisitionMutation.mutate(values);
     }
   };
 
@@ -399,8 +430,8 @@ export function PartsRequisitionClientPage() {
       }
     }
   };
-  
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers;
+
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment;
   const isMutating = addRequisitionMutation.isPending || updateRequisitionMutation.isPending || deleteRequisitionMutation.isPending;
 
   if (!db || !storage) {
@@ -446,7 +477,8 @@ export function PartsRequisitionClientPage() {
           {requisitions.map((req) => {
             const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
             const technician = technicians?.find(t => t.id === req.technicianId);
-            const customer = customers?.find(c => c.id === serviceOrder?.customerId); 
+            const customer = customers?.find(c => c.id === serviceOrder?.customerId);
+            const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
             return (
               <Card key={req.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer" onClick={() => openModal(req)}>
                 <CardHeader>
@@ -491,6 +523,30 @@ export function PartsRequisitionClientPage() {
                     <span className="font-medium text-muted-foreground mr-1">Data:</span>
                     {formatDateForDisplay(req.createdDate)}
                   </p>
+                  {equipment ? (
+                    <p className="flex items-center">
+                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
+                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
+                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </p>
+                  ) : isLoadingEquipment ? (
+                    <p className="flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
+                    </p>
+                  ) : serviceOrder?.equipmentId ? (
+                    <p className="flex items-center text-xs text-destructive">
+                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
+                    </p>
+                  ) : null}
                   {req.generalNotes && (
                     <p className="flex items-start">
                         <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
@@ -646,7 +702,7 @@ export function PartsRequisitionClientPage() {
                             </div>
                         )}
                       </div>
-                       {item.imageUrl && !partImageFiles[item.id!] && !imagePreviews[item.id!] && ( 
+                       {item.imageUrl && !partImageFiles[item.id!] && !imagePreviews[item.id!] && (
                           <Link href={item.imageUrl} target="_blank" className="text-xs text-primary hover:underline mt-1 block">Ver imagem atual: {getFileNameFromUrl(item.imageUrl)}</Link>
                         )}
                     </div>
