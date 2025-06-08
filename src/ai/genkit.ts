@@ -4,14 +4,23 @@ import {googleAI} from '@genkit-ai/googleai';
 
 let initializedAi: Genkit | null = null;
 
+// Tenta usar a GOOGLE_MAPS_API_KEY se estiver definida,
+// caso contrário, permite que o googleAI() procure por GEMINI_API_KEY ou GOOGLE_API_KEY.
+const apiKeyForGenkit = process.env.GOOGLE_MAPS_API_KEY;
+
 try {
   console.log("Genkit.ts: Attempting to initialize Genkit with GoogleAI plugin...");
-  initializedAi = genkit({
-    plugins: [googleAI()],
-    // A opção 'model' não é válida diretamente aqui no construtor genkit().
-    // Ela seria usada em ai.generate() ou em definePrompt(), por exemplo.
-    // model: 'googleai/gemini-2.0-flash', 
-  });
+  if (apiKeyForGenkit) {
+    console.log("Genkit.ts: Using explicit API key (from GOOGLE_MAPS_API_KEY env var) for GoogleAI plugin.");
+    initializedAi = genkit({
+      plugins: [googleAI({ apiKey: apiKeyForGenkit })],
+    });
+  } else {
+    console.warn("Genkit.ts: GOOGLE_MAPS_API_KEY not found. Attempting GoogleAI plugin initialization with default environment variable lookup (e.g., GEMINI_API_KEY or GOOGLE_API_KEY).");
+    initializedAi = genkit({
+      plugins: [googleAI()], // Fallback to default env var lookup
+    });
+  }
   console.log("Genkit.ts: Genkit initialized successfully.");
 } catch (error) {
   console.error("Genkit.ts: CRITICAL ERROR DURING GENKIT INITIALIZATION:", error);
