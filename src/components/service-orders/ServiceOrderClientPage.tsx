@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon } from "lucide-react";
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId } from "@/types"; 
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types"; 
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId } from "@/types";
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -39,7 +39,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { calculateDistance } from "@/ai/flows/calculate-distance-flow";
-// import { ai } from "@/ai/genkit"; // ai instance not directly needed here if calculateDistance handles it
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -296,12 +296,12 @@ const getWhatsAppNumber = (phone?: string): string => {
 const formatPhoneNumberForDisplay = (phone?: string): string => {
   if (!phone) return "N/A";
   const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 11) { 
+  if (cleaned.length === 11) {
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-  } else if (cleaned.length === 10) { 
+  } else if (cleaned.length === 10) {
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
   }
-  return phone; 
+  return phone;
 };
 
 const formatAddressToString = (addressSource: Customer | Company | null | undefined): string => {
@@ -418,22 +418,22 @@ export function ServiceOrderClientPage() {
   }, [formVehicleId, formEstimatedTravelDistanceKm, formEstimatedTollCosts, vehicles, form]);
 
   useEffect(() => {
-    const attemptCalculateDistance = async () => {
+    const attemptCalculateDistanceAndTolls = async () => {
       const currentDistanceValue = form.getValues("estimatedTravelDistanceKm");
+      const currentTollValue = form.getValues("estimatedTollCosts");
+
       if (
         isModalOpen &&
-        (!editingOrder || (editingOrder && isEditMode)) &&
+        (!editingOrder || (editingOrder && isEditMode)) && // Only for new or editing orders
         selectedCustomerId &&
         selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE &&
         !isCalculatingDistance &&
-        typeof calculateDistance === 'function' &&
-        (currentDistanceValue === null || currentDistanceValue === undefined) // Only calc if field is empty
+        typeof calculateDistance === 'function'
       ) {
         const customer = customers.find(c => c.id === selectedCustomerId);
         const equipment = equipmentList.find(e => e.id === selectedEquipmentId);
 
         if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
-          // console.log("Distance calc skipped: Customer/Equipment invalid or equipment not company owned.");
           return;
         }
 
@@ -442,7 +442,7 @@ export function ServiceOrderClientPage() {
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
             !customer.street || !customer.city || !customer.state || !customer.cep) {
-          console.warn("Missing address details for origin company or destination customer. Automatic distance calculation skipped.");
+          console.warn("Missing address details for origin company or destination customer. Automatic calculation skipped.");
           return;
         }
 
@@ -450,17 +450,39 @@ export function ServiceOrderClientPage() {
         const destinationAddress = formatAddressToString(customer);
 
         if (!originAddress || !destinationAddress) {
-            console.warn("Could not format origin or destination address strings. Automatic distance calculation skipped.");
+            console.warn("Could not format origin or destination address strings. Automatic calculation skipped.");
+            return;
+        }
+
+        // Only calculate if distance field is empty
+        if (currentDistanceValue !== null && currentDistanceValue !== undefined) {
+            // If distance is filled but toll is not, and toll estimation is available from a previous successful calculation,
+            // it might be useful to re-apply toll if conditions allow. However, let's keep it simple:
+            // only auto-fill tolls if distance is also being auto-calculated.
+            // If distance is manual, tolls should be too, or user can clear distance to re-trigger auto.
             return;
         }
 
         setIsCalculatingDistance(true);
         try {
           const result = await calculateDistance({ originAddress, destinationAddress });
+
+          let toastMessage = "";
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
             const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
             form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
-            toast({ title: "Distância Estimada Calculada", description: `Distância de ida e volta: ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).` });
+            toastMessage += `Distância (ida/volta): ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
+
+            if ((currentTollValue === null || currentTollValue === undefined) &&
+                result.estimatedTollCostByAI && result.estimatedTollCostByAI > 0) {
+              const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
+              form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
+              toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
+            } else if (result.estimatedTollCostByAI === 0) {
+              toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00.`;
+            }
+            toast({ title: "Estimativas Calculadas", description: toastMessage.trim() });
+
           } else {
             toast({ title: "Falha ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância automaticamente.", variant: "default" });
           }
@@ -473,13 +495,18 @@ export function ServiceOrderClientPage() {
       }
     };
 
-    attemptCalculateDistance().catch(err => {
-      console.error("Error in attemptCalculateDistance useEffect:", err);
-      setIsCalculatingDistance(false);
-    });
+    if (isModalOpen && (!editingOrder || (editingOrder && isEditMode)) && !isCalculatingDistance) {
+        attemptCalculateDistanceAndTolls().catch(err => {
+            console.error("Error in attemptCalculateDistanceAndTolls useEffect:", err);
+            setIsCalculatingDistance(false);
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isModalOpen, editingOrder, isEditMode, selectedCustomerId, selectedEquipmentId, 
-    isCalculatingDistance, calculateDistance, customers, equipmentList, companies, form, toast
+    isModalOpen, editingOrder, isEditMode, selectedCustomerId, selectedEquipmentId,
+    isCalculatingDistance, customers, equipmentList, companies, form, toast // calculateDistance removed as it's stable
+    // form.getValues("estimatedTravelDistanceKm") and form.getValues("estimatedTollCosts") are intentionally omitted to avoid infinite loops,
+    // their check is inside the function.
   ]);
 
 
@@ -511,7 +538,7 @@ export function ServiceOrderClientPage() {
   }, [equipmentList, selectedCustomerId, isLoadingEquipment]);
 
   useEffect(() => {
-    if (!editingOrder) { 
+    if (!editingOrder) {
         if (selectedCustomerId) {
             const customer = customers.find(c => c.id === selectedCustomerId);
             if (customer?.preferredTechnician) {
@@ -521,7 +548,7 @@ export function ServiceOrderClientPage() {
                 form.setValue('technicianId', null, { shouldValidate: true });
             }
         } else {
-             form.setValue('technicianId', null, { shouldValidate: true }); 
+             form.setValue('technicianId', null, { shouldValidate: true });
         }
     }
 
@@ -529,7 +556,7 @@ export function ServiceOrderClientPage() {
       if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
-    } else { 
+    } else {
        if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
@@ -922,7 +949,7 @@ export function ServiceOrderClientPage() {
   ): string => {
     let message = `Olá ${customer.name},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
-    message += `*Cliente:* ${customer.name}\n`; 
+    message += `*Cliente:* ${customer.name}\n`;
     message += `*Equipamento:* ${equipment.brand} ${equipment.model} (Chassi: ${equipment.chassisNumber})\n`;
     message += `*Fase Atual:* ${order.phase}\n`;
     message += `*Problema Relatado:* ${order.description}\n`;
@@ -941,6 +968,7 @@ export function ServiceOrderClientPage() {
 
 
   return (
+    <TooltipProvider>
     <>
       <PageHeader
         title="Ordens de Serviço"
@@ -1310,7 +1338,7 @@ export function ServiceOrderClientPage() {
                   <FormItem><FormLabel>Data de Conclusão (Prevista)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""}  /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
-              
+
               <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Custos da Viagem (Opcional)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <FormField control={form.control} name="estimatedTravelDistanceKm" render={({ field }) => (
@@ -1320,12 +1348,12 @@ export function ServiceOrderClientPage() {
                           {isCalculatingDistance && <Loader2 className="h-4 w-4 animate-spin ml-2 text-primary" />}
                         </FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            step="any" 
-                            placeholder="Ex: 120.5" 
-                            {...field} 
-                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="Ex: 120.5"
+                            {...field}
+                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
                             value={field.value === null || field.value === undefined ? '' : String(field.value)}
                           />
                         </FormControl>
@@ -1335,14 +1363,24 @@ export function ServiceOrderClientPage() {
                  )} />
                  <FormField control={form.control} name="estimatedTollCosts" render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Custo Pedágios (R$)</FormLabel>
+                      <FormLabel className="flex items-center">
+                        Custo Pedágios (R$)
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Brain className="h-3 w-3 ml-1.5 text-muted-foreground hover:text-primary cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            <p>Pode ser estimado pela IA (se disponível e > R$0) ou preenchido manualmente. A estimativa da IA é aproximada.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            step="any" 
-                            placeholder="Ex: 25.50" 
-                            {...field} 
-                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="Ex: 25.50"
+                            {...field}
+                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
                             value={field.value === null || field.value === undefined ? '' : String(field.value)}
                           />
                         </FormControl>
@@ -1354,14 +1392,14 @@ export function ServiceOrderClientPage() {
                     <FormItem>
                         <FormLabel>Custo Estimado da Viagem (R$)</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            step="any" 
-                            {...field} 
-                            readOnly 
-                            placeholder="Calculado automaticamente" 
+                          <Input
+                            type="number"
+                            step="any"
+                            {...field}
+                            readOnly
+                            placeholder="Calculado automaticamente"
                             value={field.value === null || field.value === undefined ? '' : String(field.value)}
-                            className="bg-muted/50" 
+                            className="bg-muted/50"
                           />
                         </FormControl>
                         <FormDescription>Calculado com base na distância, custo/km do veículo e pedágios.</FormDescription>
@@ -1540,6 +1578,6 @@ export function ServiceOrderClientPage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+    </TooltipProvider>
   );
 }
-

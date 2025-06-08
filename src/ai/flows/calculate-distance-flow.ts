@@ -1,11 +1,13 @@
 
 'use server';
 /**
- * @fileOverview A Genkit flow to calculate driving distance between two addresses.
+ * @fileOverview A Genkit flow to calculate driving distance between two addresses
+ * and optionally estimate toll costs using an LLM.
  * It attempts to use Nominatim for geocoding and Haversine for distance,
  * falling back to random simulation if API calls fail.
+ * Toll cost estimation is a very rough approximation by an LLM.
  *
- * - calculateDistance - A function that handles distance calculation.
+ * - calculateDistance - A function that handles distance and toll cost estimation.
  * - CalculateDistanceInput - The input type for the calculateDistance function.
  * - CalculateDistanceOutput - The return type for the calculateDistance function.
  */
@@ -23,10 +25,48 @@ export type CalculateDistanceInput = z.infer<typeof CalculateDistanceInputSchema
 
 const CalculateDistanceOutputSchema = z.object({
   distanceKm: z.number().describe("The calculated distance in kilometers."),
-  status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_API_FAILED', 'SIMULATED', 'ERROR_GEOCODING_FAILED']).describe("Status of the calculation."),
+  status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_API_FAILED', 'SIMULATED', 'ERROR_GEOCODING_FAILED', 'ERROR_LLM_TOLL_ESTIMATION']).describe("Status of the calculation."),
   errorMessage: z.string().optional().describe("Error message if the status is an error."),
+  estimatedTollCostByAI: z.number().optional().nullable().describe("Rough estimate of one-way toll cost in BRL by AI, if available. May not be accurate."),
 });
 export type CalculateDistanceOutput = z.infer<typeof CalculateDistanceOutputSchema>;
+
+// Input schema for the toll estimation LLM prompt
+const TollEstimationLLMInputSchema = z.object({
+  originAddress: z.string(),
+  destinationAddress: z.string(),
+  distanceKm: z.number(),
+});
+
+// Output schema for the toll estimation LLM prompt
+const TollEstimationLLMOutputSchema = z.object({
+  estimatedTollOneWay: z.number().describe("Custo estimado do pedágio APENAS PARA O TRECHO DE IDA, em Reais (BRL). Se não for possível estimar ou não houver pedágios, retorne 0."),
+});
+
+let tollEstimationPrompt: any; // Define it later if ai is available
+
+if (ai) {
+  tollEstimationPrompt = ai.definePrompt({
+    name: 'tollEstimationPrompt',
+    input: { schema: TollEstimationLLMInputSchema },
+    output: { schema: TollEstimationLLMOutputSchema },
+    prompt: `Você é um assistente que ajuda a estimar custos de viagem.
+Para uma viagem de carro no Brasil entre o endereço de origem:
+"{originAddress}"
+e o endereço de destino:
+"{destinationAddress}"
+que tem uma distância rodoviária aproximada de {distanceKm} km (apenas ida), qual seria uma estimativa numérica MUITO APROXIMADA do custo total com pedágios APENAS PARA O TRECHO DE IDA, em Reais (BRL)?
+
+Responda apenas com o número estimado. Se não for possível fazer uma estimativa razoável ou se provavelmente não houver pedágios, retorne 0.
+Não inclua unidades ou qualquer texto adicional na sua resposta, apenas o valor numérico.
+Exemplo de resposta: 25.50
+Exemplo de resposta se não houver pedágio ou estimativa: 0`,
+    config: {
+      temperature: 0.2, // Lower temperature for more factual/less creative response
+    }
+  });
+}
+
 
 // Helper function to fetch with timeout
 async function fetchWithTimeout(resource: RequestInfo | URL, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
@@ -109,8 +149,8 @@ function getSimulatedDistance(): number {
 // Declare calculateDistanceFlow with its type
 let calculateDistanceFlow: Flow<typeof CalculateDistanceInputSchema, typeof CalculateDistanceOutputSchema>;
 
-if (ai) {
-  console.log("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) IS available. Defining real flow.");
+if (ai && tollEstimationPrompt) {
+  console.log("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) IS available. Defining real flow with toll estimation.");
   calculateDistanceFlow = ai.defineFlow(
     {
       name: 'calculateDistanceFlow',
@@ -119,6 +159,7 @@ if (ai) {
     },
     async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
       console.log("calculateDistanceFlow: Received input", input);
+      let estimatedTollCostOneWay: number | null = null;
 
       if (!input.originAddress || !input.destinationAddress) {
         return {
@@ -150,30 +191,71 @@ if (ai) {
 
       try {
         const directDistanceKm = haversineDistance(originCoords, destinationCoords);
-        // Estimate driving distance as 1.4 times the direct distance.
-        // This is a rough heuristic and can be improved with a proper routing API.
         const estimatedDrivingDistanceKm = directDistanceKm * 1.4;
 
         console.log(`calculateDistanceFlow: Direct distance: ${directDistanceKm.toFixed(2)} km, Estimated driving: ${estimatedDrivingDistanceKm.toFixed(2)} km`);
+        const finalDistanceKm = parseFloat(estimatedDrivingDistanceKm.toFixed(1));
+
+        // Try to estimate toll costs using LLM
+        try {
+          const llmResponse = await tollEstimationPrompt({
+            originAddress: input.originAddress,
+            destinationAddress: input.destinationAddress,
+            distanceKm: finalDistanceKm,
+          });
+          if (llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
+            estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
+            console.log(`calculateDistanceFlow: LLM estimated one-way toll cost: ${estimatedTollCostOneWay}`);
+          } else {
+             console.warn("calculateDistanceFlow: LLM did not return a valid 'estimatedTollOneWay' number.");
+          }
+        } catch (llmError: any) {
+          console.error("calculateDistanceFlow: Error during LLM toll estimation:", llmError);
+          // Non-fatal error for toll estimation, proceed without it
+        }
 
         return {
-          distanceKm: parseFloat(estimatedDrivingDistanceKm.toFixed(1)), // Round to one decimal place
+          distanceKm: finalDistanceKm,
           status: 'SUCCESS',
+          estimatedTollCostByAI: estimatedTollCostOneWay,
         };
       } catch (error: any) {
         console.error("calculateDistanceFlow: Error during Haversine calculation or API interaction:", error);
-        // Fallback to simulated distance if any error occurs
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED', // Changed from ERROR_API_FAILED to SIMULATED as it's a fallback
+          status: 'SIMULATED',
           errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
         };
       }
     }
-  ); // Correctly terminate the ai.defineFlow call
+  );
 } else {
-  console.warn("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) is NOT available. Defining dummy flow.");
+  console.warn("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) or tollEstimationPrompt is NOT available. Defining dummy flow (no toll estimation).");
+  calculateDistanceFlow = async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
+    console.warn("calculateDistanceFlow: Running DUMMY flow.");
+    if (!input.originAddress || !input.destinationAddress) {
+      return { distanceKm: 0, status: 'ERROR_NO_ADDRESS', errorMessage: "Origin or destination address is missing in dummy flow." };
+    }
+    // Simulate a basic calculation or error for dummy
+    const simulatedDistance = getSimulatedDistance();
+    const shouldSimulateError = Math.random() < 0.1; // 10% chance of simulated error
+    if (shouldSimulateError) {
+      return {
+        distanceKm: simulatedDistance,
+        status: 'SIMULATED', // Or 'ERROR_API_FAILED' if you want to simulate that
+        errorMessage: 'Dummy flow simulated an API error.',
+        estimatedTollCostByAI: null,
+      };
+    }
+    return {
+      distanceKm: simulatedDistance,
+      status: 'SIMULATED',
+      errorMessage: 'Using simulated distance from dummy flow as Genkit is not initialized.',
+      estimatedTollCostByAI: null,
+    };
+  };
 }
+
 // Exported wrapper function
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
   if (typeof calculateDistanceFlow !== 'function') {
@@ -182,6 +264,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
         distanceKm: getSimulatedDistance(),
         status: 'SIMULATED',
         errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized.',
+        estimatedTollCostByAI: null,
     };
   }
   try {
@@ -192,6 +275,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
       distanceKm: getSimulatedDistance(),
       status: 'SIMULATED',
       errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
+      estimatedTollCostByAI: null,
     };
   }
 }

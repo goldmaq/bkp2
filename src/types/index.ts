@@ -93,8 +93,8 @@ export interface ServiceOrder {
   id: string;
   orderNumber: string;
   customerId: string;
-  equipmentId: string; 
-  requesterName?: string | null; 
+  equipmentId: string;
+  requesterName?: string | null;
   phase: ServiceOrderPhaseType;
   technicianId?: string | null;
   serviceType: string;
@@ -104,7 +104,7 @@ export interface ServiceOrder {
   endDate?: string;
   description: string;
   notes?: string | null;
-  mediaUrls?: string[] | null; 
+  mediaUrls?: string[] | null;
   technicalConclusion?: string | null;
   estimatedTravelDistanceKm?: number | null;
   estimatedTollCosts?: number | null;
@@ -112,15 +112,15 @@ export interface ServiceOrder {
 }
 
 export const roleOptionsList = [
-  "Técnico", "Administrativo", "Gerência", "Fiscal", 
+  "Técnico", "Administrativo", "Gerência", "Fiscal",
   "Financeiro", "Compras", "Vendas", "Comercial"
 ] as const;
 
-export interface Technician { 
+export interface Technician {
   id: string;
   name: string;
-  role: typeof roleOptionsList[number] | string; 
-  specialization?: string; 
+  role: typeof roleOptionsList[number] | string;
+  specialization?: string;
   phone?: string;
 }
 
@@ -142,8 +142,8 @@ export interface Company {
 }
 
 export interface FuelingRecord {
-  id: string; 
-  date: string; 
+  id: string;
+  date: string;
   liters: number;
   pricePerLiter: number;
   totalCost: number;
@@ -158,8 +158,8 @@ export interface Vehicle {
   licensePlate: string;
   kind: string;
   currentMileage: number;
-  fuelConsumption: number; 
-  costPerKilometer: number; 
+  fuelConsumption: number;
+  costPerKilometer: number;
   fipeValue?: number | null;
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
@@ -171,12 +171,12 @@ export const auxiliaryEquipmentStatusOptions = ['Disponível', 'Locado', 'Em Man
 
 export interface AuxiliaryEquipment {
   id: string;
-  name: string; 
-  type: typeof auxiliaryEquipmentTypeOptions[number] | string; 
-  customType?: string; 
+  name: string;
+  type: typeof auxiliaryEquipmentTypeOptions[number] | string;
+  customType?: string;
   serialNumber?: string | null;
   status: typeof auxiliaryEquipmentStatusOptions[number];
-  linkedEquipmentId?: string | null; 
+  linkedEquipmentId?: string | null;
   notes?: string | null;
 }
 
@@ -236,7 +236,7 @@ export const MaquinaSchema = z.object({
   notes: z.string().optional().nullable(),
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
-  linkedAuxiliaryEquipmentIds: z.array(z.string()).optional().nullable(), 
+  linkedAuxiliaryEquipmentIds: z.array(z.string()).optional().nullable(),
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;
@@ -250,13 +250,13 @@ export const MaquinaSchema = z.object({
 
 export const TechnicianSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
-  role: z.string().min(1, "Cargo é obrigatório"), 
+  role: z.string().min(1, "Cargo é obrigatório"),
   specialization: z.string().optional(),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
 });
 
 export const FuelingRecordSchema = z.object({
-  id: z.string().uuid("ID inválido").optional(), 
+  id: z.string().uuid("ID inválido").optional(),
   date: z.string().refine((val) => {
     try {
       return !!parseISO(val);
@@ -266,7 +266,7 @@ export const FuelingRecordSchema = z.object({
   }, "Data inválida").transform((val) => formatISO(parseISO(val), { representation: 'date' })),
   liters: z.coerce.number().positive("Litros devem ser um número positivo."),
   pricePerLiter: z.coerce.number().positive("Preço por litro deve ser um número positivo."),
-  totalCost: z.coerce.number().positive("Custo total deve ser um número positivo.").optional(), 
+  totalCost: z.coerce.number().positive("Custo total deve ser um número positivo.").optional(),
   mileageAtFueling: z.coerce.number().int().min(0, "Quilometragem deve ser um número positivo."),
   fuelStation: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -360,4 +360,5 @@ export interface CalculateDistanceOutput {
   distanceKm: number;
   status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED';
   errorMessage?: string;
+  estimatedTollCostByAI?: number | null; // Estimativa de pedágio (apenas ida)
 }
