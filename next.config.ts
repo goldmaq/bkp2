@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
         ...config.resolve.fallback,
         async_hooks: false, // Mocks 'async_hooks' for client-side
         fs: false, // Mocks 'fs' for client-side
+        tls: false, // Mocks 'tls' for client-side
       };
     }
     return config;
