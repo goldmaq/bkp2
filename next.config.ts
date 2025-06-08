@@ -1,6 +1,6 @@
 
 import type {NextConfig} from 'next';
-import path from 'path'; // Ensure path module is imported
+import path from 'path'; // Keep for other potential future aliases
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -22,28 +22,27 @@ const nextConfig: NextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Prevent bundling of Node.js-specific modules for the client
+      // Ensure resolve and fallback objects exist and are properly initialized
+      config.resolve = config.resolve || {};
       config.resolve.fallback = {
-        ...config.resolve.fallback, 
-        // fs, tls, net, http2, dns are handled by fallback: false
+        ...(config.resolve.fallback || {}), // Spread any existing fallbacks first
         fs: false,                 
         tls: false,                
         net: false,                
         http2: false,              
         dns: false,
-        // async_hooks and node:async_hooks will be handled by alias below, so remove from fallback
+        'async_hooks': false,       // Explicitly set async_hooks to false in fallback
+        'node:async_hooks': false,  // Explicitly set node:async_hooks to false in fallback
       };
 
+      // Ensure alias object exists and remove our specific aliases for async_hooks
+      // as we are now relying on fallback: false
+      config.resolve.alias = config.resolve.alias || {};
+      delete config.resolve.alias['async_hooks'];
+      delete config.resolve.alias['node:async_hooks'];
+      
       // Suppress errors related to expressions in context (often involves dynamic imports)
-      // This can be useful but also mask issues if not understood. Keeping it for now.
-      config.module.exprContextCritical = false;
-
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        // Point 'node:async_hooks' and 'async_hooks' to a real empty module for client-side
-        'node:async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
-        'async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
-      };
+      config.module.exprContextCritical = false; 
     }
     return config;
   },

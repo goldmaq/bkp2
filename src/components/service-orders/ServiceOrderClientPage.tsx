@@ -1312,7 +1312,16 @@ export function ServiceOrderClientPage() {
                           Distância Viagem (km - total)
                           {isCalculatingDistance && <Loader2 className="h-4 w-4 animate-spin ml-2 text-primary" />}
                         </FormLabel>
-                        <FormControl><Input type="number" step="0.1" placeholder="Ex: 120.5" {...field} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} value={String(field.value ?? '')} /></FormControl>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.1" 
+                            placeholder="Ex: 120.5" 
+                            {...field} 
+                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
+                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
+                          />
+                        </FormControl>
                          <FormDescription>Preenchido automaticamente ou manualmente.</FormDescription>
                         <FormMessage />
                     </FormItem>
@@ -1320,7 +1329,16 @@ export function ServiceOrderClientPage() {
                  <FormField control={form.control} name="estimatedTollCosts" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Custo Pedágios (R$)</FormLabel>
-                        <FormControl><Input type="number" step="0.01" placeholder="Ex: 25.50" {...field} onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} value={String(field.value ?? '')} /></FormControl>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="Ex: 25.50" 
+                            {...field} 
+                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
+                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
+                          />
+                        </FormControl>
                         <FormMessage />
                     </FormItem>
                  )} />
@@ -1328,7 +1346,17 @@ export function ServiceOrderClientPage() {
                 <FormField control={form.control} name="estimatedTravelCost" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Custo Estimado da Viagem (R$)</FormLabel>
-                        <FormControl><Input type="number" step="0.01" {...field} readOnly placeholder="Calculado automaticamente" value={String(field.value ?? '')} className="bg-muted/50" /></FormControl>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            {...field} 
+                            readOnly 
+                            placeholder="Calculado automaticamente" 
+                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
+                            className="bg-muted/50" 
+                          />
+                        </FormControl>
                         <FormDescription>Calculado com base na distância, custo/km do veículo e pedágios.</FormDescription>
                         <FormMessage />
                     </FormItem>
