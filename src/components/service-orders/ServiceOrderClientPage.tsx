@@ -8,7 +8,7 @@ import type * as z from "zod";
 import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails, MapPin, Printer } from "lucide-react";
 import Link from "next/link";
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable"; // Import autoTable even if not heavily used in OS for consistency
+import autoTable from "jspdf-autotable";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId } from "@/types";
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions } from "@/types";
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions, GOLDMAQ_COMPANY_ID } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/ui/FormModal";
@@ -41,6 +41,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
+import { calculateDistance, type CalculateDistanceOutput } from '@/ai/flows/calculate-distance-flow';
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -60,7 +61,6 @@ const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_VEHICLE_COLLECTION_NAME = "veiculos";
 const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
-const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
 
 
 const NO_VEHICLE_SELECTED_VALUE = "_NO_VEHICLE_SELECTED_";
@@ -437,7 +437,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         }
 
         const companyOwnerId = equipment.ownerReference as CompanyId;
-        const originCompany = goldmaqCompanyDetails; // Use fetched goldmaq details
+        const originCompany = goldmaqCompanyDetails;
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
             !customer.street || !customer.city || !customer.state || !customer.cep) {
@@ -635,15 +635,13 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       let finalMediaUrls: string[] = [...data.existingUrlsToKeep];
 
       if (data.filesToUpload && data.filesToUpload.length > 0) {
-        const newUploadedUrls: string[] = [];
         for (const file of data.filesToUpload) {
           const url = await uploadServiceOrderFile(file, data.id);
-          newUploadedUrls.push(url);
+          finalMediaUrls.push(url);
         }
-        finalMediaUrls = [...finalMediaUrls, ...newUploadedUrls];
       }
 
-      const urlsToDelete = data.originalMediaUrls.filter(originalUrl => !data.existingUrlsToKeep.includes(originalUrl));
+      const urlsToDelete = data.originalMediaUrls.filter(url => !data.existingUrlsToKeep.includes(url));
       for (const urlToDelete of urlsToDelete) {
         await deleteServiceOrderFileFromStorage(urlToDelete);
       }
@@ -661,247 +659,181 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     onError: (err: Error, variables) => {
       toast({ title: "Erro ao Atualizar OS", description: `Não foi possível atualizar a OS ${variables.formData.orderNumber}. Detalhe: ${err.message}`, variant: "destructive" });
     },
-    onSettled: () => setIsUploadingFile(false)
-  });
-
-  const concludeServiceOrderMutation = useMutation({
-    mutationFn: async (data: { orderId: string; conclusionText: string; currentEndDate?: string | null }) => {
-      if (!db) throw new Error("Firebase DB is not available for concluding service order.");
-      const orderRef = doc(db, FIRESTORE_COLLECTION_NAME, data.orderId);
-      let finalEndDate = convertToTimestamp(data.currentEndDate);
-      if (!finalEndDate) {
-        finalEndDate = Timestamp.now();
-      }
-      await updateDoc(orderRef, {
-        phase: "Concluída",
-        technicalConclusion: data.conclusionText,
-        endDate: finalEndDate,
-      });
-      return data.orderId;
-    },
-    onSuccess: (orderId) => {
-      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Concluída", description: `A OS foi marcada como concluída.` });
-      setIsConclusionModalOpen(false);
-      // Do not close main modal if concluding from card, only if `editingOrder` matches.
-      if (editingOrder && editingOrder.id === orderId) {
-        closeModal();
-      }
-    },
-    onError: (err: Error) => {
-      toast({ title: "Erro ao Concluir OS", description: `Não foi possível concluir a OS. Detalhe: ${err.message}`, variant: "destructive" });
-    },
-  });
-
-  const cancelServiceOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      if (!db) throw new Error("Firebase DB is not available for cancelling service order.");
-      const orderRef = doc(db, FIRESTORE_COLLECTION_NAME, orderId);
-      await updateDoc(orderRef, {
-        phase: "Cancelada",
-      });
-      return orderId;
-    },
-    onSuccess: (orderId) => {
-      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Cancelada", description: `A OS foi marcada como cancelada.` });
-      setIsCancelConfirmModalOpen(false);
-      if (editingOrder && editingOrder.id === orderId) {
-        closeModal();
-      }
-    },
-    onError: (err: Error) => {
-      toast({ title: "Erro ao Cancelar OS", description: `Não foi possível cancelar a OS. Detalhe: ${err.message}`, variant: "destructive" });
-    },
+    onSettled: () => setIsUploadingFile(false),
   });
 
   const deleteServiceOrderMutation = useMutation({
-    mutationFn: async (orderToDelete: ServiceOrder) => {
+    mutationFn: async (orderId: string) => {
       if (!db) throw new Error("Firebase DB is not available for deleting service order.");
-      if (!orderToDelete?.id) throw new Error("ID da OS é necessário para exclusão.");
-
-      if (orderToDelete.mediaUrls && orderToDelete.mediaUrls.length > 0) {
-        await Promise.all(orderToDelete.mediaUrls.map(url => deleteServiceOrderFileFromStorage(url)));
+      const orderToDelete = serviceOrdersRaw.find(o => o.id === orderId);
+      if (orderToDelete?.mediaUrls && orderToDelete.mediaUrls.length > 0) {
+        for (const url of orderToDelete.mediaUrls) {
+          await deleteServiceOrderFileFromStorage(url);
+        }
       }
-      await deleteDoc(doc(db, FIRESTORE_COLLECTION_NAME, orderToDelete.id));
-      return orderToDelete.id;
+      return deleteDoc(doc(db, FIRESTORE_COLLECTION_NAME, orderId));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Excluída", description: `A OS foi excluída.` });
+      toast({ title: "Ordem de Serviço Excluída" });
       closeModal();
     },
     onError: (err: Error) => {
-      toast({ title: "Erro ao Excluir OS", description: `Não foi possível excluir a OS. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Excluir OS", description: err.message, variant: "destructive" });
     },
   });
 
   const openModal = useCallback((order?: ServiceOrder) => {
-    setMediaFiles([]);
     if (order) {
       setEditingOrder(order);
       setIsEditMode(false);
-      const isServiceTypePredefined = serviceTypeOptionsList.includes(order.serviceType as any);
       form.reset({
         ...order,
-        startDate: formatDateForInput(order.startDate),
-        endDate: formatDateForInput(order.endDate),
-        vehicleId: order.vehicleId || null,
+        requesterName: order.requesterName || "",
         technicianId: order.technicianId || null,
+        vehicleId: order.vehicleId || null,
+        startDate: order.startDate ? formatDateForInput(order.startDate) : undefined,
+        endDate: order.endDate ? formatDateForInput(order.endDate) : undefined,
         mediaUrls: order.mediaUrls || [],
-        serviceType: isServiceTypePredefined ? order.serviceType : CUSTOM_SERVICE_TYPE_VALUE,
-        customServiceType: isServiceTypePredefined ? "" : order.serviceType,
         technicalConclusion: order.technicalConclusion || null,
         notes: order.notes || "",
-        requesterName: order.requesterName || "",
-        estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined && order.estimatedTravelDistanceKm !== null ? Number(order.estimatedTravelDistanceKm) : null,
-        estimatedTollCosts: order.estimatedTollCosts !== undefined && order.estimatedTollCosts !== null ? Number(order.estimatedTollCosts) : null,
-        estimatedTravelCost: order.estimatedTravelCost !== undefined && order.estimatedTravelCost !== null ? Number(order.estimatedTravelCost) : null,
+        customServiceType: order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any) ? order.serviceType : "",
+        serviceType: order.serviceType && serviceTypeOptionsList.includes(order.serviceType as any) ? order.serviceType : CUSTOM_SERVICE_TYPE_VALUE,
+        estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined ? order.estimatedTravelDistanceKm : null,
+        estimatedTollCosts: order.estimatedTollCosts !== undefined ? order.estimatedTollCosts : null,
+        estimatedTravelCost: order.estimatedTravelCost !== undefined ? order.estimatedTravelCost : null,
       });
-      setShowCustomServiceType(!isServiceTypePredefined);
+      setShowCustomServiceType(order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any));
     } else {
       setEditingOrder(null);
       setIsEditMode(true);
-      const nextOrderNum = getNextOrderNumber(serviceOrdersRaw);
       form.reset({
-        orderNumber: nextOrderNum,
-        customerId: "", equipmentId: NO_EQUIPMENT_SELECTED_VALUE, phase: "Aguardando Avaliação Técnica", technicianId: null,
-        requesterName: "", serviceType: "", customServiceType: "", vehicleId: null, description: "",
-        notes: "", startDate: formatDateForInput(new Date().toISOString()), endDate: "",
+        orderNumber: getNextOrderNumber(serviceOrdersRaw),
+        customerId: "", equipmentId: NO_EQUIPMENT_SELECTED_VALUE, phase: "Aguardando Avaliação Técnica",
+        technicianId: null, requesterName: "", serviceType: "", customServiceType: "",
+        vehicleId: null, description: "", notes: "",
+        startDate: formatDateForInput(new Date().toISOString()), endDate: "",
         mediaUrls: [], technicalConclusion: null,
         estimatedTravelDistanceKm: null, estimatedTollCosts: null, estimatedTravelCost: null,
       });
       setShowCustomServiceType(false);
     }
+    setMediaFiles([]);
     setIsModalOpen(true);
   }, [form, serviceOrdersRaw]);
 
-  useEffect(() => {
-    if (serviceOrderIdFromUrl && !isLoadingServiceOrders && serviceOrdersRaw.length > 0 && !isModalOpen) {
-      const orderToEdit = serviceOrdersRaw.find(order => order.id === serviceOrderIdFromUrl);
-      if (orderToEdit) {
-        openModal(orderToEdit);
-        if (typeof window !== "undefined") {
-           window.history.replaceState(null, '', '/service-orders');
-        }
-      }
+
+  const handleOpenConclusionModal = (orderToConclude: ServiceOrder) => {
+    setEditingOrder(orderToConclude);
+    setTechnicalConclusionText(orderToConclude.technicalConclusion || "");
+    setIsConclusionModalOpen(true);
+  };
+
+  const handleConfirmConclusion = async () => {
+    if (!editingOrder || !editingOrder.id) return;
+    const orderRef = doc(db!, FIRESTORE_COLLECTION_NAME, editingOrder.id);
+    try {
+      await updateDoc(orderRef, {
+        phase: 'Concluída',
+        technicalConclusion: technicalConclusionText.trim() || "Serviço concluído conforme solicitado.",
+        endDate: Timestamp.fromDate(new Date()),
+      });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      toast({ title: "Ordem de Serviço Concluída", description: `OS ${editingOrder.orderNumber} marcada como concluída.` });
+      setIsConclusionModalOpen(false);
+      setEditingOrder(null);
+      setTechnicalConclusionText("");
+    } catch (e: any) {
+      toast({ title: "Erro ao Concluir OS", description: e.message, variant: "destructive" });
     }
-  }, [serviceOrderIdFromUrl, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen]);
+  };
+
+  const handleOpenCancelModal = (orderToCancel: ServiceOrder) => {
+    setEditingOrder(orderToCancel);
+    setIsCancelConfirmModalOpen(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!editingOrder || !editingOrder.id) return;
+    const orderRef = doc(db!, FIRESTORE_COLLECTION_NAME, editingOrder.id);
+    try {
+      await updateDoc(orderRef, {
+        phase: 'Cancelada',
+        endDate: Timestamp.fromDate(new Date()),
+      });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      toast({ title: "Ordem de Serviço Cancelada", description: `OS ${editingOrder.orderNumber} marcada como cancelada.` });
+      setIsCancelConfirmModalOpen(false);
+      setEditingOrder(null);
+    } catch (e: any) {
+      toast({ title: "Erro ao Cancelar OS", description: e.message, variant: "destructive" });
+    }
+  };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingOrder(null);
-    setMediaFiles([]);
-    form.reset();
-    setShowCustomServiceType(false);
-    setIsConclusionModalOpen(false);
-    setTechnicalConclusionText("");
     setIsEditMode(false);
-    setIsCancelConfirmModalOpen(false);
-    setIsCalculatingDistance(false);
+    form.reset();
+    setMediaFiles([]);
   };
 
-  const onSubmit = async (values: z.infer<typeof ServiceOrderSchema>) => {
-    const existingUrlsToKeep = form.getValues('mediaUrls') || [];
-    const newFilesToUpload = mediaFiles;
-    const originalMediaUrls = editingOrder?.mediaUrls || [];
-
-    if (editingOrder?.id && (editingOrder.phase === 'Concluída' || editingOrder.phase === 'Cancelada')) {
-        updateServiceOrderMutation.mutate({
-          id: editingOrder.id,
-          formData: values,
-          filesToUpload: newFilesToUpload,
-          existingUrlsToKeep,
-          originalMediaUrls
-        });
-        return;
-    }
-
+  const onSubmit = (values: z.infer<typeof ServiceOrderSchema>) => {
+    const existingUrlsToKeep = editingOrder?.mediaUrls || [];
     if (editingOrder && editingOrder.id) {
       updateServiceOrderMutation.mutate({
         id: editingOrder.id,
         formData: values,
-        filesToUpload: newFilesToUpload,
+        filesToUpload: mediaFiles,
         existingUrlsToKeep,
-        originalMediaUrls
+        originalMediaUrls: editingOrder.mediaUrls || [],
       });
     } else {
-      addServiceOrderMutation.mutate({ formData: values, filesToUpload: newFilesToUpload });
+      addServiceOrderMutation.mutate({ formData: values, filesToUpload: mediaFiles });
     }
   };
 
   const handleModalDeleteConfirm = () => {
     if (editingOrder && editingOrder.id) {
-       if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.`)) {
-        deleteServiceOrderMutation.mutate(editingOrder);
+      if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.`)) {
+        deleteServiceOrderMutation.mutate(editingOrder.id);
       }
     }
   };
 
-  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? Array.from(event.target.files) : [];
-    const currentExistingUrlsCount = form.getValues('mediaUrls')?.length || 0;
-    const availableSlotsForNewSelection = MAX_FILES_ALLOWED - currentExistingUrlsCount;
-
-    if (files.length > availableSlotsForNewSelection) {
-      toast({
-        title: "Limite de Arquivos Excedido",
-        description: `Você pode anexar no máximo ${MAX_FILES_ALLOWED} arquivos. Você já tem ${currentExistingUrlsCount} e tentou adicionar ${files.length}. Selecione no máximo ${availableSlotsForNewSelection} novo(s) arquivo(s).`,
-        variant: "destructive",
-      });
-      setMediaFiles(files.slice(0, availableSlotsForNewSelection));
-    } else {
-      setMediaFiles(files);
-    }
-    if (event.target) {
-        event.target.value = '';
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) {
+      const currentTotalFiles = (formMediaUrls?.length || 0) + mediaFiles.length;
+      const newFilesArray = Array.from(event.target.files);
+      if (currentTotalFiles + newFilesArray.length > MAX_FILES_ALLOWED) {
+        toast({
+          title: "Limite de Arquivos Excedido",
+          description: `Você pode anexar no máximo ${MAX_FILES_ALLOWED} arquivos no total.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setMediaFiles(prev => [...prev, ...newFilesArray]);
     }
   };
 
-  const handleRemoveAllExistingAttachments = () => {
-    if (editingOrder && window.confirm("Tem certeza que deseja remover TODOS os anexos existentes desta Ordem de Serviço? Os arquivos serão excluídos ao salvar.")) {
-      form.setValue('mediaUrls', []);
-      toast({title: "Anexos Marcados para Remoção", description: "Os anexos existentes serão removidos ao salvar o formulário."})
-    }
+  const handleRemoveNewFile = (index: number) => {
+    setMediaFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleRemoveExistingUrl = (urlToRemove: string) => {
+    const currentUrls = form.getValues('mediaUrls') || [];
+    form.setValue('mediaUrls', currentUrls.filter(url => url !== urlToRemove), { shouldDirty: true });
+    if(editingOrder && editingOrder.mediaUrls){
+      setEditingOrder(prev => prev ? ({...prev, mediaUrls: prev.mediaUrls?.filter(url => url !== urlToRemove) || []}) : null);
+    }
+  };
 
   const handleServiceTypeChange = (value: string) => {
     form.setValue('serviceType', value);
     setShowCustomServiceType(value === CUSTOM_SERVICE_TYPE_VALUE);
     if (value !== CUSTOM_SERVICE_TYPE_VALUE) {
-      form.setValue('customServiceType', "");
-    }
-  };
-
-  const handleOpenConclusionModal = (orderToConclude: ServiceOrder) => {
-    setEditingOrder(orderToConclude); // Set the order being concluded
-    setTechnicalConclusionText(orderToConclude.technicalConclusion || "");
-    setIsConclusionModalOpen(true);
-  };
-
-  const handleFinalizeConclusion = () => {
-    if (editingOrder && editingOrder.id) { // Use editingOrder which was set by handleOpenConclusionModal
-      if (!technicalConclusionText.trim()) {
-        toast({ title: "Campo Obrigatório", description: "A conclusão técnica não pode estar vazia.", variant: "destructive"});
-        return;
-      }
-      concludeServiceOrderMutation.mutate({
-        orderId: editingOrder.id,
-        conclusionText: technicalConclusionText,
-        currentEndDate: editingOrder.endDate, // Pass the current end date from the editingOrder
-      });
-    }
-  };
-
-  const handleOpenCancelConfirmModal = (orderToCancel: ServiceOrder) => {
-    setEditingOrder(orderToCancel); // Set the order being cancelled
-    setIsCancelConfirmModalOpen(true);
-  };
-
-  const handleFinalizeCancellation = () => {
-    if (editingOrder && editingOrder.id) { // Use editingOrder
-      cancelServiceOrderMutation.mutate(editingOrder.id);
+        form.setValue('customServiceType', "");
     }
   };
 
@@ -912,138 +844,126 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     technicianName: string,
     companyDetails: Company | null
   ) => {
+    if (!order) return;
     const doc = new jsPDF();
     let yPos = 15;
     const lineSpacing = 7;
-    const sectionSpacing = 10;
     const smallText = 9;
     const normalText = 10;
     const largeText = 12;
     const titleText = 16;
-    const primaryColor = "#F97316";
 
-    doc.setFont("helvetica", "normal");
-
-    // Header
+    // Header - Company Details
     if (companyDetails) {
-        doc.setFontSize(largeText);
-        doc.setTextColor(primaryColor);
-        doc.text(companyDetails.name, 14, yPos);
-        yPos += lineSpacing;
-        doc.setFontSize(smallText);
-        doc.setTextColor(50);
-        doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
-        yPos += lineSpacing / 1.5;
-        doc.text(formatAddressForDisplay(companyDetails) || "Endereço não disponível", 14, yPos);
-        yPos += lineSpacing;
+      doc.setFontSize(largeText);
+      doc.setFont("helvetica", "bold");
+      doc.text(companyDetails.name, 14, yPos);
+      yPos += lineSpacing;
+      doc.setFontSize(smallText);
+      doc.setFont("helvetica", "normal");
+      doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
+      yPos += lineSpacing / 1.5;
+      doc.text(formatAddressForDisplay(companyDetails), 14, yPos);
+      yPos += lineSpacing;
+    } else {
+      doc.setFontSize(largeText);
+      doc.setFont("helvetica", "bold");
+      doc.text("Gold Maq Empilhadeiras", 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
 
+    // Title
     doc.setFontSize(titleText);
-    doc.setTextColor(primaryColor);
-    doc.text(`ORDEM DE SERVIÇO TÉCNICO: ${order.orderNumber}`, 105, yPos, { align: "center" });
-    yPos += sectionSpacing;
+    doc.setFont("helvetica", "bold");
+    doc.text(`ORDEM DE SERVIÇO Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
+    yPos += lineSpacing * 1.5;
 
-    doc.setTextColor(0);
+    // Basic Info
     doc.setFontSize(normalText);
+    doc.setFont("helvetica", "bold");
+    doc.text("INFORMAÇÕES GERAIS", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFont("helvetica", "normal");
     doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
-    doc.text(`Previsão Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 120, yPos);
+    doc.text(`Técnico: ${technicianName || 'N/A'}`, 100, yPos);
     yPos += lineSpacing;
-    doc.text(`Técnico Designado: ${toTitleCase(technicianName) || 'Não Atribuído'}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`Tipo de Serviço: ${toTitleCase(order.serviceType)}`, 14, yPos);
-    yPos += sectionSpacing;
+    doc.text(`Previsão Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 14, yPos);
+    yPos += lineSpacing * 1.5;
 
-    // Customer Details
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Dados do Cliente", 14, yPos);
+    // Customer Info
+    doc.setFont("helvetica", "bold");
+    doc.text("DADOS DO CLIENTE", 14, yPos);
     yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    doc.text(`Empresa: ${toTitleCase(customer?.name) || 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`CNPJ: ${customer?.cnpj || 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`Solicitante: ${toTitleCase(order.requesterName) || 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`Telefone: ${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    const customerAddress = formatAddressForDisplay(customer);
-    const splitAddress = doc.splitTextToSize(customerAddress, 180);
-    doc.text(`Endereço: ${splitAddress[0]}`, 14, yPos);
-    if (splitAddress.length > 1) {
-      for(let i = 1; i < splitAddress.length; i++) {
-        yPos += (lineSpacing / 1.5);
-        doc.text(splitAddress[i], 28, yPos);
-      }
+    doc.setFont("helvetica", "normal");
+    if (customer) {
+      doc.text(`Nome/Razão Social: ${toTitleCase(customer.name)}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`CNPJ: ${customer.cnpj}`, 14, yPos);
+      doc.text(`Solicitante: ${toTitleCase(order.requesterName) || 'N/A'}`, 100, yPos);
+      yPos += lineSpacing;
+      doc.text(`Telefone: ${customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`Endereço: ${formatAddressForDisplay(customer)}`, 14, yPos);
+      yPos += lineSpacing * 1.5;
+    } else {
+      doc.text("Cliente não especificado.", 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
-    yPos += sectionSpacing;
 
-    // Equipment Details
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Dados da Máquina", 14, yPos);
+    // Equipment Info
+    doc.setFont("helvetica", "bold");
+    doc.text("DADOS DO EQUIPAMENTO", 14, yPos);
     yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    doc.text(`Marca/Modelo: ${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}`, 14, yPos);
-    doc.text(`Nº Chassi: ${equipment?.chassisNumber || 'N/A'}`, 120, yPos);
-    yPos += lineSpacing;
-    doc.text(`Ano: ${equipment?.manufactureYear || 'N/A'}`, 14, yPos);
-    yPos += sectionSpacing;
-
-    // Problem Description
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Problema Relatado / Solicitação", 14, yPos);
-    yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    const splitDescription = doc.splitTextToSize(order.description || 'Nenhum problema relatado.', 180);
-    doc.text(splitDescription, 14, yPos);
-    yPos += splitDescription.length * (lineSpacing / 1.5) + (lineSpacing / 2);
-
-
-    if (order.notes) {
-        doc.setFontSize(largeText);
-        doc.setTextColor(primaryColor);
-        doc.text("Observações da OS", 14, yPos);
-        yPos += lineSpacing;
-        doc.setTextColor(0);
-        doc.setFontSize(normalText);
-        const splitNotes = doc.splitTextToSize(order.notes, 180);
-        doc.text(splitNotes, 14, yPos);
-        yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    doc.setFont("helvetica", "normal");
+    if (equipment) {
+      doc.text(`Marca/Modelo: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`Chassi: ${equipment.chassisNumber || 'N/A'}`, 14, yPos);
+      doc.text(`Ano: ${equipment.manufactureYear || 'N/A'}`, 100, yPos);
+      yPos += lineSpacing;
+      doc.text(`Tipo: ${equipment.equipmentType}`, 14, yPos);
+      yPos += lineSpacing * 1.5;
+    } else {
+      doc.text("Equipamento não especificado.", 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
-    
-    // Technical Diagnosis / Services Performed (Empty for technician)
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Diagnóstico Técnico / Serviços Realizados", 14, yPos);
-    yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 30); // Empty box for notes
-    yPos += 30 + sectionSpacing;
 
-    // Parts Used (Empty for technician)
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Peças Utilizadas", 14, yPos);
+    // Service Details
+    doc.setFont("helvetica", "bold");
+    doc.text("DETALHES DO SERVIÇO", 14, yPos);
     yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 20); // Empty box for notes
-    yPos += 20 + sectionSpacing;
-    
+    doc.setFont("helvetica", "normal");
+    doc.text(`Tipo de Serviço: ${order.serviceType || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text("Problema Relatado:", 14, yPos);
+    yPos += lineSpacing * 0.8;
+    const problemLines = doc.splitTextToSize(order.description || "Nenhum problema relatado.", 180);
+    doc.text(problemLines, 14, yPos);
+    yPos += (problemLines.length * lineSpacing * 0.7) + lineSpacing;
+
+    // Notes and Conclusion Area
+    doc.setFont("helvetica", "bold");
+    doc.text("OBSERVAÇÕES / DIAGNÓSTICO TÉCNICO:", 14, yPos);
+    yPos += lineSpacing;
+    doc.rect(14, yPos, 182, 30); // Box for notes
+    yPos += 30 + lineSpacing;
+
+    doc.setFont("helvetica", "bold");
+    doc.text("SERVIÇOS REALIZADOS / PEÇAS UTILIZADAS:", 14, yPos);
+    yPos += lineSpacing;
+    doc.rect(14, yPos, 182, 30); // Box for services/parts
+    yPos += 30 + lineSpacing * 1.5;
+
     // Signatures
-    yPos = Math.max(yPos, doc.internal.pageSize.height - 60); // Ensure space for signatures
-    doc.setFontSize(normalText);
-    doc.line(30, yPos, 90, yPos); // Technician signature line
-    doc.text("Assinatura do Técnico", 45, yPos + 5, { align: "center" });
-    doc.line(120, yPos, 180, yPos); // Customer signature line
-    doc.text("Assinatura do Cliente / Responsável", 130, yPos + 5);
-    yPos += 15;
+    doc.line(14, yPos, 84, yPos); // Technician signature line
+    doc.text("Assinatura do Técnico", 14, yPos + 5);
+    doc.line(112, yPos, 182, yPos); // Customer signature line
+    doc.text("Assinatura do Cliente", 112, yPos + 5);
+    yPos += lineSpacing * 1.5;
 
-    doc.setFontSize(smallText);
-    doc.setTextColor(150);
-    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 105, doc.internal.pageSize.height - 10, { align: "center" });
+    // Footer
+    doc.setFontSize(smallText - 1);
+    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
 
     doc.save(`OS_Tecnico_${order.orderNumber}.pdf`);
   };
@@ -1054,132 +974,107 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     equipment: Maquina | undefined,
     companyDetails: Company | null
   ) => {
+    if (!order) return;
     const doc = new jsPDF();
     let yPos = 15;
     const lineSpacing = 7;
-    const sectionSpacing = 10;
     const smallText = 9;
     const normalText = 10;
     const largeText = 12;
     const titleText = 16;
-    const primaryColor = "#F97316";
-
-    doc.setFont("helvetica", "normal");
 
     // Header
     if (companyDetails) {
-        doc.setFontSize(largeText);
-        doc.setTextColor(primaryColor);
-        doc.text(companyDetails.name, 14, yPos);
-        yPos += lineSpacing;
-        doc.setFontSize(smallText);
-        doc.setTextColor(50);
-        doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
-        yPos += lineSpacing / 1.5;
-        doc.text(formatAddressForDisplay(companyDetails) || "Endereço não disponível", 14, yPos);
-        yPos += lineSpacing;
+      doc.setFontSize(largeText);
+      doc.setFont("helvetica", "bold");
+      doc.text(companyDetails.name, 14, yPos);
+      yPos += lineSpacing;
+      doc.setFontSize(smallText);
+      doc.setFont("helvetica", "normal");
+      doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
+      yPos += lineSpacing / 1.5;
+      doc.text(formatAddressForDisplay(companyDetails), 14, yPos);
+      yPos += lineSpacing;
+    } else {
+      doc.setFontSize(largeText);
+      doc.setFont("helvetica", "bold");
+      doc.text("Gold Maq Empilhadeiras", 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
-    
+
+    // Title
     doc.setFontSize(titleText);
-    doc.setTextColor(primaryColor);
-    doc.text(`COMPROVANTE DE ATENDIMENTO OS: ${order.orderNumber}`, 105, yPos, { align: "center" });
-    yPos += sectionSpacing;
+    doc.setFont("helvetica", "bold");
+    doc.text(`RECIBO DE SERVIÇO - OS Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
+    yPos += lineSpacing * 1.5;
 
-    doc.setTextColor(0);
+    // Dates
     doc.setFontSize(normalText);
+    doc.setFont("helvetica", "normal");
     doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
-    doc.text(`Data Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 120, yPos);
-    yPos += sectionSpacing;
+    doc.text(`Data Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 100, yPos);
+    yPos += lineSpacing * 1.5;
 
-    // Customer Details
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Dados do Cliente", 14, yPos);
+    // Customer
+    doc.setFont("helvetica", "bold");
+    doc.text("CLIENTE", 14, yPos);
     yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    doc.text(`Empresa: ${toTitleCase(customer?.name) || 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`CNPJ: ${customer?.cnpj || 'N/A'}`, 14, yPos);
-    yPos += lineSpacing;
-    const customerAddress = formatAddressForDisplay(customer);
-    const splitAddress = doc.splitTextToSize(customerAddress, 180);
-    doc.text(`Endereço: ${splitAddress[0]}`, 14, yPos);
-     if (splitAddress.length > 1) {
-      for(let i = 1; i < splitAddress.length; i++) {
-        yPos += (lineSpacing / 1.5);
-        doc.text(splitAddress[i], 28, yPos);
-      }
-    }
-    yPos += sectionSpacing;
-
-    // Equipment Details
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Dados da Máquina", 14, yPos);
-    yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    doc.text(`Marca/Modelo: ${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}`, 14, yPos);
-    yPos += lineSpacing;
-    doc.text(`Nº Chassi: ${equipment?.chassisNumber || 'N/A'}`, 14, yPos);
-    yPos += sectionSpacing;
-
-    // Problem Description
-    doc.setFontSize(largeText);
-    doc.setTextColor(primaryColor);
-    doc.text("Problema Relatado", 14, yPos);
-    yPos += lineSpacing;
-    doc.setTextColor(0);
-    doc.setFontSize(normalText);
-    const splitDescription = doc.splitTextToSize(order.description || 'N/A', 180);
-    doc.text(splitDescription, 14, yPos);
-    yPos += splitDescription.length * (lineSpacing / 1.5) + (lineSpacing / 2);
-
-    // Technical Conclusion
-    if (order.technicalConclusion) {
-        doc.setFontSize(largeText);
-        doc.setTextColor(primaryColor);
-        doc.text("Conclusão Técnica / Serviços Realizados", 14, yPos);
-        yPos += lineSpacing;
-        doc.setTextColor(0);
-        doc.setFontSize(normalText);
-        const splitConclusion = doc.splitTextToSize(order.technicalConclusion, 180);
-        doc.text(splitConclusion, 14, yPos);
-        yPos += splitConclusion.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    doc.setFont("helvetica", "normal");
+    if (customer) {
+      doc.text(`Nome/Razão Social: ${toTitleCase(customer.name)}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`CNPJ: ${customer.cnpj}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`Endereço: ${formatAddressForDisplay(customer)}`, 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
 
-    // Additional Notes
-    if (order.notes) {
-        doc.setFontSize(largeText);
-        doc.setTextColor(primaryColor);
-        doc.text("Observações Adicionais", 14, yPos);
-        yPos += lineSpacing;
-        doc.setTextColor(0);
-        doc.setFontSize(normalText);
-        const splitNotes = doc.splitTextToSize(order.notes, 180);
-        doc.text(splitNotes, 14, yPos);
-        yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
+    // Equipment
+    doc.setFont("helvetica", "bold");
+    doc.text("EQUIPAMENTO", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFont("helvetica", "normal");
+    if (equipment) {
+      doc.text(`Marca/Modelo: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`, 14, yPos);
+      yPos += lineSpacing;
+      doc.text(`Chassi: ${equipment.chassisNumber || 'N/A'}`, 14, yPos);
+      yPos += lineSpacing * 1.5;
     }
 
-    // Signature
-    yPos = Math.max(yPos, doc.internal.pageSize.height - 40);
-    doc.setFontSize(normalText);
-    doc.line(120, yPos, 180, yPos); // Customer signature line
-    doc.text("Assinatura do Cliente / Responsável", 130, yPos + 5);
-    yPos += 15;
+    // Service Details
+    doc.setFont("helvetica", "bold");
+    doc.text("SERVIÇO REALIZADO", 14, yPos);
+    yPos += lineSpacing;
+    doc.setFont("helvetica", "normal");
+    doc.text(`Tipo de Serviço: ${order.serviceType || 'N/A'}`, 14, yPos);
+    yPos += lineSpacing;
+    doc.text("Problema Relatado:", 14, yPos);
+    yPos += lineSpacing * 0.8;
+    const problemLines = doc.splitTextToSize(order.description || "N/A", 180);
+    doc.text(problemLines, 14, yPos);
+    yPos += (problemLines.length * lineSpacing * 0.7) + lineSpacing;
 
-    doc.setFontSize(smallText);
-    doc.setTextColor(150);
-    doc.text(`Agradecemos a preferência! Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 105, doc.internal.pageSize.height - 10, { align: "center" });
+    doc.text("Conclusão Técnica / Solução:", 14, yPos);
+    yPos += lineSpacing * 0.8;
+    const conclusionLines = doc.splitTextToSize(order.technicalConclusion || "Serviço concluído.", 180);
+    doc.text(conclusionLines, 14, yPos);
+    yPos += (conclusionLines.length * lineSpacing * 0.7) + lineSpacing * 2;
 
-    doc.save(`Comprovante_OS_${order.orderNumber}.pdf`);
+
+    // Signature placeholder
+    doc.line(14, yPos, 84, yPos);
+    doc.text("Assinatura do Cliente", 14, yPos + 5);
+    yPos += lineSpacing * 1.5;
+
+    doc.setFontSize(smallText - 1);
+    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
+    doc.save(`Recibo_OS_${order.orderNumber}.pdf`);
   };
 
   const handlePrintForTechnician = (order: ServiceOrder) => {
-    if (isLoadingGoldmaqCompany || !goldmaqCompanyDetails) {
-        toast({ title: "Aguarde", description: "Carregando dados da empresa para gerar PDF.", variant: "default"});
-        return;
+    if (isLoadingGoldmaqCompany) {
+      toast({ title: "Aguarde", description: "Carregando dados da empresa..."});
+      return;
     }
     const customer = getCustomerDetails(order.customerId);
     const equipment = getEquipmentDetails(order.equipmentId);
@@ -1188,25 +1083,37 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   };
 
   const handlePrintForCustomer = (order: ServiceOrder) => {
-     if (isLoadingGoldmaqCompany || !goldmaqCompanyDetails) {
-        toast({ title: "Aguarde", description: "Carregando dados da empresa para gerar PDF.", variant: "default"});
-        return;
+     if (isLoadingGoldmaqCompany) {
+      toast({ title: "Aguarde", description: "Carregando dados da empresa..."});
+      return;
     }
     const customer = getCustomerDetails(order.customerId);
     const equipment = getEquipmentDetails(order.equipmentId);
     generateCustomerReceiptPDF(order, customer, equipment, goldmaqCompanyDetails);
   };
 
-  const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
-  const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
+
+  useEffect(() => {
+    if (serviceOrderIdFromUrl && !isLoadingServiceOrders && serviceOrdersRaw.length > 0 && !isModalOpen) {
+      const orderToOpen = serviceOrdersRaw.find(o => o.id === serviceOrderIdFromUrl);
+      if (orderToOpen) {
+        openModal(orderToOpen);
+         if (typeof window !== "undefined") {
+           window.history.replaceState(null, '', '/service-orders');
+        }
+      }
+    }
+  }, [serviceOrderIdFromUrl, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen]);
+
+
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingGoldmaqCompany;
+  const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending || isUploadingFile;
 
-
-  if (isLoadingPageData && !isModalOpen) {
+  if (isLoadingPageData && !isModalOpen && !isConclusionModalOpen && !isCancelConfirmModalOpen) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2">Carregando dados...</p>
+        <p className="ml-2">Carregando Ordens de Serviço...</p>
       </div>
     );
   }
@@ -1223,51 +1130,13 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   }
 
 
-  const getVehicleDetails = (id?: string | null): { identifier: string, id?: string } => {
-    if (!id) return { identifier: "N/A" };
-    const vehicle = (vehicles || []).find(v => v.id === id);
-    return vehicle ? { identifier: `${vehicle.model} (${vehicle.licensePlate})`, id: vehicle.id } : { identifier: id };
-  };
-
-  const generateWhatsAppMessage = (
-    order: ServiceOrder,
-    customer: Customer | undefined,
-    equipment: Maquina | undefined,
-    technicianName: string
-  ): string => {
-    if (!customer) return "Erro: Cliente não encontrado.";
-    let message = `Olá ${toTitleCase(customer.name)},\\n\\n`;
-    message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\\n\\n`;
-    message += `*Cliente:* ${toTitleCase(customer.name)}\\n`;
-    if (equipment) {
-        message += `*Equipamento:* ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)} (Chassi: ${equipment.chassisNumber})\\n`;
-    } else {
-        message += `*Equipamento:* Não especificado\\n`;
-    }
-    message += `*Fase Atual:* ${order.phase}\\n`;
-    message += `*Problema Relatado:* ${order.description}\\n`;
-    if (technicianName !== "Não Atribuído") {
-      message += `*Técnico Designado:* ${toTitleCase(technicianName)}\\n`;
-    }
-    if (order.startDate && typeof order.startDate === 'string' && isValid(parseISO(order.startDate))) {
-      message += `*Data de Início:* ${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\\n`;
-    }
-    if (order.endDate && typeof order.endDate === 'string' && isValid(parseISO(order.endDate))) {
-      message += `*Previsão de Conclusão:* ${format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}\\n`;
-    }
-    message += `\\nAtenciosamente,\\nEquipe Gold Maq`;
-    return message;
-  };
-
-
   return (
     <TooltipProvider>
-    <>
       <PageHeader
         title="Ordens de Serviço"
         actions={
-          <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteServiceOrderMutation.isPending}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Criar Ordem de Serviço
+          <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
+            <PlusCircle className="mr-2 h-4 w-4" /> Nova OS
           </Button>
         }
       />
@@ -1276,21 +1145,19 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         <div className="relative flex-grow">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            type="search"
-            placeholder="Buscar por OS, cliente, equip., técnico..."
+            placeholder="Buscar por OS, cliente, máquina, técnico..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
           />
         </div>
         <div className="relative md:w-auto">
-          <Label htmlFor="phase-filter" className="sr-only">Filtrar por Fase:</Label>
           <Select
             value={selectedPhaseFilter}
             onValueChange={(value) => setSelectedPhaseFilter(value as ServiceOrderPhaseType | "Todos")}
           >
-            <SelectTrigger id="phase-filter" className="w-full md:w-[280px]">
-              <SelectValue placeholder="Mostrar todas as fases" />
+            <SelectTrigger className="w-full md:w-[280px]">
+              <SelectValue placeholder="Filtrar por fase..." />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Todos">Todas as Fases</SelectItem>
@@ -1302,23 +1169,18 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         </div>
       </div>
 
-      {isLoadingServiceOrders && !isModalOpen ? (
-          <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-2">Carregando ordens de serviço...</p>
-          </div>
-        ) : serviceOrdersRaw.length === 0 && !isLoadingServiceOrders && selectedPhaseFilter === "Todos" && !searchTerm.trim() ? (
+      {serviceOrdersRaw.length === 0 && !isLoadingServiceOrders && selectedPhaseFilter === "Todos" && !searchTerm.trim() ? (
         <DataTablePlaceholder
           icon={ClipboardList}
-          title="Nenhuma Ordem de Serviço Criada"
-          description="Crie sua primeira ordem de serviço para gerenciar as operações."
-          buttonLabel="Criar Ordem de Serviço"
+          title="Nenhuma Ordem de Serviço Registrada"
+          description="Crie sua primeira ordem de serviço para começar."
+          buttonLabel="Nova OS"
           onButtonClick={() => openModal()}
         />
       ) : filteredServiceOrders.length === 0 ? (
         <div className="text-center py-10">
           <SearchIcon className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-2 text-lg font-semibold">Nenhuma Ordem de Serviço Encontrada</h3>
+          <h3 className="mt-2 text-lg font-semibold">Nenhuma OS Encontrada</h3>
           <p className="text-sm text-muted-foreground">
             Sua busca ou filtro não retornou resultados. Tente um termo diferente ou ajuste os filtros.
           </p>
@@ -1326,613 +1188,386 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServiceOrders.map((order) => {
-            const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
-            const cardClasses = cn(
-              "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300", // Removed cursor-pointer here
-            );
-            const customerDetails = getCustomerDetails(order.customerId);
-            const equipmentDetails = getEquipmentDetails(order.equipmentId);
-            const vehicleDetails = getVehicleDetails(order.vehicleId);
+            const customer = getCustomerDetails(order.customerId);
+            const equipment = getEquipmentDetails(order.equipmentId);
             const technicianName = getTechnicianName(order.technicianId);
-            const whatsappNumber = customerDetails?.phone ? getWhatsAppNumber(customerDetails.phone) : null;
-            const whatsappMessage = whatsappNumber ? generateWhatsAppMessage(order, customerDetails, equipmentDetails, technicianName) : "";
-            const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
-            const customerAddress = customerDetails ? formatAddressForDisplay(customerDetails) : "Endereço não disponível";
-            const googleMapsLink = customerDetails ? generateGoogleMapsUrl(customerDetails) : "#";
-
-
-            let equipmentOwnerDisplay = null;
-            if (equipmentDetails?.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
-                const company = goldmaqCompanyDetails && goldmaqCompanyDetails.id === equipmentDetails.ownerReference ? goldmaqCompanyDetails : null; // Simplified
-                equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
-            } else if (equipmentDetails?.ownerReference === OWNER_REF_CUSTOMER) {
-                 const ownerCustomer = (customers || []).find(c => c.id === equipmentDetails.customerId);
-                 equipmentOwnerDisplay = ownerCustomer ? `Cliente (${toTitleCase(ownerCustomer.name)})` : "Cliente (Não especificado)";
-            }
+            const PhaseIcon = phaseIcons[order.phase] || ClipboardList;
+            const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
+            const whatsappNumber = getWhatsAppNumber(customer?.phone);
+            const whatsappLink = whatsappNumber && customer
+              ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(toTitleCase(customer.name))},%20sobre%20a%20OS%20${order.orderNumber}...`
+              : "#";
+            const isOrderConcludedOrCancelled = order.phase === 'Concluída' || order.phase === 'Cancelada';
 
 
             return (
-            <Card key={order.id} className={cardClasses} >
-              {deadlineInfo.status !== 'none' && deadlineInfo.message && (
-                 <div className={cn(
-                  "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
-                  deadlineInfo.alertClass
-                )}>
-                  {deadlineInfo.icon}
-                  <span className="ml-2">{deadlineInfo.message}</span>
-                </div>
-              )}
-              <CardHeader className={cn("cursor-pointer", deadlineInfo.status !== 'none' && deadlineInfo.message ? "pt-2" : "")} onClick={() => openModal(order)}>
-                <div className="flex justify-between items-start">
-                  <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
-                </div>
-                <CardDescription className="flex items-center text-sm pt-1">
-                  {phaseIcons[order.phase]}
-                  <span className="font-medium text-muted-foreground ml-1 mr-1">Fase:</span>
-                  <span className="text-base font-semibold">{order.phase}</span>
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow space-y-2 text-sm cursor-pointer" onClick={() => openModal(order)}>
-                <p className="flex items-center">
-                  <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                  <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
-                  {isLoadingCustomers || !customerDetails ? 'Carregando...' : (
-                    <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${toTitleCase(customerDetails.name)}`}>
-                      {toTitleCase(customerDetails.name)}
-                    </Link>
-                  )}
-                </p>
-                {customerDetails && (
-                  <p className="flex items-start">
-                    <MapPin className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">End.:</span>
-                    {googleMapsLink !== "#" ? (
-                        <a
-                        href={googleMapsLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline text-primary truncate"
-                        onClick={(e) => e.stopPropagation()}
-                        title="Abrir no Google Maps"
-                        >
-                        {customerAddress}
-                        </a>
+              <Card key={order.id} className={cn("flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300", deadlineInfo.alertClass)}>
+                <div onClick={() => openModal(order)} className="cursor-pointer flex-grow">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        {deadlineInfo.icon && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" className="p-0 border-0 bg-transparent cursor-help">{deadlineInfo.icon}</button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>{deadlineInfo.message}</p></TooltipContent>
+                          </Tooltip>
+                        )}
+                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
+                          "bg-yellow-100 text-yellow-700": order.phase === "Aguardando Avaliação Técnica" || order.phase === "Autorizado, Aguardando Peça",
+                          "bg-purple-100 text-purple-700": order.phase === "Avaliado, Aguardando Autorização",
+                          "bg-blue-100 text-blue-700": order.phase === "Em Execução",
+                          "bg-green-100 text-green-700": order.phase === "Concluída",
+                          "bg-red-100 text-red-700": order.phase === "Cancelada",
+                        })}>
+                          {order.phase}
+                        </span>
+                      </div>
+                    </div>
+                     <CardDescription>
+                      Cliente: {isLoadingCustomers ? "Carregando..." : (customer?.name ? toTitleCase(customer.name) : 'N/A')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-grow space-y-2 text-sm">
+                    {isLoadingEquipment ? (
+                      <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                    ) : equipment ? (
+                      <>
+                        <p className="flex items-center">
+                          <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                          {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                        </p>
+                        <p className="flex items-center">
+                          <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                          {equipment.chassisNumber || "N/A"}
+                        </p>
+                         {equipment.manufactureYear && (
+                          <p className="flex items-center">
+                            <CalendarIconDetails className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                            {equipment.manufactureYear}
+                          </p>
+                        )}
+                      </>
                     ) : (
-                        <span className="truncate">{customerAddress}</span>
+                      <p className="flex items-center text-muted-foreground"><Construction className="mr-2 h-4 w-4" /> Equipamento não encontrado</p>
                     )}
-                  </p>
-                )}
-                {customerDetails?.phone && (
-                  <p className="flex items-center">
-                    <Phone className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Tel:</span>
-                    {whatsappNumber ? (
-                      <a
-                        href={whatsappLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-primary hover:underline"
-                        title={`Abrir WhatsApp para ${formatPhoneNumberForInputDisplay(customerDetails.phone)}`}
-                      >
-                        {formatPhoneNumberForInputDisplay(customerDetails.phone)}
-                      </a>
-                    ) : (
-                      <span>{formatPhoneNumberForInputDisplay(customerDetails.phone)}</span>
-                    )}
-                  </p>
-                )}
-                {order.requesterName && (
-                  <p className="flex items-start">
-                    <User className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Solicitante:</span>
-                    <span className="whitespace-pre-wrap break-words">{toTitleCase(order.requesterName)}</span>
-                  </p>
-                )}
 
-                {isLoadingEquipment ? (
-                  <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
-                ) : equipmentDetails ? (
-                  <>
                     <p className="flex items-center">
-                        <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-muted-foreground mr-1">Marca/Modelo:</span>
-                         <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
-                             {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)}
-                         </Link>
+                      <Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}
                     </p>
                     <p className="flex items-center">
-                      <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
-                      {equipmentDetails.chassisNumber || "N/A"}
+                      <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Solicitante:</span> {order.requesterName || 'N/A'}
                     </p>
-                    {equipmentDetails.manufactureYear && (
-                      <p className="flex items-center">
-                        <CalendarIconDetails className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-muted-foreground mr-1">Ano Fab.:</span>
-                        {equipmentDetails.manufactureYear}
+                    <p className="flex items-center">
+                      <HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Técnico:</span>
+                      {isLoadingTechnicians ? "Carregando..." : technicianName}
+                    </p>
+                    <p className="flex items-center">
+                      <Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Abertura:</span>
+                      {order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}
+                    </p>
+                    {order.endDate && (
+                       <p className="flex items-center">
+                        <Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Prev. Conclusão:</span>
+                        {formatDateForDisplay(order.endDate)}
                       </p>
                     )}
-                  </>
-                ) : (
-                  <p className="flex items-center text-muted-foreground"><Construction className="mr-2 h-4 w-4" /> Equipamento não especificado</p>
-                )}
-
-                {equipmentOwnerDisplay && (
-                  <p className="flex items-center">
-                    <Building className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Prop. Equip.:</span>
-                    <span>{toTitleCase(equipmentOwnerDisplay)}</span>
-                  </p>
-                )}
-                <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : toTitleCase(technicianName)}</p>
-                {order.vehicleId && (
-                  <p className="flex items-center">
-                    <VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Veículo:</span>
-                    {isLoadingVehicles ? 'Carregando...' : (
-                       <Link href={`/vehicles?openVehicleId=${vehicleDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver veículo: ${vehicleDetails.identifier}`}>
-                         {vehicleDetails.identifier}
-                       </Link>
+                    <p className="flex items-start">
+                      <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Problema:</span>
+                      <span className="whitespace-pre-wrap break-words">{order.description}</span>
+                    </p>
+                     {order.notes && (
+                      <p className="flex items-start text-xs text-muted-foreground">
+                        <FileText className="mr-2 mt-0.5 h-3 w-3 flex-shrink-0" />
+                        <span className="font-medium mr-1">Obs OS:</span>
+                        <span className="whitespace-pre-wrap break-words">{order.notes}</span>
+                      </p>
                     )}
-                  </p>
-                )}
-                 {order.estimatedTravelCost !== null && order.estimatedTravelCost !== undefined && (
-                  <p className="flex items-center text-sm">
-                    <CoinsIcon className="mr-2 h-4 w-4 text-primary" />
-                    <span className="font-medium text-muted-foreground mr-1">Custo Viagem (Est.):</span>
-                    <span>R$ {Number(order.estimatedTravelCost).toFixed(2)}</span>
-                  </p>
-                )}
-                <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {toTitleCase(order.serviceType)}</p>
-                {order.startDate && typeof order.startDate === 'string' && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
-                {order.endDate && typeof order.endDate === 'string' && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
-                <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Problema Relatado:</span> <span className="whitespace-pre-wrap break-words">{order.description}</span></p>
-                {order.technicalConclusion && <p className="flex items-start"><Check className="mr-2 mt-0.5 h-4 w-4 text-green-500 flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Técnica:</span> <span className="whitespace-pre-wrap break-words">{order.technicalConclusion}</span></p>}
-                {order.notes && <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Obs.:</span> <span className="whitespace-pre-wrap break-words">{order.notes}</span></p>}
-                {order.mediaUrls && order.mediaUrls.length > 0 && (
-                  <div>
-                     <p className="flex items-center text-sm font-medium text-muted-foreground mb-1">
-                       <UploadCloud className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> Anexos:
-                     </p>
-                     <ul className="list-disc list-inside space-y-1">
-                       {order.mediaUrls.map((mediaUrl, index) => (
-                          typeof mediaUrl === 'string' && (
-                           <li key={index} className="flex items-center text-sm">
-                             <LinkIconLI className="mr-2 h-3 w-3 text-primary flex-shrink-0" />
-                             <a
-                                href={mediaUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={e => e.stopPropagation()}
-                                className="text-primary hover:underline truncate flex-grow"
-                                title={`Ver Mídia: ${getFileNameFromUrl(mediaUrl)}`}
-                             >
-                                {getFileNameFromUrl(mediaUrl)}
-                             </a>
-                           </li>
-                          )
-                       ))}
-                     </ul>
-                  </div>
-                )}
-              </CardContent>
-              <CardFooter className="border-t pt-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => { e.stopPropagation(); handlePrintForTechnician(order); }}
-                    disabled={isMutating || isLoadingGoldmaqCompany}
-                    className="border-primary text-primary hover:bg-primary/10"
-                  >
-                    <Printer className="mr-1.5 h-3.5 w-3.5" /> Imprimir (Técnico)
-                  </Button>
-                  {order.phase === 'Concluída' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => { e.stopPropagation(); handlePrintForCustomer(order); }}
-                      disabled={isMutating || isLoadingGoldmaqCompany}
-                      className="border-primary text-primary hover:bg-primary/10"
-                    >
-                      <Printer className="mr-1.5 h-3.5 w-3.5" /> Imprimir (Cliente)
-                    </Button>
-                  )}
+                    {order.technicalConclusion && (
+                      <p className="flex items-start text-xs text-muted-foreground">
+                        <Check className="mr-2 mt-0.5 h-3 w-3 flex-shrink-0 text-green-600" />
+                        <span className="font-medium mr-1">Conclusão Téc.:</span>
+                        <span className="whitespace-pre-wrap break-words">{order.technicalConclusion}</span>
+                      </p>
+                    )}
+                  </CardContent>
                 </div>
-                {order.phase !== 'Concluída' && order.phase !== 'Cancelada' && (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    onClick={(e) => { e.stopPropagation(); handleOpenConclusionModal(order); }}
-                    disabled={isMutating || concludeServiceOrderMutation.isPending}
-                    className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
-                  >
-                    <Check className="mr-1.5 h-3.5 w-3.5" /> Concluir OS
-                  </Button>
-                )}
-              </CardFooter>
-            </Card>
-          )})}
+                <CardFooter className="border-t pt-4 flex flex-wrap gap-2 justify-end">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handlePrintForTechnician(order);}}
+                        disabled={isLoadingGoldmaqCompany || isMutating}
+                        className="border-primary text-primary hover:bg-primary/10"
+                    >
+                        <Printer className="mr-2 h-4 w-4" /> Técnico
+                    </Button>
+                    {order.phase === 'Concluída' && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handlePrintForCustomer(order);}}
+                            disabled={isLoadingGoldmaqCompany || isMutating}
+                            className="border-primary text-primary hover:bg-primary/10"
+                        >
+                            <Printer className="mr-2 h-4 w-4" /> Cliente
+                        </Button>
+                    )}
+                     {!isOrderConcludedOrCancelled && (
+                        <>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleOpenConclusionModal(order); }}
+                                disabled={isMutating}
+                                className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700"
+                            >
+                                <Check className="mr-2 h-4 w-4" /> Concluir OS
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleOpenCancelModal(order); }}
+                                disabled={isMutating}
+                                className="border-destructive text-destructive hover:bg-destructive/10"
+                            >
+                                <X className="mr-2 h-4 w-4" /> Cancelar OS
+                            </Button>
+                        </>
+                    )}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
 
       <FormModal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingOrder ? "Editar Ordem de Serviço" : "Criar Nova Ordem de Serviço"}
-        description="Gerencie os detalhes da ordem de serviço."
+        title={editingOrder ? `Editar OS: ${editingOrder.orderNumber}` : "Nova Ordem de Serviço"}
+        description="Preencha os detalhes da ordem de serviço."
         formId="service-order-form"
         isSubmitting={isMutating}
         editingItem={editingOrder}
         onDeleteConfirm={handleModalDeleteConfirm}
         isDeleting={deleteServiceOrderMutation.isPending}
         deleteButtonLabel="Excluir OS"
-        submitButtonLabel={editingOrder && !isEditMode ? undefined : (editingOrder ? "Salvar Alterações" : "Criar OS")}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
-            <fieldset disabled={(!!editingOrder && !isEditMode) || isOrderConcludedOrCancelled}>
+            <fieldset disabled={!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="orderNumber" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Número da Ordem</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Gerado automaticamente" {...field} readOnly />
-                    </FormControl>
-                    <FormDescription>Este número é gerado automaticamente.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                  <FormItem><FormLabel>Número da OS</FormLabel><FormControl><Input {...field} readOnly className="bg-muted/50" /></FormControl><FormMessage /></FormItem>
                 )} />
-
                 <FormField control={form.control} name="customerId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cliente</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ""} >
-                      <FormControl><SelectTrigger>
-                        <SelectValue placeholder={isLoadingCustomers ? "Carregando..." : "Selecione o Cliente"} />
-                      </SelectTrigger></FormControl>
+                  <FormItem><FormLabel>Cliente</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={!!editingOrder}>
+                      <FormControl><SelectTrigger><SelectValue placeholder={isLoadingCustomers ? "Carregando..." : "Selecione o cliente"} /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {isLoadingCustomers ? <SelectItem value="loading" disabled>Carregando...</SelectItem> :
-                         customers.map(customer => (
-                          <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
-                        ))}
+                        {customers.map(cust => <SelectItem key={cust.id} value={cust.id}>{cust.name} ({cust.cnpj})</SelectItem>)}
                       </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
-
-              {selectedCustomerId && !isLoadingCustomers && customers.find(c => c.id === selectedCustomerId) && (
-                <div className="mt-2 p-3 border rounded-md bg-muted/20 text-sm space-y-1">
-                  <h4 className="font-semibold mb-1 text-xs text-muted-foreground uppercase">Detalhes do Cliente Selecionado:</h4>
-                  <p><strong>Nome:</strong> {toTitleCase(customers.find(c => c.id === selectedCustomerId)?.name || 'N/A')}</p>
-                  <p><strong>Endereço:</strong> {formatAddressForDisplay(customers.find(c => c.id === selectedCustomerId))}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="equipmentId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Equipamento</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value || NO_EQUIPMENT_SELECTED_VALUE}
-                    >
-                      <FormControl><SelectTrigger>
-                        <SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (filteredEquipmentList.length === 0 && !selectedCustomerId ? "Nenhum equipamento da frota disponível" : "Selecione o Equipamento")} />
-                      </SelectTrigger></FormControl>
-                      <SelectContent>
-                        {isLoadingEquipment ? (
-                          <SelectItem value={LOADING_EQUIPMENT_SELECT_ITEM_VALUE} disabled>Carregando...</SelectItem>
-                         ) : filteredEquipmentList.length === 0 ? (
-                          <SelectItem value={NO_EQUIPMENT_SELECTED_VALUE} disabled>
-                            {selectedCustomerId ? "Nenhum equipamento para este cliente ou disponível na frota" : "Nenhum equipamento da frota disponível/em manutenção"}
-                          </SelectItem>
-                         ) : (
-                          <>
-                            <SelectItem value={NO_EQUIPMENT_SELECTED_VALUE}>Selecione um equipamento</SelectItem>
-                            {filteredEquipmentList.map(eq => (
-                              <SelectItem key={eq.id} value={eq.id}>{eq.brand} {eq.model} (Chassi: {eq.chassisNumber})</SelectItem>
-                            ))}
-                          </>
-                         )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                {formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && !isLoadingEquipment && (
-                  <Card className="md:col-span-2 bg-muted/30 p-3 my-2">
-                    <CardHeader className="p-0 pb-2 mb-2 border-b">
-                      <CardTitle className="text-sm font-medium">Detalhes do Equipamento Selecionado</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0 text-xs space-y-1">
-                      {(() => {
-                        const selectedEquipment = equipmentList.find(eq => eq.id === formEquipmentId);
-                        if (!selectedEquipment) return <p>Carregando detalhes...</p>;
-                        return (
-                          <>
-                            <p><strong>Marca:</strong> {toTitleCase(selectedEquipment.brand)}</p>
-                            <p><strong>Modelo:</strong> {toTitleCase(selectedEquipment.model)}</p>
-                            <p><strong>Nº Chassi:</strong> {selectedEquipment.chassisNumber || "N/A"}</p>
-                            <p><strong>Ano Fabricação:</strong> {selectedEquipment.manufactureYear || "N/A"}</p>
-                          </>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
-                )}
-
-
-                <FormField control={form.control} name="phase" render={({ field }) => (
-                  <FormItem><FormLabel>Fase</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={isOrderConcludedOrCancelled}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
-                      <SelectContent>{serviceOrderPhaseOptions.map(opt => <SelectItem key={opt} value={opt} disabled={(opt === 'Concluída' || opt === 'Cancelada') && editingOrder?.phase !== opt}>{opt}</SelectItem>)}</SelectContent>
                     </Select><FormMessage />
                   </FormItem>
                 )} />
-
-                <FormField control={form.control} name="technicianId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Técnico (Opcional)</FormLabel>
-                    <Select
-                      onValueChange={(selectedValue) => field.onChange(selectedValue === NO_TECHNICIAN_SELECTED_VALUE ? null : selectedValue)}
-                      value={field.value ?? NO_TECHNICIAN_SELECTED_VALUE}
-                    >
-                      <FormControl><SelectTrigger>
-                        <SelectValue placeholder={isLoadingTechnicians ? "Carregando..." : "Atribuir Técnico (Opcional)"} />
-                      </SelectTrigger></FormControl>
-                      <SelectContent>
-                        {isLoadingTechnicians ? (
-                          <SelectItem value={LOADING_TECHNICIANS_SELECT_ITEM_VALUE} disabled>Carregando...</SelectItem>
-                        ) : (
-                          <>
-                            <SelectItem value={NO_TECHNICIAN_SELECTED_VALUE}>Não atribuir / Opcional</SelectItem>
-                            {technicians.map(tech => (
-                              <SelectItem key={tech.id} value={tech.id}>{tech.name}</SelectItem>
-                            ))}
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <FormField control={form.control} name="serviceType" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo de Serviço</FormLabel>
-                    <Select onValueChange={handleServiceTypeChange} value={field.value} >
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {serviceTypeOptionsList.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                        <SelectItem value={CUSTOM_SERVICE_TYPE_VALUE}>Outro (Especificar)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {showCustomServiceType && (
-                      <FormField control={form.control} name="customServiceType" render={({ field: customField }) => (
-                       <FormItem className="mt-2">
-                          <FormControl><Input placeholder="Digite o tipo de serviço" {...customField} value={customField.value ?? ""}  /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-
-                <FormField control={form.control} name="vehicleId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Veículo (Opcional)</FormLabel>
-                    <Select
-                      onValueChange={(selectedValue) => field.onChange(selectedValue === NO_VEHICLE_SELECTED_VALUE ? null : selectedValue)}
-                      value={field.value ?? NO_VEHICLE_SELECTED_VALUE}
-                    >
-                      <FormControl><SelectTrigger>
-                        <SelectValue placeholder={isLoadingVehicles ? "Carregando..." : "Selecione o Veículo"} />
-                      </SelectTrigger></FormControl>
-                      <SelectContent>
-                        {isLoadingVehicles ? (
-                          <SelectItem value={LOADING_VEHICLES_SELECT_ITEM_VALUE} disabled>Carregando...</SelectItem>
-                         ) : (
-                          <>
-                            <SelectItem value={NO_VEHICLE_SELECTED_VALUE}>Nenhum</SelectItem>
-                            {vehicles.map(vehicle => (
-                              <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.model} ({vehicle.licensePlate})</SelectItem>
-                            ))}
-                          </>
-                         )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <FormField control={form.control} name="startDate" render={({ field }) => (
-                  <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""}  /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="endDate" render={({ field }) => (
-                  <FormItem><FormLabel>Data de Conclusão (Prevista)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""}  /></FormControl><FormMessage /></FormItem>
-                )} />
               </div>
-
-              <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Custos da Viagem (Opcional)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <FormField control={form.control} name="estimatedTravelDistanceKm" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel className="flex items-center">
-                          Distância Viagem (km - total)
-                          {isCalculatingDistance && <Loader2 className="h-4 w-4 animate-spin ml-2 text-primary" />}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="any"
-                            placeholder="Ex: 120.5"
-                            {...field}
-                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
-                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
-                          />
-                        </FormControl>
-                         <FormDescription>Pode ser preenchido automaticamente ou manualmente.</FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                 )} />
-                 <FormField control={form.control} name="estimatedTollCosts" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center">
-                        Custo Pedágios (R$)
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button type="button" className="ml-1.5 p-0 border-0 bg-transparent cursor-help" onClick={e => e.preventDefault()}>
-                               <Brain className="h-3 w-3 text-muted-foreground hover:text-primary" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs text-xs">
-                            <p>Pode ser estimado pela IA (se disponível e &gt; R$0) ou preenchido manualmente. A estimativa da IA é aproximada.</p>
-                          </TooltipContent>
-                       </Tooltip>
-                      </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="any"
-                            placeholder="Ex: 25.50"
-                            {...field}
-                            onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
-                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                 )} />
-              </div>
-                <FormField control={form.control} name="estimatedTravelCost" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Custo Estimado da Viagem (R$)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="any"
-                            {...field}
-                            readOnly
-                            placeholder="Calculado automaticamente"
-                            value={field.value === null || field.value === undefined ? '' : String(field.value)}
-                            className="bg-muted/50"
-                          />
-                        </FormControl>
-                        <FormDescription>Custo total = (Distância Ida/Volta * Custo/km do Veículo) + Pedágios (Ida/Volta).</FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                )} />
-
-
-              <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Detalhes do Serviço</h3>
+              <FormField control={form.control} name="equipmentId" render={({ field }) => (
+                <FormItem><FormLabel>Máquina</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCustomerId || !!editingOrder}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (selectedCustomerId ? "Selecione a máquina" : "Selecione um cliente primeiro")} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value={NO_EQUIPMENT_SELECTED_VALUE} disabled>
+                        {selectedCustomerId ? "Selecione uma máquina" : "Selecione um cliente"}
+                      </SelectItem>
+                      {filteredEquipmentList.map(eq => <SelectItem key={eq.id} value={eq.id}>{eq.brand} {eq.model} (Chassi: {eq.chassisNumber})</SelectItem>)}
+                    </SelectContent>
+                  </Select><FormMessage />
+                </FormItem>
+              )} />
               <FormField control={form.control} name="requesterName" render={({ field }) => (
+                <FormItem><FormLabel>Nome do Solicitante (Opcional)</FormLabel><FormControl><Input placeholder="Quem abriu o chamado no cliente" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={form.control} name="phase" render={({ field }) => (
+                  <FormItem><FormLabel>Fase da OS</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={isOrderConcludedOrCancelled && !!editingOrder}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {serviceOrderPhaseOptions.map(phase => <SelectItem key={phase} value={phase}>{phase}</SelectItem>)}
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+                 <FormField control={form.control} name="technicianId" render={({ field }) => (
+                  <FormItem><FormLabel>Técnico Responsável</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || NO_TECHNICIAN_SELECTED_VALUE}>
+                      <FormControl><SelectTrigger><SelectValue placeholder={isLoadingTechnicians ? "Carregando..." : "Selecione um técnico"} /></SelectTrigger></FormControl>
+                      <SelectContent>
+                         <SelectItem value={NO_TECHNICIAN_SELECTED_VALUE}>Não Atribuído</SelectItem>
+                        {technicians.map(tech => <SelectItem key={tech.id} value={tech.id}>{tech.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select><FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+               <FormField control={form.control} name="serviceType" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nome do Solicitante (Opcional)</FormLabel>
-                  <FormControl><Input placeholder="Nome da pessoa que solicitou o serviço" {...field} value={field.value ?? ""}  /></FormControl>
+                  <FormLabel>Tipo de Serviço</FormLabel>
+                  <Select onValueChange={handleServiceTypeChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o tipo de serviço" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {serviceTypeOptionsList.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                      <SelectItem value={CUSTOM_SERVICE_TYPE_VALUE}>Outro (Especificar)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {showCustomServiceType && (
+                    <FormField control={form.control} name="customServiceType" render={({ field: customField }) => (
+                      <FormItem className="mt-2"><FormControl><Input placeholder="Especifique o tipo de serviço" {...customField} value={customField.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                  )}
                   <FormMessage />
                 </FormItem>
               )} />
 
-              <FormField control={form.control} name="description" render={({ field }) => (
-                <FormItem><FormLabel>Problema Relatado</FormLabel><FormControl><Textarea placeholder="Descreva o problema relatado pelo cliente ou identificado" {...field} value={field.value ?? ""}  /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="vehicleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Veículo Utilizado (Opcional)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || NO_VEHICLE_SELECTED_VALUE}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={isLoadingVehicles ? "Carregando..." : "Selecione um veículo"} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value={NO_VEHICLE_SELECTED_VALUE}>Nenhum / Não se aplica</SelectItem>
+                      {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.model} ({v.licensePlate})</SelectItem>)}
+                    </SelectContent>
+                  </Select><FormMessage />
+                </FormItem>
               )} />
-            </fieldset>
 
-            <div className="pt-4 space-y-2">
-              {editingOrder && isEditMode && !isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada' && (
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button type="button" variant="destructive" onClick={() => handleOpenCancelConfirmModal(editingOrder)} disabled={isMutating} className="w-full sm:w-auto">
-                    <Ban className="mr-2 h-4 w-4" /> Cancelar OS
-                  </Button>
-                </div>
-              )}
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={form.control} name="startDate" render={({ field }) => (
+                  <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="endDate" render={({ field }) => (
+                  <FormItem><FormLabel>Data de Conclusão Prevista (Opcional)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={form.control} name="estimatedTravelDistanceKm" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Distância Estimada Viagem (km, ida e volta)</FormLabel>
+                        <div className="flex items-center gap-2">
+                            <FormControl>
+                                <Input type="number" step="0.1" placeholder="Ex: 120.5" {...field}
+                                       onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
+                                       value={field.value ?? ""}
+                                />
+                            </FormControl>
+                             <Button type="button" variant="ghost" size="icon" onClick={() => form.setValue('estimatedTravelDistanceKm', null)} disabled={isCalculatingDistance}>
+                                {isCalculatingDistance ? <Loader2 className="h-4 w-4 animate-spin"/> : <Brain className="h-4 w-4"/>}
+                                <span className="sr-only">Recalcular Distância com IA</span>
+                            </Button>
+                        </div>
+                        <FormDescription>Preenchido automaticamente ou manualmente.</FormDescription>
+                        <FormMessage/>
+                    </FormItem>
+                )}/>
+                <FormField control={form.control} name="estimatedTollCosts" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Custos de Pedágio Estimados (R$, ida e volta)</FormLabel>
+                         <div className="flex items-center gap-2">
+                            <FormControl>
+                                <Input type="number" step="0.01" placeholder="Ex: 25.50" {...field}
+                                      onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
+                                      value={field.value ?? ""}
+                                />
+                            </FormControl>
+                             <Button type="button" variant="ghost" size="icon" onClick={() => form.setValue('estimatedTollCosts', null)} disabled={isCalculatingDistance}>
+                                {isCalculatingDistance ? <Loader2 className="h-4 w-4 animate-spin"/> : <Brain className="h-4 w-4"/>}
+                                <span className="sr-only">Recalcular Pedágio com IA</span>
+                            </Button>
+                        </div>
+                        <FormDescription>Estimado pela IA se a rota tiver pedágios.</FormDescription>
+                        <FormMessage/>
+                    </FormItem>
+                )}/>
+              </div>
+               <FormField control={form.control} name="estimatedTravelCost" render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Custo Total de Viagem Estimado (R$)</FormLabel>
+                    <FormControl>
+                        <Input type="number" step="0.01" {...field}
+                              value={field.value ?? ""}
+                              readOnly
+                              className="bg-muted/50"
+                        />
+                    </FormControl>
+                    <FormDescription>Calculado: (Distância * Custo/km Veículo) + Pedágios.</FormDescription>
+                    <FormMessage/>
+                </FormItem>
+              )}/>
 
 
-            <FormItem>
-              <FormLabel>Anexos (Foto/Vídeo/PDF - Opcional){(isEditMode || !editingOrder) ? ` - Máx ${MAX_FILES_ALLOWED} arquivos.` : ''}</FormLabel>
-              {editingOrder && formMediaUrls && formMediaUrls.length > 0 && (
-                <div className="mb-2">
-                  <p className="text-sm font-medium mb-1">Anexos Existentes ({formMediaUrls.length}):</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    {formMediaUrls.map((mediaUrl, index) => (
-                      typeof mediaUrl === 'string' && (
-                        <li key={`existing-${index}-${mediaUrl}`} className="flex items-center justify-between text-sm">
-                          <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-grow mr-2" title={`Ver Mídia: ${getFileNameFromUrl(mediaUrl)}`}>
-                            <LinkIconLI className="h-3 w-3 inline-block mr-1"/> {getFileNameFromUrl(mediaUrl)}
-                          </a>
-                        </li>
-                      )
-                    ))}
-                  </ul>
-                  {isEditMode && !isOrderConcludedOrCancelled && (
-                    <Button variant="link" size="sm" className="text-red-500 mt-1 p-0 h-auto" onClick={handleRemoveAllExistingAttachments} disabled={isMutating}>
-                        Remover Todos os Anexos Existentes
-                    </Button>
-                  )}
-                </div>
-              )}
+              <FormField control={form.control} name="description" render={({ field }) => (
+                <FormItem><FormLabel>Problema Relatado / Descrição do Serviço</FormLabel><FormControl><Textarea placeholder="Descreva o problema ou o serviço a ser realizado" {...field} rows={4} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem><FormLabel>Observações Internas (Opcional)</FormLabel><FormControl><Textarea placeholder="Notas internas, detalhes adicionais, etc." {...field} value={field.value ?? ""} rows={3} /></FormControl><FormMessage /></FormItem>
+              )} />
 
-              {isEditMode && !isOrderConcludedOrCancelled && (
+              <FormItem>
+                <FormLabel>Mídia (Fotos/Vídeos - Máx. {MAX_FILES_ALLOWED} arquivos)</FormLabel>
                 <FormControl>
                   <Input
                     type="file"
-                    accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                    onChange={handleFileSelection}
-                    className={cn("mt-1", {
-                      "border-red-500": (formMediaUrls?.length || 0) + mediaFiles.length > MAX_FILES_ALLOWED,
-                    })}
                     multiple
-                    disabled={isMutating || isUploadingFile || (formMediaUrls?.length || 0) >= MAX_FILES_ALLOWED}
+                    accept="image/*,video/*"
+                    onChange={handleFileChange}
+                    disabled={(formMediaUrls?.length || 0) + mediaFiles.length >= MAX_FILES_ALLOWED || (isOrderConcludedOrCancelled && !!editingOrder)}
                   />
                 </FormControl>
-              )}
-
-              {isEditMode && !isOrderConcludedOrCancelled && mediaFiles.length > 0 && (
-                <FormDescription className="mt-2 text-sm text-muted-foreground">
-                  Novos arquivos selecionados ({mediaFiles.length}): {mediaFiles.map(file => file.name).join(', ')}. <br />
-                  Total de anexos após salvar: {(formMediaUrls?.length || 0) + mediaFiles.length} / {MAX_FILES_ALLOWED}.
+                <FormDescription>
+                  Arquivos selecionados para upload: {mediaFiles.length}.
+                  Arquivos existentes: {formMediaUrls?.length || 0}.
+                  Total: {(formMediaUrls?.length || 0) + mediaFiles.length} de {MAX_FILES_ALLOWED}.
                 </FormDescription>
-              )}
-              {isEditMode && !isOrderConcludedOrCancelled && ((formMediaUrls?.length || 0) + mediaFiles.length) > MAX_FILES_ALLOWED && (
-                <p className="text-sm font-medium text-destructive mt-1">Limite de ${MAX_FILES_ALLOWED} arquivos excedido.</p>
-              )}
-              <FormMessage />
-            </FormItem>
-
-            <fieldset disabled={(!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled) || (isOrderConcludedOrCancelled && !isEditMode) }>
-              {editingOrder && (isOrderConcludedOrCancelled || (editingOrder.phase === 'Concluída' && !isEditMode)) && (
-                  <FormField control={form.control} name="technicalConclusion" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Conclusão Técnica</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Nenhuma conclusão técnica registrada."
-                          {...field}
-                          value={field.value ?? ""}
-                          readOnly={!isEditMode || editingOrder.phase === 'Cancelada'}
-                          rows={3}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                )}
-              <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Observações adicionais, peças utilizadas, etc." {...field} value={field.value ?? ""} readOnly={!isEditMode && isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada'} /></FormControl><FormMessage /></FormItem>
-              )} />
+                <div className="mt-2 space-y-2">
+                  {formMediaUrls?.map((url, index) => (
+                    <div key={`existing-${index}`} className="flex items-center justify-between p-2 border rounded-md bg-muted/50 text-sm">
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex items-center gap-1">
+                        <LinkIconLI className="h-3 w-3"/> {getFileNameFromUrl(url)} (Salvo)
+                      </a>
+                      {(!isOrderConcludedOrCancelled || !editingOrder) && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveExistingUrl(url)} className="text-destructive hover:text-destructive">
+                          <XCircle className="h-4 w-4 mr-1"/> Remover
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {mediaFiles.map((file, index) => (
+                    <div key={`new-${index}`} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                      <span className="truncate">{file.name} (Novo)</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveNewFile(index)} className="text-destructive hover:text-destructive">
+                        <XCircle className="h-4 w-4 mr-1"/> Remover
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <FormMessage />
+              </FormItem>
             </fieldset>
           </form>
         </Form>
@@ -1941,68 +1576,50 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       <AlertDialog open={isConclusionModalOpen} onOpenChange={setIsConclusionModalOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Concluir Ordem de Serviço</AlertDialogTitle>
+            <AlertDialogTitle>Concluir Ordem de Serviço: {editingOrder?.orderNumber}</AlertDialogTitle>
             <AlertDialogDescription>
-              Por favor, forneça a conclusão técnica para esta Ordem de Serviço. Esta ação marcará a OS como "Concluída".
+              Descreva a conclusão técnica do serviço. Esta informação será registrada e poderá ser usada no recibo do cliente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
-            <Label htmlFor="technical-conclusion-input" className="text-sm font-medium">
+            <Label htmlFor="technical-conclusion" className="text-sm font-medium">
               Conclusão Técnica
             </Label>
             <Textarea
-              id="technical-conclusion-input"
+              id="technical-conclusion"
               value={technicalConclusionText}
               onChange={(e) => setTechnicalConclusionText(e.target.value)}
-              placeholder="Descreva a solução aplicada, peças trocadas, e o estado final do equipamento."
+              placeholder="Detalhe os serviços realizados e a solução aplicada..."
               rows={5}
               className="mt-1"
             />
-            {concludeServiceOrderMutation.isError && (
-                <p className="text-sm text-destructive mt-2">
-                    Erro: {(concludeServiceOrderMutation.error as Error)?.message || "Não foi possível concluir a OS."}
-                </p>
-            )}
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsConclusionModalOpen(false)} disabled={concludeServiceOrderMutation.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleFinalizeConclusion} disabled={concludeServiceOrderMutation.isPending || !technicalConclusionText.trim()}>
-              {concludeServiceOrderMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : <Check className="mr-2 h-4 w-4" />}
-              Finalizar Conclusão
+            <AlertDialogCancel onClick={() => setIsConclusionModalOpen(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmConclusion} disabled={!technicalConclusionText.trim()} className={buttonVariants({className: "bg-green-600 hover:bg-green-700"})}>
+              <Check className="mr-2 h-4 w-4"/> Concluir OS
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={isCancelConfirmModalOpen} onOpenChange={setIsCancelConfirmModalOpen}>
+       <AlertDialog open={isCancelConfirmModalOpen} onOpenChange={setIsCancelConfirmModalOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar Ordem de Serviço</AlertDialogTitle>
+            <AlertDialogTitle>Cancelar Ordem de Serviço: {editingOrder?.orderNumber}</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja cancelar esta Ordem de Serviço? A fase será alterada para "Cancelada".
-              Esta ação não pode ser desfeita facilmente.
+              Tem certeza que deseja cancelar esta Ordem de Serviço? Esta ação não pode ser desfeita e marcará a OS como 'Cancelada'.
             </AlertDialogDescription>
           </AlertDialogHeader>
-           {cancelServiceOrderMutation.isError && (
-                <p className="text-sm text-destructive mt-2">
-                    Erro: {(cancelServiceOrderMutation.error as Error)?.message || "Não foi possível cancelar a OS."}
-                </p>
-            )}
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsCancelConfirmModalOpen(false)} disabled={cancelServiceOrderMutation.isPending}>Voltar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleFinalizeCancellation}
-              disabled={cancelServiceOrderMutation.isPending}
-              className={buttonVariants({variant: "destructive"})}
-            >
-              {cancelServiceOrderMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : <Ban className="mr-2 h-4 w-4" />}
-              Confirmar Cancelamento
+            <AlertDialogCancel onClick={() => setIsCancelConfirmModalOpen(false)}>Manter OS</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmCancel} className={buttonVariants({variant: "destructive"})}>
+               <Ban className="mr-2 h-4 w-4"/> Confirmar Cancelamento
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+
     </TooltipProvider>
   );
 }
-
