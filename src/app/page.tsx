@@ -3,14 +3,15 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal, ArrowRight, PackageSearch } from "lucide-react";
+import { Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal, ArrowRight, PackageSearch, FileText } from "lucide-react";
 
 const quickLinks = [
   { title: "Clientes", href: "/customers", icon: Users, description: "Gerenciar informações de clientes" },
   { title: "Máquinas", href: "/maquinas", icon: Construction, description: "Rastrear máquinas e equipamentos" },
   { title: "Equip. Auxiliares", href: "/auxiliary-equipment", icon: PackageSearch, description: "Controlar baterias, carregadores, etc." },
   { title: "Ordens de Serviço", href: "/service-orders", icon: ClipboardList, description: "Supervisionar operações de serviço" },
-  { title: "Técnicos / Colaboradores", href: "/technicians", icon: HardHat, description: "Manter registro de colaboradores" }, // Updated title and description
+  { title: "Orçamentos", href: "/budgets", icon: FileText, description: "Criar e gerenciar orçamentos" },
+  { title: "Técnicos / Colaboradores", href: "/technicians", icon: HardHat, description: "Manter registro de colaboradores" },
   { title: "Veículos", href: "/vehicles", icon: CarFront, description: "Administrar dados de veículos" },
   { title: "Dados das Empresas", href: "/company-config", icon: SlidersHorizontal, description: "Definir detalhes das empresas do grupo" },
 ];

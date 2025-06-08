@@ -180,13 +180,49 @@ export interface AuxiliaryEquipment {
   notes?: string | null;
 }
 
+export const budgetStatusOptions = [
+  "Pendente", "Enviado", "Aprovado", "Recusado", "Cancelado"
+] as const;
+export type BudgetStatusType = typeof budgetStatusOptions[number];
+
+export interface BudgetItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice?: number; // Será calculado
+}
+
+export interface Budget {
+  id: string;
+  budgetNumber: string;
+  serviceOrderId: string; // ID da Ordem de Serviço vinculada
+  customerId: string; // Redundante para facilitar busca, mas virá da OS
+  equipmentId: string; // Redundante, virá da OS
+  status: BudgetStatusType;
+  items: BudgetItem[];
+  shippingCost?: number | null;
+  subtotal?: number; // Soma dos items.totalPrice
+  totalAmount?: number; // subtotal + shippingCost
+  createdDate: string; // ISO string
+  validUntilDate?: string | null; // ISO string
+  notes?: string | null;
+  // Informações que podem ser úteis para exibição e contato, buscadas separadamente:
+  // customerName?: string;
+  // customerEmail?: string;
+  // customerPhone?: string;
+  // equipmentDetails?: string; // Ex: "Toyota 8FGCU25 (Chassi: 12345)"
+}
+
 
 import { z } from 'zod';
-import { formatISO, parseISO } from 'date-fns';
+import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
+
+const requiredString = (field: string) => z.string().min(1, `${field} é obrigatório`);
 
 export const CustomerSchema = z.object({
-  name: z.string().min(1, "Nome é obrigatório"),
-  cnpj: z.string().min(1, "CNPJ é obrigatório"),
+  name: requiredString("Nome"),
+  cnpj: requiredString("CNPJ"),
   email: z.string().email("Endereço de email inválido"),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
   contactName: z.string().optional(),
@@ -196,11 +232,11 @@ export const CustomerSchema = z.object({
     .nullable()
     .transform(val => val ? val.replace(/\D/g, '') : null)
     .transform(val => val && val.length === 8 ? `${val.slice(0,5)}-${val.slice(5)}` : val),
-  street: z.string().min(1, "Rua é obrigatória"),
+  street: requiredString("Rua"),
   number: z.string().optional(),
   complement: z.string().optional(),
-  neighborhood: z.string().min(1, "Bairro é obrigatório"),
-  city: z.string().min(1, "Cidade é obrigatória"),
+  neighborhood: requiredString("Bairro"),
+  city: requiredString("Cidade"),
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória e deve ter 2 caracteres"),
   preferredTechnician: z.string().nullable().optional(),
   notes: z.string().optional(),
@@ -212,10 +248,10 @@ const ownerReferenceSchema = z.union([
 ]);
 
 export const MaquinaSchema = z.object({
-  brand: z.string().min(1, "Marca é obrigatória"),
-  model: z.string().min(1, "Modelo é obrigatório"),
-  chassisNumber: z.string().min(1, "Número do chassi é obrigatório"),
-  equipmentType: z.string().min(1, "Tipo de máquina é obrigatório"),
+  brand: requiredString("Marca"),
+  model: requiredString("Modelo"),
+  chassisNumber: requiredString("Número do chassi"),
+  equipmentType: requiredString("Tipo de máquina"),
   manufactureYear: z.coerce.number().min(1900, "Ano inválido").max(new Date().getFullYear() + 1, "Ano inválido").nullable(),
   operationalStatus: z.enum(maquinaOperationalStatusOptions),
   customerId: z.string().nullable().optional(),
@@ -249,8 +285,8 @@ export const MaquinaSchema = z.object({
 
 
 export const TechnicianSchema = z.object({
-  name: z.string().min(1, "Nome é obrigatório"),
-  role: z.string().min(1, "Cargo é obrigatório"),
+  name: requiredString("Nome"),
+  role: requiredString("Cargo"),
   specialization: z.string().optional(),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
 });
@@ -273,9 +309,9 @@ export const FuelingRecordSchema = z.object({
 });
 
 export const VehicleSchema = z.object({
-  model: z.string().min(1, "Modelo é obrigatório"),
-  licensePlate: z.string().min(1, "Placa é obrigatória"),
-  kind: z.string().min(1, "Tipo de veículo é obrigatório"),
+  model: requiredString("Modelo"),
+  licensePlate: requiredString("Placa"),
+  kind: requiredString("Tipo de veículo"),
   currentMileage: z.coerce.number().min(0, "Quilometragem deve ser um número não negativo"),
   fuelConsumption: z.coerce.number().min(0, "Consumo de combustível deve ser um número não negativo"),
   costPerKilometer: z.coerce.number().min(0, "Custo por quilômetro deve ser um número não negativo"),
@@ -286,18 +322,18 @@ export const VehicleSchema = z.object({
 });
 
 export const ServiceOrderSchema = z.object({
-  orderNumber: z.string().min(1, "Número da ordem é obrigatório"),
-  customerId: z.string().min(1, "Cliente é obrigatório"),
-  equipmentId: z.string().min(1, "Máquina é obrigatória"),
+  orderNumber: requiredString("Número da ordem"),
+  customerId: requiredString("Cliente"),
+  equipmentId: requiredString("Máquina"),
   requesterName: z.string().optional().nullable(),
   phase: z.enum(serviceOrderPhaseOptions),
   technicianId: z.string().nullable().optional(),
-  serviceType: z.string().min(1, "Tipo de serviço é obrigatório"),
+  serviceType: requiredString("Tipo de serviço"),
   customServiceType: z.string().optional(),
   vehicleId: z.string().nullable().optional(),
-  startDate: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), "Data de início inválida"),
-  endDate: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), "Data de conclusão inválida"),
-  description: z.string().min(1, "Problema relatado é obrigatório"),
+  startDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de início inválida"),
+  endDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de conclusão inválida"),
+  description: requiredString("Problema relatado"),
   notes: z.string().optional().nullable(),
   mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
   technicalConclusion: z.string().nullable().optional(),
@@ -317,15 +353,15 @@ export const ServiceOrderSchema = z.object({
 
 export const CompanySchema = z.object({
   id: z.enum(companyIds),
-  name: z.string().min(1, "Nome da empresa é obrigatório"),
-  cnpj: z.string().min(1, "CNPJ é obrigatório"),
-  street: z.string().min(1, "Rua é obrigatória"),
+  name: requiredString("Nome da empresa"),
+  cnpj: requiredString("CNPJ"),
+  street: requiredString("Rua"),
   number: z.string().optional(),
   complement: z.string().optional(),
-  neighborhood: z.string().min(1, "Bairro é obrigatório"),
-  city: z.string().min(1, "Cidade é obrigatória"),
+  neighborhood: requiredString("Bairro"),
+  city: requiredString("Cidade"),
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória"),
-  cep: z.string().min(1, "CEP é obrigatório").regex(/^\d{5}-?\d{3}$/, "CEP inválido. Use XXXXX-XXX."),
+  cep: requiredString("CEP").regex(/^\d{5}-?\d{3}$/, "CEP inválido. Use XXXXX-XXX."),
   bankName: z.string().optional(),
   bankAgency: z.string().optional(),
   bankAccount: z.string().optional(),
@@ -333,8 +369,8 @@ export const CompanySchema = z.object({
 });
 
 export const AuxiliaryEquipmentSchema = z.object({
-  name: z.string().min(1, "Nome do equipamento auxiliar é obrigatório"),
-  type: z.string().min(1, "Tipo é obrigatório"),
+  name: requiredString("Nome do equipamento auxiliar"),
+  type: requiredString("Tipo"),
   customType: z.string().optional(),
   serialNumber: z.string().optional().nullable(),
   status: z.enum(auxiliaryEquipmentStatusOptions, { required_error: "Status é obrigatório" }),
@@ -349,6 +385,31 @@ export const AuxiliaryEquipmentSchema = z.object({
   path: ["customType"],
 });
 
+
+export const BudgetItemSchema = z.object({
+  id: z.string().min(1, "ID do item é obrigatório (normalmente UUID)"),
+  description: requiredString("Descrição do item"),
+  quantity: z.coerce.number().min(0.01, "Quantidade deve ser maior que zero"),
+  unitPrice: z.coerce.number().min(0, "Preço unitário não pode ser negativo"),
+  totalPrice: z.coerce.number().optional(), // Será calculado, não precisa de validação aqui se for sempre derivado
+});
+
+export const BudgetSchema = z.object({
+  budgetNumber: requiredString("Número do Orçamento"),
+  serviceOrderId: requiredString("Ordem de Serviço"),
+  customerId: requiredString("Cliente"),
+  equipmentId: requiredString("Equipamento"),
+  status: z.enum(budgetStatusOptions, { required_error: "Status do orçamento é obrigatório" }),
+  items: z.array(BudgetItemSchema).min(1, "Orçamento deve ter pelo menos um item"),
+  shippingCost: z.coerce.number().min(0, "Custo de frete não pode ser negativo").optional().nullable(),
+  subtotal: z.coerce.number().optional(), // Calculado
+  totalAmount: z.coerce.number().optional(), // Calculado
+  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida"),
+  validUntilDate: z.string().optional().nullable().refine(val => !val || isValidDate(parseISO(val)), "Data de validade inválida"),
+  notes: z.string().optional().nullable(),
+});
+
+
 // Type for the input of the calculate distance flow
 export interface CalculateDistanceInput {
   originAddress: string;
@@ -358,7 +419,7 @@ export interface CalculateDistanceInput {
 // Type for the output of the calculate distance flow
 export interface CalculateDistanceOutput {
   distanceKm: number;
-  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED';
+  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED' | 'ERROR_LLM_TOLL_ESTIMATION';
   errorMessage?: string;
   estimatedTollCostByAI?: number | null; // Estimativa de pedágio (apenas ida)
 }

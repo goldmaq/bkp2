@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Settings,
   PackageSearch,
+  FileText, // Ícone para Orçamentos
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -43,7 +44,8 @@ const navItems: NavItem[] = [
   { href: "/maquinas", icon: Construction, label: "Máquinas" },
   { href: "/auxiliary-equipment", icon: PackageSearch, label: "Equip. Auxiliares" },
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
-  { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" }, // Updated label
+  { href: "/budgets", icon: FileText, label: "Orçamentos" }, // Novo item Orçamentos
+  { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" },
   { href: "/vehicles", icon: CarFront, label: "Veículos" },
   { href: "/company-config", icon: SlidersHorizontal, label: "Dados das Empresas" },
 ];
