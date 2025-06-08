@@ -279,12 +279,12 @@ const getWhatsAppNumber = (phone?: string): string => {
 const formatPhoneNumberForDisplay = (phone?: string): string => {
   if (!phone) return "N/A";
   const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 11) {
+  if (cleaned.length === 11) { // Celular com 9º dígito
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-  } else if (cleaned.length === 10) {
+  } else if (cleaned.length === 10) { // Fixo ou celular sem 9º dígito
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
   }
-  return phone;
+  return phone; // Retorna o original se não bater com os formatos esperados
 };
 
 
@@ -787,7 +787,7 @@ export function ServiceOrderClientPage() {
   ): string => {
     let message = `Olá ${customer.name},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
-    message += `*Cliente:* ${customer.name} (CNPJ: ${customer.cnpj})\n`;
+    message += `*Cliente:* ${customer.name}\n`; // Removido CNPJ daqui
     message += `*Equipamento:* ${equipment.brand} ${equipment.model} (Chassi: ${equipment.chassisNumber})\n`;
     message += `*Fase Atual:* ${order.phase}\n`;
     message += `*Problema Relatado:* ${order.description}\n`;
@@ -899,7 +899,6 @@ export function ServiceOrderClientPage() {
                       {customerDetails.name}
                     </Link>
                   )}
-                  <span className="text-muted-foreground/80 ml-1">({customerDetails.cnpj || 'CNPJ não disp.'})</span>
                 </p>
                 {customerDetails.phone && (
                   <p className="flex items-center">
