@@ -501,9 +501,9 @@ export function BudgetClientPage() {
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
       };
       await updateDoc(budgetRef, dataToSave as { [x: string]: any });
-      return budgetData; 
+      return budgetData;
     },
-    onSuccess: (updatedBudgetData) => { 
+    onSuccess: (updatedBudgetData) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
       toast({ title: "Orçamento Atualizado", description: `Orçamento ${updatedBudgetData.budgetNumber} foi atualizado.` });
       closeModal();
@@ -536,12 +536,12 @@ export function BudgetClientPage() {
       if (!budgetSnap.exists()) throw new Error("Orçamento não encontrado.");
       const budgetData = budgetSnap.data() as Budget;
       await updateDoc(budgetRef, { status: newStatus });
-      return { budgetData, newStatus }; 
+      return { budgetData, newStatus };
     },
     onSuccess: ({ budgetData, newStatus }) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
       toast({ title: "Status Atualizado", description: `O orçamento foi atualizado para "${newStatus}".` });
-      
+
       if (budgetData.serviceOrderId && budgetData.serviceOrderId !== NO_SERVICE_ORDER_SELECTED) {
         if (newStatus === "Aprovado") {
           updateServiceOrderStatus(budgetData.serviceOrderId, "Autorizado, Aguardando Peça");
@@ -563,7 +563,7 @@ export function BudgetClientPage() {
   const openModal = useCallback((budget?: Budget) => {
     if (budget) {
       setEditingBudget(budget);
-      setIsEditMode(false);
+      setIsEditMode(true); // Open in edit mode for existing budgets
       form.reset({
         ...budget,
         createdDate: budget.createdDate ? format(parseISO(budget.createdDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0],
@@ -1134,5 +1134,3 @@ export function BudgetClientPage() {
     </>
   );
 }
-
-    
