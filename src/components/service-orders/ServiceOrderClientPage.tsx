@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon } from "lucide-react";
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails } from "lucide-react"; // Added Tag, Layers, CalendarIconDetails
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +40,7 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow"; // Import types from flow
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils"; // Import centralized utils
+import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber } from "@/lib/utils"; // Import centralized utils
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -82,7 +82,6 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
     console.error("fetchServiceOrders: Firebase DB is not available.");
     throw new Error("Firebase DB is not available");
   }
-  // Added limit(50) to fetch only the latest 50 service orders initially
   const q = query(collection(db, FIRESTORE_COLLECTION_NAME), orderBy("startDate", "desc"), orderBy("orderNumber", "desc"), limit(50));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => {
@@ -96,7 +95,7 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       phase: (serviceOrderPhaseOptions.includes(data.phase) ? data.phase : "Aguardando Avaliação Técnica") as ServiceOrderPhaseType,
       technicianId: data.technicianId || null,
       serviceType: data.serviceType || "Não especificado",
-      customServiceType: data.customServiceType, // Keep this if it's in Firestore
+      customServiceType: data.customServiceType, 
       vehicleId: data.vehicleId || null,
       startDate: data.startDate ? formatDateForInput(data.startDate) : undefined,
       endDate: data.endDate ? formatDateForInput(data.endDate) : undefined,
@@ -129,7 +128,23 @@ async function fetchEquipment(): Promise<Maquina[]> {
   }
   const q = query(collection(db, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"));
   const querySnapshot = await getDocs(q);
- return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Maquina));
+ return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      brand: data.brand || "Marca Desconhecida",
+      model: data.model || "Modelo Desconhecido",
+      chassisNumber: data.chassisNumber || "N/A",
+      equipmentType: (data.equipmentType || "Empilhadeira Contrabalançada GLP") as typeof maquinaTypeOptions[number] | string,
+      manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
+      operationalStatus: (data.operationalStatus || "Disponível") as typeof maquinaOperationalStatusOptions[number],
+      customerId: data.customerId || null,
+      ownerReference: data.ownerReference || null,
+      towerOpenHeightMm: parseNumericToNullOrNumber(data.towerOpenHeightMm),
+      towerClosedHeightMm: parseNumericToNullOrNumber(data.towerClosedHeightMm),
+      nominalCapacityKg: parseNumericToNullOrNumber(data.nominalCapacityKg),
+    } as Maquina;
+  });
 }
 
 async function fetchTechnicians(): Promise<Technician[]> {
@@ -229,7 +244,6 @@ const formatAddressToString = (addressSource: Customer | Company | null | undefi
     return parts;
 };
 
-// Upload and Delete file functions (specific to service orders)
 async function uploadServiceOrderFile(
   file: File,
   orderId: string
@@ -295,7 +309,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   });
 
   const selectedCustomerId = useWatch({ control: form.control, name: 'customerId' });
-  const selectedEquipmentId = useWatch({ control: form.control, name: 'equipmentId' });
+  const formEquipmentId = useWatch({ control: form.control, name: 'equipmentId' }); // Renamed to avoid conflict
   const formMediaUrls = useWatch({ control: form.control, name: 'mediaUrls' });
   const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
   const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
@@ -344,9 +358,8 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
   }, [customers]);
 
-  const getEquipmentDetails = useCallback((id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
-    const eq = (equipmentList || []).find(e => e.id === id);
-    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id, ownerReference: eq.ownerReference, customerId: eq.customerId } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
+  const getEquipmentDetails = useCallback((id: string): Maquina | undefined => {
+    return (equipmentList || []).find(e => e.id === id);
   }, [equipmentList]);
 
   const getTechnicianName = useCallback((id?: string | null) => {
@@ -413,12 +426,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         isModalOpen &&
         (!editingOrder || (editingOrder && isEditMode)) && 
         selectedCustomerId &&
-        selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE &&
+        formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && // Use formEquipmentId
         !isCalculatingDistance &&
         typeof calculateDistance === 'function'
       ) {
         const customer = (customers || []).find(c => c.id === selectedCustomerId);
-        const equipment = (equipmentList || []).find(e => e.id === selectedEquipmentId);
+        const equipment = (equipmentList || []).find(e => e.id === formEquipmentId); // Use formEquipmentId
 
         if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
           return;
@@ -484,12 +497,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         });
     }
   }, [
-    isModalOpen, editingOrder, isEditMode, selectedCustomerId, selectedEquipmentId,
+    isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId, // Use formEquipmentId
     isCalculatingDistance, customers, equipmentList, companies, form, toast
   ]);
 
 
-  if (!db || !storage) { // Ensure storage is checked
+  if (!db || !storage) { 
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -532,15 +545,15 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
 
     if (selectedCustomerId) {
-      if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
+      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { // Use formEquipmentId
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     } else {
-       if (selectedEquipmentId && !filteredEquipmentList.find(eq => eq.id === selectedEquipmentId)) {
+       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { // Use formEquipmentId
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     }
-  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, selectedEquipmentId]);
+  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, formEquipmentId]); // Use formEquipmentId
 
 
   const prepareDataForFirestore = (
@@ -924,13 +937,17 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const generateWhatsAppMessage = (
     order: ServiceOrder,
     customer: { name: string; phone?: string },
-    equipment: { brand: string, model: string, chassisNumber: string, id: string },
+    equipment: Maquina | undefined,
     technicianName: string
   ): string => {
     let message = `Olá ${toTitleCase(customer.name)},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
     message += `*Cliente:* ${toTitleCase(customer.name)}\n`;
-    message += `*Equipamento:* ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)} (Chassi: ${equipment.chassisNumber})\n`;
+    if (equipment) {
+        message += `*Equipamento:* ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)} (Chassi: ${equipment.chassisNumber})\n`;
+    } else {
+        message += `*Equipamento:* Não especificado\n`;
+    }
     message += `*Fase Atual:* ${order.phase}\n`;
     message += `*Problema Relatado:* ${order.description}\n`;
     if (technicianName !== "Não Atribuído") {
@@ -1026,10 +1043,10 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
 
             let equipmentOwnerDisplay = null;
-            if (equipmentDetails.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
+            if (equipmentDetails?.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
                 const company = (companies || []).find(c => c.id === equipmentDetails.ownerReference);
                 equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
-            } else if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
+            } else if (equipmentDetails?.ownerReference === OWNER_REF_CUSTOMER) {
                  const ownerCustomer = (customers || []).find(c => c.id === equipmentDetails.customerId);
                  equipmentOwnerDisplay = ownerCustomer ? `Cliente (${toTitleCase(ownerCustomer.name)})` : "Cliente (Não especificado)";
             }
@@ -1093,15 +1110,35 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <span className="whitespace-pre-wrap break-words">{toTitleCase(order.requesterName)}</span>
                   </p>
                 )}
-                <p className="flex items-center">
-                  <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                  <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
-                  {isLoadingEquipment ? 'Carregando...' : (
-                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
-                       {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)} (Chassi: {equipmentDetails.chassisNumber})
-                     </Link>
-                  )}
-                </p>
+
+                {isLoadingEquipment ? (
+                  <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                ) : equipmentDetails ? (
+                  <>
+                    <p className="flex items-center">
+                      <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline flex items-center truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
+                        <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Marca/Modelo:</span>
+                        {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)}
+                      </Link>
+                    </p>
+                    <p className="flex items-center">
+                      <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                      {equipmentDetails.chassisNumber || "N/A"}
+                    </p>
+                    {equipmentDetails.manufactureYear && (
+                      <p className="flex items-center">
+                        <CalendarIconDetails className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Ano Fab.:</span>
+                        {equipmentDetails.manufactureYear}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="flex items-center text-muted-foreground"><Construction className="mr-2 h-4 w-4" /> Equipamento não especificado</p>
+                )}
+
                 {equipmentOwnerDisplay && (
                   <p className="flex items-center">
                     <Building className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
@@ -1222,7 +1259,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <Select
                       onValueChange={field.onChange}
                       value={field.value || NO_EQUIPMENT_SELECTED_VALUE}
-
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (filteredEquipmentList.length === 0 && !selectedCustomerId ? "Nenhum equipamento da frota disponível" : "Selecione o Equipamento")} />
@@ -1247,6 +1283,28 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <FormMessage />
                   </FormItem>
                 )} />
+                {formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && !isLoadingEquipment && (
+                  <Card className="md:col-span-2 bg-muted/30 p-3 my-2">
+                    <CardHeader className="p-0 pb-2 mb-2 border-b">
+                      <CardTitle className="text-sm font-medium">Detalhes do Equipamento Selecionado</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0 text-xs space-y-1">
+                      {(() => {
+                        const selectedEquipment = equipmentList.find(eq => eq.id === formEquipmentId);
+                        if (!selectedEquipment) return <p>Carregando detalhes...</p>;
+                        return (
+                          <>
+                            <p><strong>Marca:</strong> {toTitleCase(selectedEquipment.brand)}</p>
+                            <p><strong>Modelo:</strong> {toTitleCase(selectedEquipment.model)}</p>
+                            <p><strong>Nº Chassi:</strong> {selectedEquipment.chassisNumber || "N/A"}</p>
+                            <p><strong>Ano Fabricação:</strong> {selectedEquipment.manufactureYear || "N/A"}</p>
+                          </>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+                )}
+
 
                 <FormField control={form.control} name="phase" render={({ field }) => (
                   <FormItem><FormLabel>Fase</FormLabel>
@@ -1263,7 +1321,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <Select
                       onValueChange={(selectedValue) => field.onChange(selectedValue === NO_TECHNICIAN_SELECTED_VALUE ? null : selectedValue)}
                       value={field.value ?? NO_TECHNICIAN_SELECTED_VALUE}
-
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingTechnicians ? "Carregando..." : "Atribuir Técnico (Opcional)"} />
@@ -1314,7 +1371,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <Select
                       onValueChange={(selectedValue) => field.onChange(selectedValue === NO_VEHICLE_SELECTED_VALUE ? null : selectedValue)}
                       value={field.value ?? NO_VEHICLE_SELECTED_VALUE}
-
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingVehicles ? "Carregando..." : "Selecione o Veículo"} />
