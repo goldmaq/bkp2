@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -68,6 +69,15 @@ const LOADING_EQUIPMENT_SELECT_ITEM_VALUE = "_LOADING_EQUIPMENT_";
 const NO_TECHNICIAN_SELECTED_VALUE = "_NO_TECHNICIAN_SELECTED_";
 const LOADING_TECHNICIANS_SELECT_ITEM_VALUE = "_LOADING_TECHNICIANS_";
 
+// Helper function to convert string to Title Case
+const toTitleCase = (str: string | undefined | null): string => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
 
 const getFileNameFromUrl = (url: string): string => {
   try {
@@ -938,14 +948,14 @@ export function ServiceOrderClientPage() {
     equipment: { brand: string, model: string, chassisNumber: string, id: string },
     technicianName: string
   ): string => {
-    let message = `Olá ${customer.name},\n\n`;
+    let message = `Olá ${toTitleCase(customer.name)},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
-    message += `*Cliente:* ${customer.name}\n`;
-    message += `*Equipamento:* ${equipment.brand} ${equipment.model} (Chassi: ${equipment.chassisNumber})\n`;
+    message += `*Cliente:* ${toTitleCase(customer.name)}\n`;
+    message += `*Equipamento:* ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)} (Chassi: ${equipment.chassisNumber})\n`;
     message += `*Fase Atual:* ${order.phase}\n`;
     message += `*Problema Relatado:* ${order.description}\n`;
     if (technicianName !== "Não Atribuído") {
-      message += `*Técnico Designado:* ${technicianName}\n`;
+      message += `*Técnico Designado:* ${toTitleCase(technicianName)}\n`;
     }
     if (order.startDate && isValid(parseISO(order.startDate))) {
       message += `*Data de Início:* ${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\n`;
@@ -1017,7 +1027,7 @@ export function ServiceOrderClientPage() {
                 equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
             } else if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
                  const ownerCustomer = customers.find(c => c.id === equipmentDetails.customerId);
-                 equipmentOwnerDisplay = ownerCustomer ? `Cliente (${ownerCustomer.name})` : "Cliente (Não especificado)";
+                 equipmentOwnerDisplay = ownerCustomer ? `Cliente (${toTitleCase(ownerCustomer.name)})` : "Cliente (Não especificado)";
             }
 
 
@@ -1047,8 +1057,8 @@ export function ServiceOrderClientPage() {
                   <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
                   {isLoadingCustomers ? 'Carregando...' : (
-                    <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${customerDetails.name}`}>
-                      {customerDetails.name}
+                    <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${toTitleCase(customerDetails.name)}`}>
+                      {toTitleCase(customerDetails.name)}
                     </Link>
                   )}
                 </p>
@@ -1076,15 +1086,15 @@ export function ServiceOrderClientPage() {
                   <p className="flex items-start">
                     <User className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
                     <span className="font-medium text-muted-foreground mr-1">Solicitante:</span>
-                    <span className="whitespace-pre-wrap break-words">{order.requesterName}</span>
+                    <span className="whitespace-pre-wrap break-words">{toTitleCase(order.requesterName)}</span>
                   </p>
                 )}
                 <p className="flex items-center">
                   <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
                   {isLoadingEquipment ? 'Carregando...' : (
-                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${equipmentDetails.brand} ${equipmentDetails.model}`}>
-                       {equipmentDetails.brand} {equipmentDetails.model} (Chassi: {equipmentDetails.chassisNumber})
+                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
+                       {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)} (Chassi: {equipmentDetails.chassisNumber})
                      </Link>
                   )}
                 </p>
@@ -1092,10 +1102,10 @@ export function ServiceOrderClientPage() {
                   <p className="flex items-center">
                     <Building className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                     <span className="font-medium text-muted-foreground mr-1">Prop. Equip.:</span>
-                    <span>{equipmentOwnerDisplay}</span>
+                    <span>{toTitleCase(equipmentOwnerDisplay)}</span>
                   </p>
                 )}
-                <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : technicianName}</p>
+                <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : toTitleCase(technicianName)}</p>
                 {order.vehicleId && (
                   <p className="flex items-center">
                     <VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
@@ -1114,7 +1124,7 @@ export function ServiceOrderClientPage() {
                     <span>R$ {Number(order.estimatedTravelCost).toFixed(2)}</span>
                   </p>
                 )}
-                <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}</p>
+                <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {toTitleCase(order.serviceType)}</p>
                 {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Problema Relatado:</span> <span className="whitespace-pre-wrap break-words">{order.description}</span></p>
@@ -1358,7 +1368,9 @@ export function ServiceOrderClientPage() {
                         Custo Pedágios (R$)
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Brain className="h-3 w-3 ml-1.5 text-muted-foreground hover:text-primary cursor-help" />
+                            <button type="button" className="ml-1.5 p-0 border-0 bg-transparent cursor-help" onClick={e => e.preventDefault()}>
+                               <Brain className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                            </button>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs text-xs">
                             <p>Pode ser estimado pela IA (se disponível e &gt; R$0) ou preenchido manualmente. A estimativa da IA é aproximada.</p>
