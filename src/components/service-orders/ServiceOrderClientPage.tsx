@@ -261,8 +261,11 @@ async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
   }
 }
 
+interface ServiceOrderClientPageProps {
+  serviceOrderIdFromUrl?: string | null;
+}
 
-export function ServiceOrderClientPage() {
+export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderClientPageProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -755,6 +758,18 @@ export function ServiceOrderClientPage() {
     }
     setIsModalOpen(true);
   }, [form, serviceOrdersRaw]);
+
+  useEffect(() => {
+    if (serviceOrderIdFromUrl && !isLoadingServiceOrders && serviceOrdersRaw.length > 0 && !isModalOpen) {
+      const orderToEdit = serviceOrdersRaw.find(order => order.id === serviceOrderIdFromUrl);
+      if (orderToEdit) {
+        openModal(orderToEdit);
+        if (typeof window !== "undefined") {
+           window.history.replaceState(null, '', '/service-orders');
+        }
+      }
+    }
+  }, [serviceOrderIdFromUrl, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen]);
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -1573,3 +1588,4 @@ export function ServiceOrderClientPage() {
     </TooltipProvider>
   );
 }
+

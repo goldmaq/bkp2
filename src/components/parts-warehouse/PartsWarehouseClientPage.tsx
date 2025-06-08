@@ -51,6 +51,7 @@ interface ApprovedItem extends PartsRequisitionItem {
   requisitionCreatedDate: string;
   requisitionStatus: PartsRequisition['status'];
   equipmentDetails?: {
+    id: string; // Added ID for linking
     brand: string;
     model: string;
     chassisNumber: string;
@@ -188,6 +189,7 @@ export function PartsWarehouseClientPage() {
             requisitionCreatedDate: req.createdDate,
             requisitionStatus: req.status,
             equipmentDetails: equipment ? {
+              id: equipment.id,
               brand: equipment.brand,
               model: equipment.model,
               chassisNumber: equipment.chassisNumber,
@@ -427,7 +429,19 @@ export function PartsWarehouseClientPage() {
               <CardHeader>
                 <CardTitle className="font-headline text-lg text-primary">{item.partName}</CardTitle>
                 <CardDescription>
-                  Req: {item.requisitionNumber} | OS: {item.serviceOrderNumber || item.serviceOrderId}
+                  Req: {item.requisitionNumber} | OS:{" "}
+                  {item.serviceOrderNumber ? (
+                    <Link
+                      href={`/service-orders?openServiceOrderId=${item.serviceOrderId}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="underline text-primary hover:text-primary/80"
+                      title={`Abrir OS ${item.serviceOrderNumber}`}
+                    >
+                      {item.serviceOrderNumber}
+                    </Link>
+                  ) : (
+                    item.serviceOrderId
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
@@ -606,4 +620,4 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
-    
+
