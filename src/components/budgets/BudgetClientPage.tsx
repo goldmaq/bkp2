@@ -563,7 +563,7 @@ export function BudgetClientPage() {
   const openModal = useCallback((budget?: Budget) => {
     if (budget) {
       setEditingBudget(budget);
-      setIsEditMode(true); // Open in edit mode for existing budgets
+      setIsEditMode(false); 
       form.reset({
         ...budget,
         createdDate: budget.createdDate ? format(parseISO(budget.createdDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0],
