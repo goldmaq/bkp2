@@ -350,10 +350,11 @@ export function PartsTriageClientPage() {
                     )}
                   </CardContent>
                   <CardFooter className="border-t pt-4">
-                     <Link href={`/service-orders?action=create&fromBudgetId=${budget.id}`} passHref legacyBehavior>
-                        <a className={cn(buttonVariants({ variant: "default" }), "w-full bg-primary hover:bg-primary/90")}>
-                            <FileSignature className="mr-2 h-4 w-4"/> Gerar Ordem de Serviço
-                        </a>
+                     <Link 
+                        href={`/service-orders?action=create&fromBudgetId=${budget.id}`}
+                        className={cn(buttonVariants({ variant: "default" }), "w-full bg-primary hover:bg-primary/90")}
+                      >
+                        <FileSignature className="mr-2 h-4 w-4"/> Gerar Ordem de Serviço
                     </Link>
                   </CardFooter>
                 </Card>
