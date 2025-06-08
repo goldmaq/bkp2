@@ -334,8 +334,7 @@ export function CustomerClientPage() {
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
         toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
-        // Potentially clear only some fields or leave them, depending on preference
-        form.setValue("name", form.getValues("name") || ""); // Keep if user typed something
+        form.setValue("name", form.getValues("name") || ""); 
       } else {
         form.setValue("name", data.razao_social || "");
         form.setValue("street", data.logradouro || "");
@@ -347,15 +346,11 @@ export function CustomerClientPage() {
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
 
         let primaryPhone = data.ddd_telefone_1 || "";
-        // BrasilAPI might have ddd_telefone_2 instead of ddd_telefone_1
         if (!primaryPhone && (data as any).ddd_telefone_2) { 
           primaryPhone = (data as any).ddd_telefone_2;
         }
         form.setValue("phone", primaryPhone ? formatPhoneNumberForInputDisplay(primaryPhone) : "");
         
-        // Optionally, set other fields like email if available (BrasilAPI doesn't usually provide it)
-        // form.setValue("email", data.email || form.getValues("email")); // Keep existing email if API doesn't provide
-
         toast({ title: "CNPJ Encontrado", description: "Os dados do cliente foram preenchidos." });
       }
     } catch (error) {
@@ -633,9 +628,6 @@ export function CustomerClientPage() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="customer-form" className="space-y-4">
             <fieldset disabled={!!editingCustomer && !isEditMode} className="space-y-4">
-              <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Nome (Razão Social)</FormLabel><FormControl><Input placeholder="Nome completo do cliente ou razão social" {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
               <FormField control={form.control} name="cnpj" render={({ field }) => (
                 <FormItem>
                   <FormLabel>CNPJ</FormLabel>
@@ -659,6 +651,9 @@ export function CustomerClientPage() {
                    <FormDescription>Digite o CNPJ para buscar dados automaticamente.</FormDescription>
                   <FormMessage />
                 </FormItem>
+              )} />
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem><FormLabel>Nome (Razão Social)</FormLabel><FormControl><Input placeholder="Nome completo do cliente ou razão social" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="contactName" render={({ field }) => (
                 <FormItem><FormLabel>Nome do Contato (Opcional)</FormLabel><FormControl><Input placeholder="Nome da pessoa de contato" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
@@ -790,4 +785,6 @@ export function CustomerClientPage() {
     </>
   );
 }
+    
+
     
