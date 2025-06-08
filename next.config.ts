@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
         http2: false,       // Mocks 'http2' for client-side
         dns: false,         // Mocks 'dns' for client-side
       };
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'async_hooks': false, // Add this line to alias async_hooks
+      };
     }
     return config;
   },

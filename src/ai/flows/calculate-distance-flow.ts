@@ -11,9 +11,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
-import type { CalculateDistanceInput, CalculateDistanceOutput } from '@/types';
-import type { GenkitFlow } from 'genkit';
+import { z, Flow } from 'genkit';
 
 // Define Zod schemas based on the interfaces from types/index.ts
 const CalculateDistanceInputSchema = z.object({
@@ -49,10 +47,9 @@ async function geocodeAddress(address: string): Promise<{ latitude: number; long
     console.log(`Geocoding address: ${address} with URL: ${nominatimUrl}`);
     const response = await fetchWithTimeout(nominatimUrl, {
       headers: {
-        // IMPORTANT: Provide a User-Agent as per Nominatim's usage policy
         'User-Agent': 'GoldMaqControlApp/1.0 (Firebase Studio Project; +gold-maq-control)',
       },
-      timeout: 5000, // 5 seconds timeout
+      timeout: 5000,
     });
 
     if (!response.ok) {
@@ -101,17 +98,17 @@ function haversineDistance(
   return distance;
 }
 
-// Fallback simulated distance
+// Placeholder for getSimulatedDistance
 function getSimulatedDistance(): number {
-  return Math.floor(Math.random() * (250 - 5 + 1)) + 5; // Random distance between 5km and 250km
+  return Math.floor(Math.random() * 450) + 50;
 }
 
 // Exported wrapper function
-export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
-  if (!ai || !calculateDistanceFlow) { 
-    console.error("calculateDistance Flow: Genkit AI instance or flow is not available.");
+export async function calculateDistance(input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> {
+  if (!ai || typeof calculateDistanceFlow !== 'function') {
+    console.error("calculateDistance Flow: Genkit AI instance or flow is not available or not a function.");
     return {
-      distanceKm: getSimulatedDistance(), 
+      distanceKm: getSimulatedDistance(),
       status: 'SIMULATED',
       errorMessage: 'Genkit AI not initialized or flow not defined. Using simulated distance.',
     };
@@ -120,7 +117,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
 }
 
 // Genkit Flow Definition
-let calculateDistanceFlow: GenkitFlow<z.infer<typeof CalculateDistanceInputSchema>, z.infer<typeof CalculateDistanceOutputSchema>> | ((input: z.infer<typeof CalculateDistanceInputSchema>) => Promise<z.infer<typeof CalculateDistanceOutputSchema>>);
+let calculateDistanceFlow: Flow<z.infer<typeof CalculateDistanceInputSchema>, z.infer<typeof CalculateDistanceOutputSchema>>;
 
 if (ai) {
   calculateDistanceFlow = ai.defineFlow(
@@ -145,7 +142,7 @@ if (ai) {
         console.warn("calculateDistanceFlow: Failed to geocode origin address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'ERROR_GEOCODING_FAILED', // More specific status
+          status: 'ERROR_GEOCODING_FAILED',
           errorMessage: "Failed to geocode origin address. Using simulated distance.",
         };
       }
@@ -155,20 +152,17 @@ if (ai) {
         console.warn("calculateDistanceFlow: Failed to geocode destination address. Falling back to simulation.");
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'ERROR_GEOCODING_FAILED', // More specific status
+          status: 'ERROR_GEOCODING_FAILED',
           errorMessage: "Failed to geocode destination address. Using simulated distance.",
         };
       }
 
       try {
         const directDistanceKm = haversineDistance(originCoords, destinationCoords);
-        // Apply a correction factor to approximate driving distance (e.g., 1.4)
-        // This is a rough estimate and can vary greatly.
         const estimatedDrivingDistanceKm = directDistanceKm * 1.4;
 
         console.log(`calculateDistanceFlow: Direct distance: ${directDistanceKm.toFixed(2)} km, Estimated driving: ${estimatedDrivingDistanceKm.toFixed(2)} km`);
 
-        // This flow returns ONE-WAY distance. The caller should double it for round trip.
         return {
           distanceKm: parseFloat(estimatedDrivingDistanceKm.toFixed(1)),
           status: 'SUCCESS',
@@ -177,12 +171,12 @@ if (ai) {
         console.error("calculateDistanceFlow: Error during Haversine calculation or API interaction:", error);
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED', // Fallback to SIMULATED if haversine fails for some reason
+          status: 'SIMULATED',
           errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
         };
       }
-    }
-  );
+    } // Closes the async arrow function (2nd arg to defineFlow)
+  ); // Closes the ai.defineFlow call and the assignment to calculateDistanceFlow
 } else {
   // If ai is null, define calculateDistanceFlow as a function that returns a simulated response
   calculateDistanceFlow = async (input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> => {
@@ -194,4 +188,3 @@ if (ai) {
     };
   };
 }
-
