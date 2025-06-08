@@ -249,7 +249,7 @@ const getDeadlineStatusInfo = (
   }
   const twoDaysFromNow = addDays(today, 2);
   if (isBefore(endDateNormalized, twoDaysFromNow)) {
-     return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-amber-100 border-amber-500 text-amber-700" };
+     return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-yellow-100 border-yellow-500 text-yellow-700" };
   }
   return { status: 'none' };
 };
@@ -524,7 +524,7 @@ export function ServiceOrderClientPage() {
     setMediaFiles([]);
     if (order) {
       setEditingOrder(order);
-      setIsEditMode(false); // Start in view mode for existing items
+      setIsEditMode(false); 
       const isServiceTypePredefined = serviceTypeOptionsList.includes(order.serviceType as any);
       form.reset({
         ...order,
@@ -542,7 +542,7 @@ export function ServiceOrderClientPage() {
       setShowCustomServiceType(!isServiceTypePredefined);
     } else {
       setEditingOrder(null);
-      setIsEditMode(true); // Start in edit mode for new items
+      setIsEditMode(true); 
       const nextOrderNum = getNextOrderNumber(serviceOrders);
       form.reset({
         orderNumber: nextOrderNum,
@@ -723,17 +723,24 @@ export function ServiceOrderClientPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {serviceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
+            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
             const cardClasses = cn("flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer");
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
-              {deadlineInfo.status !== 'none' && deadlineInfo.alertClass && (
-                <div className={cn("p-2 text-sm font-medium rounded-t-md flex items-center justify-center", deadlineInfo.alertClass)}>
+              {deadlineInfo.status !== 'none' && deadlineInfo.message && (
+                <div className={cn(
+                  "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
+                  {
+                    "bg-red-100 border-red-500 text-red-700": deadlineInfo.status === 'overdue',
+                    "bg-yellow-100 border-yellow-500 text-yellow-700": deadlineInfo.status === 'due_today' || deadlineInfo.status === 'due_soon',
+                  }
+                )}>
                   {deadlineInfo.icon}
                   <span className="ml-2">{deadlineInfo.message}</span>
                 </div>
               )}
-              <CardHeader className={cn(deadlineInfo.status !== 'none' && deadlineInfo.alertClass ? "pt-2" : "")}>
+              <CardHeader className={cn(deadlineInfo.status !== 'none' && deadlineInfo.message ? "pt-2" : "")}>
                 <div className="flex justify-between items-start">
                   <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
                 </div>
@@ -1107,3 +1114,5 @@ export function ServiceOrderClientPage() {
     </>
   );
 }
+
+    
