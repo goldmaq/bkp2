@@ -5,9 +5,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails, MapPin, Printer } from "lucide-react"; // Added Printer
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails, MapPin, Printer } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,11 +37,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-import { buttonVariants } from "@/components/ui/button";
+import { DialogFooter } from "@/components/ui/dialog";
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils";
-import { DialogFooter } from "@/components/ui/dialog";
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -283,58 +282,60 @@ interface ServiceOrderClientPageProps {
 const printHTML = (htmlContent: string, documentTitle: string) => {
   const printWindow = window.open('', '_blank');
   if (printWindow) {
-    printWindow.document.write(\`
-      <html>
-        <head>
-          <title>\${documentTitle}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
-            .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
-            .print-header { text-align: center; margin-bottom: 20px; }
-            .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
-            .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
-            .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-            .section:last-child { border-bottom: none; }
-            .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
-            .field-group { margin-bottom: 6px; }
-            .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
-            .field-value { color: #666; }
-            .two-columns { display: flex; justify-content: space-between; }
-            .column { width: 48%; }
-            .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
-            .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
-            .signature-label { text-align: center; font-size: 10px; color: #555; }
-            .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 11px; }
-            th { background-color: #f9f9f9; font-weight: bold; }
-            .notes-section { margin-top:15px; }
-            .notes-section textarea { width: 98%; min-height: 80px; border: 1px solid #ccc; padding: 5px; font-size: 11px; }
-            @media print {
-              body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .print-header h1 { color: #F97316 !important; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            \${htmlContent}
-          </div>
-          <script>
-            setTimeout(() => {
-              window.print();
-              window.onafterprint = function() { window.close(); }
-            }, 250);
-          </script>
-        </body>
-      </html>
-    \`);
+    printWindow.document.write(
+`<!DOCTYPE html>
+<html>
+  <head>
+    <title>${documentTitle}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
+      .print-container { width: 100%; max-width: 800px; margin: 0 auto; }
+      .print-header { text-align: center; margin-bottom: 20px; }
+      .print-header h1 { font-size: 18px; margin: 0; color: #F97316; }
+      .print-header p { font-size: 10px; margin: 2px 0; color: #555; }
+      .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+      .section:last-child { border-bottom: none; }
+      .section-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #333; }
+      .field-group { margin-bottom: 6px; }
+      .field-label { font-weight: bold; color: #444; min-width: 120px; display: inline-block; }
+      .field-value { color: #666; }
+      .two-columns { display: flex; justify-content: space-between; }
+      .column { width: 48%; }
+      .signature-area { margin-top: 30px; padding-top: 10px; border-top: 1px dashed #ccc; }
+      .signature-line { border-bottom: 1px solid #000; width: 250px; margin: 30px auto 5px auto; }
+      .signature-label { text-align: center; font-size: 10px; color: #555; }
+      .footer-notes { margin-top: 20px; font-size: 10px; color: #777; text-align: center; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 11px; }
+      th { background-color: #f9f9f9; font-weight: bold; }
+      .notes-section { margin-top:15px; }
+      .notes-section textarea { width: 98%; min-height: 80px; border: 1px solid #ccc; padding: 5px; font-size: 11px; }
+      @media print {
+        body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .print-header h1 { color: #F97316 !important; }
+        .no-print { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-container">
+      ${htmlContent}
+    </div>
+    <script>
+      setTimeout(() => {
+        window.print();
+        window.onafterprint = function() { window.close(); }
+      }, 250);
+    </script>
+  </body>
+</html>`
+    );
     printWindow.document.close();
   } else {
     alert("Seu navegador bloqueou a abertura da janela de impressão. Por favor, desabilite o bloqueador de pop-ups para este site.");
   }
 };
+
 
 export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderClientPageProps) {
   const queryClient = useQueryClient();
@@ -510,16 +511,16 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             return;
         }
 
-        console.log(`[OS ClientPage] Attempting distance calculation. Origin: "\${originAddress}", Destination: "\${destinationAddress}"`);
+        console.log(`[OS ClientPage] Attempting distance calculation. Origin: "${originAddress}", Destination: "${destinationAddress}"`);
 
         if (currentDistanceValue !== null && currentDistanceValue !== undefined) {
-            console.log(`[OS ClientPage] Distance already set to \${currentDistanceValue}km. Skipping automatic calculation.`);
+            console.log(`[OS ClientPage] Distance already set to ${currentDistanceValue}km. Skipping automatic calculation.`);
             return;
         }
 
         setIsCalculatingDistance(true);
         try {
-          console.log(`[OS ClientPage] Calling calculateDistance flow with Origin: "\${originAddress}", Destination: "\${destinationAddress}"`);
+          console.log(`[OS ClientPage] Calling calculateDistance flow with Origin: "${originAddress}", Destination: "${destinationAddress}"`);
           const result: CalculateDistanceOutput = await calculateDistance({ originAddress, destinationAddress });
           console.log("[OS ClientPage] Flow result:", result);
 
@@ -528,24 +529,24 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
             const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
             form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
-            toastMessage += `Distância (ida/volta): \${roundTripDistance} km (\${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
-            console.log(`[OS ClientPage] Set estimatedTravelDistanceKm to: \${roundTripDistance}`);
+            toastMessage += `Distância (ida/volta): ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
+            console.log(`[OS ClientPage] Set estimatedTravelDistanceKm to: ${roundTripDistance}`);
 
             if ((currentTollValue === null || currentTollValue === undefined) &&
                 result.estimatedTollCostByAI && result.estimatedTollCostByAI > 0) {
               const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
               form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
-              toastMessage += \` Pedágio (est. IA): R$ \${roundTripTollAI}.\`;
-              console.log(`[OS ClientPage] Set estimatedTollCosts (AI) to: \${roundTripTollAI}`);
+              toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
+              console.log(`[OS ClientPage] Set estimatedTollCosts (AI) to: ${roundTripTollAI}`);
             } else if (result.estimatedTollCostByAI === 0) {
-              toastMessage += \` Estimativa de pedágio pela IA: R$ 0.00.\`;
+              toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00.`;
                console.log(`[OS ClientPage] AI estimatedTollCostByAI is 0. No update to form field.`);
             }
             toast({ title: "Estimativas Calculadas", description: toastMessage.trim() });
 
           } else {
             toast({ title: "Falha ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância automaticamente.", variant: "default" });
-             console.warn(`[OS ClientPage] Distance calculation failed/returned non-success status: \${result.status}, Message: \${result.errorMessage}`);
+             console.warn(`[OS ClientPage] Distance calculation failed/returned non-success status: ${result.status}, Message: ${result.errorMessage}`);
           }
         } catch (e: any) {
           console.error("[OS ClientPage] Error calling calculateDistance flow:", e);
@@ -677,11 +678,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Criada", description: `Ordem \${data.orderNumber} criada.` });
+      toast({ title: "Ordem de Serviço Criada", description: `Ordem ${data.orderNumber} criada.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Criar OS", description: `Não foi possível criar a OS \${variables.formData.orderNumber}. Detalhe: \${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Criar OS", description: `Não foi possível criar a OS ${variables.formData.orderNumber}. Detalhe: ${err.message}`, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFile(false)
   });
@@ -722,11 +723,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Atualizada", description: `Ordem \${data.orderNumber} atualizada.` });
+      toast({ title: "Ordem de Serviço Atualizada", description: `Ordem ${data.orderNumber} atualizada.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar OS", description: `Não foi possível atualizar a OS \${variables.formData.orderNumber}. Detalhe: \${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar OS", description: `Não foi possível atualizar a OS ${variables.formData.orderNumber}. Detalhe: ${err.message}`, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFile(false)
   });
@@ -753,7 +754,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       closeModal();
     },
     onError: (err: Error) => {
-      toast({ title: "Erro ao Concluir OS", description: `Não foi possível concluir a OS. Detalhe: \${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Concluir OS", description: `Não foi possível concluir a OS. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
@@ -773,7 +774,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       closeModal();
     },
     onError: (err: Error) => {
-      toast({ title: "Erro ao Cancelar OS", description: `Não foi possível cancelar a OS. Detalhe: \${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Cancelar OS", description: `Não foi possível cancelar a OS. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
@@ -794,7 +795,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       closeModal();
     },
     onError: (err: Error) => {
-      toast({ title: "Erro ao Excluir OS", description: `Não foi possível excluir a OS. Detalhe: \${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Excluir OS", description: `Não foi possível excluir a OS. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
@@ -894,7 +895,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
   const handleModalDeleteConfirm = () => {
     if (editingOrder && editingOrder.id) {
-       if (window.confirm(\`Tem certeza que deseja excluir a Ordem de Serviço "\${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.\`)) {
+       if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.`)) {
         deleteServiceOrderMutation.mutate(editingOrder);
       }
     }
@@ -908,7 +909,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     if (files.length > availableSlotsForNewSelection) {
       toast({
         title: "Limite de Arquivos Excedido",
-        description: \`Você pode anexar no máximo \${MAX_FILES_ALLOWED} arquivos. Você já tem \${currentExistingUrlsCount} e tentou adicionar \${files.length}. Selecione no máximo \${availableSlotsForNewSelection} novo(s) arquivo(s).\`,
+        description: `Você pode anexar no máximo ${MAX_FILES_ALLOWED} arquivos. Você já tem ${currentExistingUrlsCount} e tentou adicionar ${files.length}. Selecione no máximo ${availableSlotsForNewSelection} novo(s) arquivo(s).`,
         variant: "destructive",
       });
       setMediaFiles(files.slice(0, availableSlotsForNewSelection));
@@ -976,57 +977,57 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     technicianName?: string,
     vehicle?: { identifier: string }
   ): string => {
-    const companyInfo = companies?.find(c => c.id === 'goldmaq'); // Assuming Goldmaq is the main company
+    const companyInfo = companies?.find(c => c.id === 'goldmaq');
 
-    return \`
+    return `
       <div class="print-header">
-        <h1>\${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Ordem de Serviço Técnico</h1>
-        <p>\${formatAddressToString(companyInfo)}</p>
-        <p>CNPJ: \${companyInfo?.cnpj || 'N/A'}</p>
+        <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Ordem de Serviço Técnico</h1>
+        <p>${formatAddressToString(companyInfo)}</p>
+        <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
       </div>
       <div class="section">
         <div class="section-title">Informações da OS</div>
         <div class="two-columns">
           <div class="column">
-            <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">\${order.orderNumber}</span></div>
-            <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">\${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
+            <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
           </div>
           <div class="column">
-            <div class="field-group"><span class="field-label">Data Prev. Conclusão:</span> <span class="field-value">\${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Técnico Designado:</span> <span class="field-value">\${toTitleCase(technicianName) || 'Não Atribuído'}</span></div>
+            <div class="field-group"><span class="field-label">Data Prev. Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Técnico Designado:</span> <span class="field-value">${toTitleCase(technicianName) || 'Não Atribuído'}</span></div>
           </div>
         </div>
-        <div class="field-group"><span class="field-label">Tipo de Serviço:</span> <span class="field-value">\${toTitleCase(order.serviceType)}</span></div>
+        <div class="field-group"><span class="field-label">Tipo de Serviço:</span> <span class="field-value">${toTitleCase(order.serviceType)}</span></div>
       </div>
       <div class="section">
         <div class="section-title">Dados do Cliente</div>
-        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">\${toTitleCase(customer?.name) || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">\${customer?.cnpj || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Solicitante:</span> <span class="field-value">\${toTitleCase(order.requesterName) || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Telefone:</span> <span class="field-value">\${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">\${formatAddressForDisplay(customer)}</span></div>
+        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Solicitante:</span> <span class="field-value">${toTitleCase(order.requesterName) || 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Telefone:</span> <span class="field-value">${customer?.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
       </div>
       <div class="section">
         <div class="section-title">Dados da Máquina</div>
         <div class="two-columns">
           <div class="column">
-            <div class="field-group"><span class="field-label">Marca:</span> <span class="field-value">\${toTitleCase(equipment?.brand) || 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Modelo:</span> <span class="field-value">\${toTitleCase(equipment?.model) || 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Marca:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Modelo:</span> <span class="field-value">${toTitleCase(equipment?.model) || 'N/A'}</span></div>
           </div>
           <div class="column">
-            <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">\${equipment?.chassisNumber || 'N/A'}</span></div>
-            <div class="field-group"><span class="field-label">Ano:</span> <span class="field-value">\${equipment?.manufactureYear || 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
+            <div class="field-group"><span class="field-label">Ano:</span> <span class="field-value">${equipment?.manufactureYear || 'N/A'}</span></div>
           </div>
         </div>
       </div>
       <div class="section">
         <div class="section-title">Problema Relatado / Solicitação</div>
-        <p class="field-value" style="white-space: pre-wrap;">\${order.description || 'Nenhum problema relatado.'}</p>
+        <p class="field-value" style="white-space: pre-wrap;">${order.description || 'Nenhum problema relatado.'}</p>
       </div>
-      \${order.notes ? \`<div class="section">
+      ${order.notes ? `<div class="section">
         <div class="section-title">Observações da OS</div>
-        <p class="field-value" style="white-space: pre-wrap;">\${order.notes}</p>
-      </div>\` : ''}
+        <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
+      </div>` : ''}
       <div class="section notes-section">
         <div class="section-title">Diagnóstico Técnico / Serviços Realizados</div>
         <textarea rows="5"></textarea>
@@ -1044,9 +1045,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         <div class="signature-label">Assinatura do Cliente / Responsável</div>
       </div>
        <div class="footer-notes">
-         Documento gerado em: \${formatDateForDisplay(new Date().toISOString())}
+         Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
       </div>
-    \`;
+    `;
   };
 
   const generatePrintHTMLForCustomer = (
@@ -1055,50 +1056,50 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     equipment?: Maquina
   ): string => {
     const companyInfo = companies?.find(c => c.id === 'goldmaq');
-    return \`
+    return `
       <div class="print-header">
-        <h1>\${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Comprovante de Atendimento</h1>
-         <p>\${formatAddressToString(companyInfo)}</p>
-        <p>CNPJ: \${companyInfo?.cnpj || 'N/A'}</p>
+        <h1>${companyInfo?.name || 'Gold Maq Empilhadeiras'} - Comprovante de Atendimento</h1>
+         <p>${formatAddressToString(companyInfo)}</p>
+        <p>CNPJ: ${companyInfo?.cnpj || 'N/A'}</p>
       </div>
       <div class="section">
         <div class="section-title">Informações do Atendimento</div>
-        <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">\${order.orderNumber}</span></div>
-        <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">\${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Data Conclusão:</span> <span class="field-value">\${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Número OS:</span> <span class="field-value">${order.orderNumber}</span></div>
+        <div class="field-group"><span class="field-label">Data Abertura:</span> <span class="field-value">${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Data Conclusão:</span> <span class="field-value">${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}</span></div>
       </div>
       <div class="section">
         <div class="section-title">Dados do Cliente</div>
-        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">\${toTitleCase(customer?.name) || 'N/A'}</span></div>
-         <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">\${customer?.cnpj || 'N/A'}</span></div>
-        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">\${formatAddressForDisplay(customer)}</span></div>
+        <div class="field-group"><span class="field-label">Empresa:</span> <span class="field-value">${toTitleCase(customer?.name) || 'N/A'}</span></div>
+         <div class="field-group"><span class="field-label">CNPJ:</span> <span class="field-value">${customer?.cnpj || 'N/A'}</span></div>
+        <div class="field-group"><span class="field-label">Endereço:</span> <span class="field-value">${formatAddressForDisplay(customer)}</span></div>
       </div>
       <div class="section">
         <div class="section-title">Dados da Máquina</div>
-         <div class="field-group"><span class="field-label">Marca/Modelo:</span> <span class="field-value">\${toTitleCase(equipment?.brand) || 'N/A'} \${toTitleCase(equipment?.model) || ''}</span></div>
-        <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">\${equipment?.chassisNumber || 'N/A'}</span></div>
+         <div class="field-group"><span class="field-label">Marca/Modelo:</span> <span class="field-value">${toTitleCase(equipment?.brand) || 'N/A'} ${toTitleCase(equipment?.model) || ''}</span></div>
+        <div class="field-group"><span class="field-label">Nº Chassi:</span> <span class="field-value">${equipment?.chassisNumber || 'N/A'}</span></div>
       </div>
       <div class="section">
         <div class="section-title">Problema Relatado</div>
-        <p class="field-value" style="white-space: pre-wrap;">\${order.description || 'N/A'}</p>
+        <p class="field-value" style="white-space: pre-wrap;">${order.description || 'N/A'}</p>
       </div>
-      \${order.technicalConclusion ? \`<div class="section">
+      ${order.technicalConclusion ? `<div class="section">
         <div class="section-title">Conclusão Técnica / Serviços Realizados</div>
-        <p class="field-value" style="white-space: pre-wrap;">\${order.technicalConclusion}</p>
-      </div>\` : ''}
-      \${order.notes ? \`<div class="section">
+        <p class="field-value" style="white-space: pre-wrap;">${order.technicalConclusion}</p>
+      </div>` : ''}
+      ${order.notes ? `<div class="section">
         <div class="section-title">Observações Adicionais</div>
-        <p class="field-value" style="white-space: pre-wrap;">\${order.notes}</p>
-      </div>\` : ''}
+        <p class="field-value" style="white-space: pre-wrap;">${order.notes}</p>
+      </div>` : ''}
       <div class="signature-area">
         <div class="signature-line"></div>
         <div class="signature-label">Assinatura do Cliente / Responsável</div>
       </div>
       <div class="footer-notes">
         Agradecemos a preferência! <br/>
-        Documento gerado em: \${formatDateForDisplay(new Date().toISOString())}
+        Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}
       </div>
-    \`;
+    `;
   };
 
   const handlePrintForTechnician = () => {
@@ -1108,7 +1109,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     const technicianName = getTechnicianName(editingOrder.technicianId);
     const vehicleInfo = getVehicleDetails(editingOrder.vehicleId);
     const htmlContent = generatePrintHTMLForTechnician(editingOrder, customer, equipment, technicianName, vehicleInfo);
-    printHTML(htmlContent, \`OS_Tecnico_\${editingOrder.orderNumber}\`);
+    printHTML(htmlContent, `OS_Tecnico_${editingOrder.orderNumber}`);
   };
 
   const handlePrintForCustomer = () => {
@@ -1116,7 +1117,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     const customer = getCustomerDetails(editingOrder.customerId);
     const equipment = getEquipmentDetails(editingOrder.equipmentId);
     const htmlContent = generatePrintHTMLForCustomer(editingOrder, customer, equipment);
-    printHTML(htmlContent, \`Comprovante_OS_\${editingOrder.orderNumber}\`);
+    printHTML(htmlContent, `Comprovante_OS_${editingOrder.orderNumber}`);
   };
 
 
@@ -1139,7 +1140,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         <AlertIconLI className="h-12 w-12 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Ordens de Serviço</h2>
         <p className="text-center">Não foi possível buscar os dados. Tente novamente mais tarde.</p>
-        <p className="text-sm mt-2">Detalhe: {errorServiceOrders?.message}</p>
+        <p className="text-sm mt-2">Detalhe: ${errorServiceOrders?.message}</p>
       </div>
     );
   }
@@ -1148,7 +1149,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const getVehicleDetails = (id?: string | null): { identifier: string, id?: string } => {
     if (!id) return { identifier: "N/A" };
     const vehicle = (vehicles || []).find(v => v.id === id);
-    return vehicle ? { identifier: \`\${vehicle.model} (\${vehicle.licensePlate})\`, id: vehicle.id } : { identifier: id };
+    return vehicle ? { identifier: `${vehicle.model} (${vehicle.licensePlate})`, id: vehicle.id } : { identifier: id };
   };
 
   const generateWhatsAppMessage = (
@@ -1158,26 +1159,26 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     technicianName: string
   ): string => {
     if (!customer) return "Erro: Cliente não encontrado.";
-    let message = \`Olá \${toTitleCase(customer.name)},\\n\\n\`;
-    message += \`Referente à Ordem de Serviço Nº: *\${order.orderNumber}*.\\n\\n\`;
-    message += \`*Cliente:* \${toTitleCase(customer.name)}\\n\`;
+    let message = `Olá ${toTitleCase(customer.name)},\\n\\n`;
+    message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\\n\\n`;
+    message += `*Cliente:* ${toTitleCase(customer.name)}\\n`;
     if (equipment) {
-        message += \`*Equipamento:* \${toTitleCase(equipment.brand)} \${toTitleCase(equipment.model)} (Chassi: \${equipment.chassisNumber})\\n\`;
+        message += `*Equipamento:* ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)} (Chassi: ${equipment.chassisNumber})\\n`;
     } else {
-        message += \`*Equipamento:* Não especificado\\n\`;
+        message += `*Equipamento:* Não especificado\\n`;
     }
-    message += \`*Fase Atual:* \${order.phase}\\n\`;
-    message += \`*Problema Relatado:* \${order.description}\\n\`;
+    message += `*Fase Atual:* ${order.phase}\\n`;
+    message += `*Problema Relatado:* ${order.description}\\n`;
     if (technicianName !== "Não Atribuído") {
-      message += \`*Técnico Designado:* \${toTitleCase(technicianName)}\\n\`;
+      message += `*Técnico Designado:* ${toTitleCase(technicianName)}\\n`;
     }
     if (order.startDate && typeof order.startDate === 'string' && isValid(parseISO(order.startDate))) {
-      message += \`*Data de Início:* \${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\\n\`;
+      message += `*Data de Início:* ${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\\n`;
     }
     if (order.endDate && typeof order.endDate === 'string' && isValid(parseISO(order.endDate))) {
-      message += \`*Previsão de Conclusão:* \${format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}\\n\`;
+      message += `*Previsão de Conclusão:* ${format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}\\n`;
     }
-    message += \`\\nAtenciosamente,\\nEquipe Gold Maq\`;
+    message += `\\nAtenciosamente,\\nEquipe Gold Maq`;
     return message;
   };
 
@@ -1258,7 +1259,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const technicianName = getTechnicianName(order.technicianId);
             const whatsappNumber = customerDetails?.phone ? getWhatsAppNumber(customerDetails.phone) : null;
             const whatsappMessage = whatsappNumber ? generateWhatsAppMessage(order, customerDetails, equipmentDetails, technicianName) : "";
-            const whatsappLink = whatsappNumber ? \`https://wa.me/\${whatsappNumber}?text=\${encodeURIComponent(whatsappMessage)}\` : "#";
+            const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
             const customerAddress = customerDetails ? formatAddressForDisplay(customerDetails) : "Endereço não disponível";
             const googleMapsLink = customerDetails ? generateGoogleMapsUrl(customerDetails) : "#";
 
@@ -1269,7 +1270,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                 equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
             } else if (equipmentDetails?.ownerReference === OWNER_REF_CUSTOMER) {
                  const ownerCustomer = (customers || []).find(c => c.id === equipmentDetails.customerId);
-                 equipmentOwnerDisplay = ownerCustomer ? \`Cliente (\${toTitleCase(ownerCustomer.name)})\` : "Cliente (Não especificado)";
+                 equipmentOwnerDisplay = ownerCustomer ? `Cliente (${toTitleCase(ownerCustomer.name)})` : "Cliente (Não especificado)";
             }
 
 
@@ -1299,7 +1300,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                   <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
                   {isLoadingCustomers || !customerDetails ? 'Carregando...' : (
-                    <Link href={\`/customers?openCustomerId=\${customerDetails.id}\`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={\`Ver cliente: \${toTitleCase(customerDetails.name)}\`}>
+                    <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${toTitleCase(customerDetails.name)}`}>
                       {toTitleCase(customerDetails.name)}
                     </Link>
                   )}
@@ -1335,7 +1336,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         className="text-primary hover:underline"
-                        title={\`Abrir WhatsApp para \${formatPhoneNumberForInputDisplay(customerDetails.phone)}\`}
+                        title={`Abrir WhatsApp para ${formatPhoneNumberForInputDisplay(customerDetails.phone)}`}
                       >
                         {formatPhoneNumberForInputDisplay(customerDetails.phone)}
                       </a>
@@ -1359,7 +1360,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <p className="flex items-center">
                         <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                         <span className="font-medium text-muted-foreground mr-1">Marca/Modelo:</span>
-                         <Link href={\`/maquinas?openMaquinaId=\${equipmentDetails.id}\`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={\`Ver máquina: \${toTitleCase(equipmentDetails.brand)} \${toTitleCase(equipmentDetails.model)}\`}>
+                         <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${toTitleCase(equipmentDetails.brand)} ${toTitleCase(equipmentDetails.model)}`}>
                              {toTitleCase(equipmentDetails.brand)} {toTitleCase(equipmentDetails.model)}
                          </Link>
                     </p>
@@ -1393,7 +1394,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                     <span className="font-medium text-muted-foreground mr-1">Veículo:</span>
                     {isLoadingVehicles ? 'Carregando...' : (
-                       <Link href={\`/vehicles?openVehicleId=\${vehicleDetails.id}\`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={\`Ver veículo: \${vehicleDetails.identifier}\`}>
+                       <Link href={`/vehicles?openVehicleId=${vehicleDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver veículo: ${vehicleDetails.identifier}`}>
                          {vehicleDetails.identifier}
                        </Link>
                     )}
@@ -1428,7 +1429,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                                 rel="noopener noreferrer"
                                 onClick={e => e.stopPropagation()}
                                 className="text-primary hover:underline truncate flex-grow"
-                                title={\`Ver Mídia: \${getFileNameFromUrl(mediaUrl)}\`}
+                                title={`Ver Mídia: ${getFileNameFromUrl(mediaUrl)}`}
                              >
                                 {getFileNameFromUrl(mediaUrl)}
                              </a>
@@ -1751,15 +1752,15 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
 
             <FormItem>
-              <FormLabel>Anexos (Foto/Vídeo/PDF - Opcional){(isEditMode || !editingOrder) ? \` - Máx \${MAX_FILES_ALLOWED} arquivos.\` : ''}</FormLabel>
+              <FormLabel>Anexos (Foto/Vídeo/PDF - Opcional){(isEditMode || !editingOrder) ? ` - Máx ${MAX_FILES_ALLOWED} arquivos.` : ''}</FormLabel>
               {editingOrder && formMediaUrls && formMediaUrls.length > 0 && (
                 <div className="mb-2">
                   <p className="text-sm font-medium mb-1">Anexos Existentes ({formMediaUrls.length}):</p>
                   <ul className="list-disc list-inside space-y-1">
                     {formMediaUrls.map((mediaUrl, index) => (
                       typeof mediaUrl === 'string' && (
-                        <li key={\`existing-\${index}-\${mediaUrl}\`} className="flex items-center justify-between text-sm">
-                          <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-grow mr-2" title={\`Ver Mídia: \${getFileNameFromUrl(mediaUrl)}\`}>
+                        <li key={`existing-${index}-${mediaUrl}`} className="flex items-center justify-between text-sm">
+                          <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-grow mr-2" title={`Ver Mídia: ${getFileNameFromUrl(mediaUrl)}`}>
                             <LinkIconLI className="h-3 w-3 inline-block mr-1"/> {getFileNameFromUrl(mediaUrl)}
                           </a>
                         </li>
