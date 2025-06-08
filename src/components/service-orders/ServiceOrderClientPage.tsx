@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone } from "lucide-react"; // Added Ban icon & ClipboardEdit, Phone
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building } from "lucide-react"; // Added Building
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType } from "@/types";
-import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions } from "@/types";
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType } from "@/types"; // Added OwnerReferenceType
+import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER } from "@/types"; // Added companyDisplayOptions, OWNER_REF_CUSTOMER
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -273,18 +273,18 @@ const getWhatsAppNumber = (phone?: string): string => {
   if (!cleaned.startsWith('55') && (cleaned.length === 10 || cleaned.length === 11)) {
     return `55${cleaned}`;
   }
-  return cleaned; // Return as is if no specific country code logic applies
+  return cleaned;
 };
 
 const formatPhoneNumberForDisplay = (phone?: string): string => {
   if (!phone) return "N/A";
   const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 11) { // (XX) XXXXX-XXXX
+  if (cleaned.length === 11) {
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-  } else if (cleaned.length === 10) { // (XX) XXXX-XXXX
+  } else if (cleaned.length === 10) {
     return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
   }
-  return phone; // Return original if not matching common formats
+  return phone;
 };
 
 
@@ -761,13 +761,13 @@ export function ServiceOrderClientPage() {
     );
   }
 
-  const getCustomerDetails = (id: string): { name: string; cnpj: string; phone?: string } => {
+  const getCustomerDetails = (id: string): { name: string; cnpj: string; phone?: string; id: string; } => {
     const customer = customers.find(c => c.id === id);
-    return customer ? { name: customer.name, cnpj: customer.cnpj, phone: customer.phone } : { name: id, cnpj: "CNPJ não encontrado" };
+    return customer ? { name: customer.name, cnpj: customer.cnpj, phone: customer.phone, id: customer.id } : { name: id, cnpj: "CNPJ não encontrado", id };
   };
-  const getEquipmentDetails = (id: string): { brand: string, model: string, chassisNumber: string, id: string } => {
+  const getEquipmentDetails = (id: string): { brand: string, model: string, chassisNumber: string, id: string, ownerReference?: OwnerReferenceType | null, customerId?: string | null } => {
     const eq = equipmentList.find(e => e.id === id);
-    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
+    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id, ownerReference: eq.ownerReference, customerId: eq.customerId } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
   };
   const getTechnicianName = (id?: string | null) => {
     if (!id) return "Não Atribuído";
@@ -846,7 +846,6 @@ export function ServiceOrderClientPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServiceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
-            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
@@ -857,6 +856,17 @@ export function ServiceOrderClientPage() {
             const whatsappNumber = customerDetails.phone ? getWhatsAppNumber(customerDetails.phone) : null;
             const whatsappMessage = whatsappNumber ? generateWhatsAppMessage(order, customerDetails, equipmentDetails, technicianName) : "";
             const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
+
+            let equipmentOwnerDisplay = null;
+            if (equipmentDetails.ownerReference) {
+              if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
+                const ownerCustomer = customers.find(c => c.id === equipmentDetails.customerId);
+                equipmentOwnerDisplay = ownerCustomer ? `Cliente (${ownerCustomer.name})` : "Cliente (Não especificado)";
+              } else {
+                const companyOwner = companyDisplayOptions.find(co => co.id === equipmentDetails.ownerReference);
+                equipmentOwnerDisplay = companyOwner ? companyOwner.name : "Empresa Desconhecida";
+              }
+            }
 
 
             return (
@@ -885,7 +895,7 @@ export function ServiceOrderClientPage() {
                   <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
                   {isLoadingCustomers ? 'Carregando...' : (
-                    <Link href={`/customers?openCustomerId=${order.customerId}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${customerDetails.name}`}>
+                    <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${customerDetails.name}`}>
                       {customerDetails.name}
                     </Link>
                   )}
@@ -927,6 +937,13 @@ export function ServiceOrderClientPage() {
                      </Link>
                   )}
                 </p>
+                {equipmentOwnerDisplay && (
+                  <p className="flex items-center">
+                    <Building className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">Prop. Equip.:</span>
+                    <span>{equipmentOwnerDisplay}</span>
+                  </p>
+                )}
                 <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : technicianName}</p>
                 {order.vehicleId && (
                   <p className="flex items-center">
