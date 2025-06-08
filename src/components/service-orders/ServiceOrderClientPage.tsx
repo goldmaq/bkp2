@@ -17,7 +17,7 @@ import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrder
 import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { FormModal } from "@/components/shared/FormModal";
+import { FormModal } from "@/components/ui/FormModal"; // Corrected import path
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, type DocumentData, getDoc, limit } from "firebase/firestore";
@@ -37,7 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-// Removed DialogFooter from here as FormModal handles its own
+import { DialogFooter } from "@/components/ui/dialog"; // Ensure DialogFooter is imported if used directly (though it should be part of FormModal)
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
@@ -340,7 +340,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const formEstimatedTollCosts = useWatch({ control: form.control, name: 'estimatedTollCosts' });
 
 
-  const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrders } = useQuery<ServiceOrder[], Error>({
+  const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrdersData } = useQuery<ServiceOrder[], Error>({
     queryKey: [FIRESTORE_COLLECTION_NAME],
     queryFn: fetchServiceOrders,
     enabled: !!db,
@@ -943,7 +943,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     technicianName?: string,
     vehicle?: { identifier: string }
   ): string => {
-    console.log("[PrintDebug] generatePrintHTMLForTechnician called");
+    console.log("[PrintDebug] generatePrintHTMLForTechnician called for OS:", order.orderNumber);
+    if (!order) {
+      console.error("[PrintDebug] Order is undefined in generatePrintHTMLForTechnician");
+      return "Erro: Ordem de Serviço não encontrada.";
+    }
     const companyInfo = companies?.find(c => c.id === 'goldmaq');
     const html = `
       <!DOCTYPE html>
@@ -974,6 +978,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             @media print {
               body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .print-header h1 { color: #F97316 !important; }
+              .no-print { display: none !important; }
             }
           </style>
         </head>
@@ -1050,7 +1055,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         </body>
       </html>
     `;
-    console.log("[PrintDebug] generatePrintHTMLForTechnician finished. HTML (first 100 chars):", html.substring(0,100));
+    console.log("[PrintDebug] generatePrintHTMLForTechnician finished. HTML valid:", !!html);
     return html;
   };
 
@@ -1059,8 +1064,13 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     customer?: Customer,
     equipment?: Maquina
   ): string => {
+    console.log("[PrintDebug] generatePrintHTMLForCustomer called for OS:", order.orderNumber);
+    if (!order) {
+      console.error("[PrintDebug] Order is undefined in generatePrintHTMLForCustomer");
+      return "Erro: Ordem de Serviço não encontrada.";
+    }
     const companyInfo = companies?.find(c => c.id === 'goldmaq');
-    return `
+    const html = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -1084,6 +1094,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             @media print {
               body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .print-header h1 { color: #F97316 !important; }
+              .no-print { display: none !important; }
             }
           </style>
         </head>
@@ -1135,6 +1146,8 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         </body>
       </html>
     `;
+    console.log("[PrintDebug] generatePrintHTMLForCustomer finished. HTML valid:", !!html);
+    return html;
   };
 
   const handlePrintForTechnician = () => {
@@ -1152,7 +1165,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     console.log("[PrintDebug] Data for technician print:", { editingOrder, customer, equipment, technicianName, vehicleInfo });
 
     const htmlContent = generatePrintHTMLForTechnician(editingOrder, customer, equipment, technicianName, vehicleInfo);
-    console.log("[PrintDebug] HTML content for technician (first 100 chars):", htmlContent ? htmlContent.substring(0, 100) : "EMPTY");
+    console.log("[PrintDebug] HTML content for technician:", !!htmlContent);
     if (htmlContent && htmlContent.trim() !== "") {
       printHTML(htmlContent, `OS_Tecnico_${editingOrder.orderNumber}`);
       console.log("[PrintDebug] printHTML called for technician.");
@@ -1164,13 +1177,21 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
 
   const handlePrintForCustomer = () => {
-    if (!editingOrder) return;
+    console.log("[PrintDebug] handlePrintForCustomer called");
+    if (!editingOrder) {
+      console.error("[PrintDebug] editingOrder is null in handlePrintForCustomer");
+      toast({ title: "Erro de Impressão", description: "Nenhuma OS selecionada para imprimir.", variant: "destructive" });
+      return;
+    }
     const customer = getCustomerDetails(editingOrder.customerId);
     const equipment = getEquipmentDetails(editingOrder.equipmentId);
     const htmlContent = generatePrintHTMLForCustomer(editingOrder, customer, equipment);
+    console.log("[PrintDebug] HTML content for customer:", !!htmlContent);
     if (htmlContent && htmlContent.trim() !== "") {
       printHTML(htmlContent, `Comprovante_OS_${editingOrder.orderNumber}`);
+      console.log("[PrintDebug] printHTML called for customer.");
     } else {
+       console.error("[PrintDebug] HTML content for customer is empty or invalid.");
        toast({ title: "Erro de Impressão", description: "Não foi possível gerar o conteúdo para impressão do cliente.", variant: "destructive" });
     }
   };
@@ -1180,6 +1201,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingCompanies;
 
+  // TEST: Unconditional print buttons
   const printButtons = (
     <>
       {editingOrder && (
@@ -1189,6 +1211,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           size="sm"
           onClick={handlePrintForTechnician}
           disabled={isMutating}
+          className="border-primary text-primary hover:bg-primary/10"
         >
           <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
         </Button>
@@ -1200,6 +1223,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           size="sm"
           onClick={handlePrintForCustomer}
           disabled={isMutating}
+          className="border-primary text-primary hover:bg-primary/10 ml-2"
         >
           <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
         </Button>
@@ -1223,7 +1247,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         <AlertIconLI className="h-12 w-12 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Ordens de Serviço</h2>
         <p className="text-center">Não foi possível buscar os dados. Tente novamente mais tarde.</p>
-        <p className="text-sm mt-2">Detalhe: ${errorServiceOrders?.message}</p>
+        <p className="text-sm mt-2">Detalhe: {errorServiceOrdersData?.message}</p>
       </div>
     );
   }
@@ -1908,7 +1932,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                 <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Observações adicionais, peças utilizadas, etc." {...field} value={field.value ?? ""} readOnly={!isEditMode && isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada'} /></FormControl><FormMessage /></FormItem>
               )} />
             </fieldset>
-            {/* The DialogFooter is now managed by FormModal, which includes additionalFooterActions */}
           </form>
         </Form>
       </FormModal>
