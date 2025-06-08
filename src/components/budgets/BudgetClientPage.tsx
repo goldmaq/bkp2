@@ -62,6 +62,7 @@ async function fetchBudgets(): Promise<Budget[]> {
       ...data,
       createdDate: data.createdDate instanceof Timestamp ? data.createdDate.toDate().toISOString() : data.createdDate,
       validUntilDate: data.validUntilDate instanceof Timestamp ? data.validUntilDate.toDate().toISOString() : data.validUntilDate,
+      serviceOrderCreated: data.serviceOrderCreated || false, // Garante que o campo exista
     } as Budget;
   });
 }
@@ -106,15 +107,15 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); // Regex to find numbers at the end of the string
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); 
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
-      if (!isNaN(num) && num > maxNum) { // Check if num is a valid number and greater than maxNum
+      if (!isNaN(num) && num > maxNum) { 
         maxNum = num;
       }
     }
   });
-  return (maxNum + 1).toString().padStart(4, '0'); // Return next number formatted to 4 digits
+  return (maxNum + 1).toString().padStart(4, '0'); 
 };
 
 
@@ -124,22 +125,22 @@ const generateDetailedWhatsAppMessage = (
   equipment?: Maquina,
   serviceOrder?: ServiceOrder
 ): string => {
-  let message = "Olá!\n\n";
-  message += `Segue o Orçamento Nº *${budget.budgetNumber}* da Gold Maq Empilhadeiras:\n\n`;
+  let message = "Olá!\\n\\n";
+  message += `Segue o Orçamento Nº *${budget.budgetNumber}* da Gold Maq Empilhadeiras:\\n\\n`;
 
   if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
-    message += `Referente à OS: *${serviceOrder.orderNumber}*\n`;
+    message += `Referente à OS: *${serviceOrder.orderNumber}*\\n`;
   }
-  message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\n`;
+  message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\\n`;
   if (equipment) {
-    message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\n`;
-    message += `Chassi: *${equipment.chassisNumber || 'N/A'}*\n`;
+    message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\\n`;
+    message += `Chassi: *${equipment.chassisNumber || 'N/A'}*\\n`;
     if (equipment.manufactureYear) {
-        message += `Ano: *${equipment.manufactureYear}*\n`;
+        message += `Ano: *${equipment.manufactureYear}*\\n`;
     }
   }
-  message += `Valor Total: *${formatCurrency(budget.totalAmount)}*\n`;
-  message += `Data de Criação: *${formatDateForDisplay(budget.createdDate)}*\n`;
+  message += `Valor Total: *${formatCurrency(budget.totalAmount)}*\\n`;
+  message += `Data de Criação: *${formatDateForDisplay(budget.createdDate)}*\\n`;
 
   let validityDisplay = "7 dias";
   if (budget.validUntilDate && isValidDateFn(parseISO(budget.validUntilDate))) {
@@ -150,17 +151,17 @@ const generateDetailedWhatsAppMessage = (
      validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias)`;
   }
 
-  message += `Validade da Proposta: *${validityDisplay}*\n\n`;
+  message += `Validade da Proposta: *${validityDisplay}*\\n\\n`;
 
-  message += "Itens/Serviços:\n";
+  message += "Itens/Serviços:\\n";
   if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
-    message += `Baseado na OS ${serviceOrder.orderNumber}:\n`;
+    message += `Baseado na OS ${serviceOrder.orderNumber}:\\n`;
   }
   budget.items.forEach(item => {
-    message += `- ${item.description}: ${formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}\n`;
+    message += `- ${item.description}: ${formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}\\n`;
   });
 
-  message += "\nAgradecemos a preferência!";
+  message += "\\nAgradecemos a preferência!";
   return message;
 };
 
@@ -180,7 +181,6 @@ const generateBudgetPDF = (
   const largeText = 12;
   const titleText = 16;
 
-  // Header - Company Details
   if (companyDetails) {
     doc.setFontSize(largeText);
     doc.setFont("helvetica", "bold");
@@ -198,13 +198,11 @@ const generateBudgetPDF = (
     yPos += sectionSpacing;
   }
 
-  // Title
   doc.setFontSize(titleText);
   doc.setFont("helvetica", "bold");
   doc.text(`ORÇAMENTO Nº ${budget.budgetNumber}`, 105, yPos, { align: "center" });
   yPos += sectionSpacing;
 
-  // Dates
   doc.setFontSize(normalText);
   doc.setFont("helvetica", "normal");
   doc.text(`Data de Emissão: ${formatDateForDisplay(budget.createdDate)}`, 14, yPos);
@@ -219,7 +217,6 @@ const generateBudgetPDF = (
   doc.text(`Validade da Proposta: ${validityDisplay}`, 120, yPos);
   yPos += sectionSpacing;
 
-  // Customer Details
   doc.setFontSize(largeText);
   doc.setFont("helvetica", "bold");
   doc.text("Dados do Cliente:", 14, yPos);
@@ -237,7 +234,6 @@ const generateBudgetPDF = (
   }
   yPos += sectionSpacing;
 
-  // Equipment Details
   if (equipment) {
     doc.setFontSize(largeText);
     doc.setFont("helvetica", "bold");
@@ -259,9 +255,8 @@ const generateBudgetPDF = (
     doc.text(`Referente à Ordem de Serviço Nº: ${serviceOrder.orderNumber}`, 14, yPos);
     yPos += lineSpacing;
   }
-  yPos += (lineSpacing / 2); // Extra small space before table
+  yPos += (lineSpacing / 2); 
 
-  // Items Table
   const tableColumn = ["Descrição", "Qtd.", "Preço Unit.", "Subtotal"];
   const tableRows: any[][] = [];
   budget.items.forEach(item => {
@@ -279,7 +274,7 @@ const generateBudgetPDF = (
     body: tableRows,
     startY: yPos,
     theme: 'grid',
-    headStyles: { fillColor: [249, 115, 22] }, // Orange header
+    headStyles: { fillColor: [249, 115, 22] }, 
     styles: { fontSize: 9, cellPadding: 1.5 },
     columnStyles: {
         0: { cellWidth: 'auto'},
@@ -292,7 +287,6 @@ const generateBudgetPDF = (
   // @ts-ignore
   yPos = doc.lastAutoTable.finalY + sectionSpacing;
 
-  // Totals
   doc.setFontSize(normalText);
   doc.text(`Subtotal Itens: ${formatCurrency(budget.subtotal)}`, 140, yPos, { align: 'left' });
   yPos += lineSpacing;
@@ -305,7 +299,6 @@ const generateBudgetPDF = (
   yPos += sectionSpacing;
   doc.setFont("helvetica", "normal");
 
-  // Notes
   if (budget.notes) {
     doc.setFontSize(largeText);
     doc.setFont("helvetica", "bold");
@@ -318,7 +311,6 @@ const generateBudgetPDF = (
     yPos += splitNotes.length * (lineSpacing / 1.5) + (lineSpacing / 2);
   }
 
-  // Bank Details
   if (companyDetails && (companyDetails.bankName || companyDetails.bankPixKey)) {
     doc.setFontSize(largeText);
     doc.setFont("helvetica", "bold");
@@ -371,6 +363,7 @@ export function BudgetClientPage() {
       createdDate: new Date().toISOString().split('T')[0],
       validUntilDate: null,
       notes: "",
+      serviceOrderCreated: false,
     },
   });
 
@@ -461,6 +454,7 @@ export function BudgetClientPage() {
         items: newBudgetData.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
         totalAmount: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(newBudgetData.shippingCost) || 0),
+        serviceOrderCreated: false, // Definir como false ao criar
       };
       return addDoc(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), dataToSave);
     },
@@ -486,6 +480,8 @@ export function BudgetClientPage() {
 
       const originalBudgetDoc = await getDoc(budgetRef);
       const originalCreatedDate = originalBudgetDoc.exists() ? originalBudgetDoc.data().createdDate : Timestamp.fromDate(parseISO(dataToUpdate.createdDate));
+      const originalServiceOrderCreated = originalBudgetDoc.exists() ? originalBudgetDoc.data().serviceOrderCreated : false;
+
 
       const dataToSave = {
         ...dataToUpdate,
@@ -494,6 +490,7 @@ export function BudgetClientPage() {
         items: dataToUpdate.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
+        serviceOrderCreated: dataToUpdate.serviceOrderCreated === undefined ? originalServiceOrderCreated : dataToUpdate.serviceOrderCreated,
       };
       await updateDoc(budgetRef, dataToSave as { [x: string]: any });
       return budgetData;
@@ -558,7 +555,7 @@ export function BudgetClientPage() {
   const openModal = useCallback((budget?: Budget) => {
     if (budget) {
       setEditingBudget(budget);
-      setIsEditMode(false); 
+      setIsEditMode(false);
       form.reset({
         ...budget,
         createdDate: budget.createdDate ? format(parseISO(budget.createdDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0],
@@ -566,6 +563,7 @@ export function BudgetClientPage() {
         items: budget.items.map(item => ({...item, id: item.id || crypto.randomUUID(), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice)})),
         shippingCost: Number(budget.shippingCost) || 0,
         serviceOrderId: budget.serviceOrderId || NO_SERVICE_ORDER_SELECTED,
+        serviceOrderCreated: budget.serviceOrderCreated || false,
       });
     } else {
       setEditingBudget(null);
@@ -583,6 +581,7 @@ export function BudgetClientPage() {
         createdDate: new Date().toISOString().split('T')[0],
         validUntilDate: null,
         notes: "",
+        serviceOrderCreated: false,
       });
     }
     setIsModalOpen(true);
@@ -601,6 +600,7 @@ export function BudgetClientPage() {
       items: values.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
       subtotal: values.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
       totalAmount: values.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(values.shippingCost) || 0),
+      serviceOrderCreated: editingBudget ? (editingBudget.serviceOrderCreated || false) : false,
     };
 
     if (editingBudget && editingBudget.id) {
@@ -793,7 +793,7 @@ export function BudgetClientPage() {
             const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
 
             const mailtoHref = customer?.email
-              ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento Gold Maq: ${budget.budgetNumber}`)}&body=${encodeURIComponent(`Prezado(a) ${toTitleCase(customer.name)},\n\nSegue o orçamento ${budget.budgetNumber} referente à Ordem de Serviço ${serviceOrder?.orderNumber || 'N/A'}.\n\nValor Total: ${formatCurrency(budget.totalAmount)}\n\nAtenciosamente,\nEquipe Gold Maq`)}`
+              ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento Gold Maq: ${budget.budgetNumber}`)}&body=${encodeURIComponent(`Prezado(a) ${toTitleCase(customer.name)},\\n\\nSegue o orçamento ${budget.budgetNumber} referente à Ordem de Serviço ${serviceOrder?.orderNumber || 'N/A'}.\\n\\nValor Total: ${formatCurrency(budget.totalAmount)}\\n\\nAtenciosamente,\\nEquipe Gold Maq`)}`
               : "#";
 
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";

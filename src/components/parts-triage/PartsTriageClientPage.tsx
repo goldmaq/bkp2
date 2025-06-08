@@ -165,13 +165,13 @@ export function PartsTriageClientPage() {
 
   const requisitionsForTriage = useMemo(() => {
     return requisitions.filter(req =>
-      req.status === "Pendente" && 
+      req.status === "Pendente" &&
       req.items.some(item => item.status === "Pendente Aprovação")
     );
   }, [requisitions]);
 
   const approvedBudgetsForOSTreation = useMemo(() => {
-    return budgets.filter(budget => budget.status === "Aprovado");
+    return budgets.filter(budget => budget.status === "Aprovado" && !budget.serviceOrderCreated);
   }, [budgets]);
 
   const updatePartItemStatusMutation = useMutation({
@@ -349,7 +349,7 @@ export function PartsTriageClientPage() {
                     )}
                   </CardContent>
                   <CardFooter className="border-t pt-4">
-                     <Link 
+                     <Link
                         href={`/service-orders?action=create&fromBudgetId=${budget.id}`}
                         className={cn(buttonVariants({ variant: "default" }), "w-full bg-primary hover:bg-primary/90")}
                       >

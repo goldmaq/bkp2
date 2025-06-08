@@ -218,6 +218,7 @@ export interface Budget {
   createdDate: string;
   validUntilDate?: string | null;
   notes?: string | null;
+  serviceOrderCreated?: boolean | null; // Novo campo
 }
 
 // --- Requisição de Peças ---
@@ -233,27 +234,26 @@ export type PartsRequisitionItemStatusType = typeof partsRequisitionItemStatusOp
 
 export interface PartsRequisitionItem {
   id: string; // UUID
-  // requisitionId: string; // No longer needed here, implicit link
   partName: string;
   quantity: number;
   notes?: string | null;
-  imageUrl?: string | null; // URL da imagem da peça, se houver
+  imageUrl?: string | null; 
   status: PartsRequisitionItemStatusType;
-  triageNotes?: string | null; // Notas do gerente da oficina
-  warehouseNotes?: string | null; // Notas do almoxarifado
-  estimatedCost?: number | null; // Custo estimado preenchido pelo almoxarifado
+  triageNotes?: string | null; 
+  warehouseNotes?: string | null; 
+  estimatedCost?: number | null; 
 }
 
 export interface PartsRequisition {
-  id: string; // UUID, generated client-side for setDoc
-  requisitionNumber: string; // Ex: REQ-0001
+  id: string; 
+  requisitionNumber: string; 
   serviceOrderId: string;
-  technicianId: string; // ID do técnico que solicitou
-  technicianName?: string; // Nome do técnico (para exibição)
-  createdDate: string; // ISO string (Timestamp no Firestore)
+  technicianId: string; 
+  technicianName?: string; 
+  createdDate: string; 
   status: PartsRequisitionStatusType;
-  items: PartsRequisitionItem[]; // Array de itens solicitados
-  generalNotes?: string | null; // Observações gerais da requisição
+  items: PartsRequisitionItem[]; 
+  generalNotes?: string | null; 
 }
 
 const requiredString = (field: string) => z.string().min(1, `${field} é obrigatório.`);
@@ -442,12 +442,12 @@ export const BudgetSchema = z.object({
   createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida"),
   validUntilDate: z.string().optional().nullable().refine(val => !val || isValidDate(parseISO(val)), "Data de validade inválida"),
   notes: z.string().optional().nullable(),
+  serviceOrderCreated: z.boolean().optional().nullable(), // Novo campo
 });
 
 // --- Requisição de Peças Schemas ---
 export const PartsRequisitionItemSchema = z.object({
   id: z.string().uuid("ID do item deve ser um UUID válido."),
-  // requisitionId: z.string().min(1, "ID da Requisição é obrigatório."), // Removido, pois será implícito
   partName: requiredString("Nome da peça"),
   quantity: z.coerce.number().int().min(1, "Quantidade deve ser pelo menos 1."),
   notes: z.string().optional().nullable(),
@@ -459,7 +459,7 @@ export const PartsRequisitionItemSchema = z.object({
 });
 
 export const PartsRequisitionSchema = z.object({
-  id: z.string().uuid("ID da requisição deve ser um UUID válido.").optional(), // Opcional na criação, pois será gerado
+  id: z.string().uuid("ID da requisição deve ser um UUID válido.").optional(),
   requisitionNumber: requiredString("Número da Requisição"),
   serviceOrderId: requiredString("Ordem de Serviço vinculada")
     .refine(val => val !== NO_SERVICE_ORDER_SELECTED_VALUE_FOR_SCHEMA_CHECK, {
@@ -469,11 +469,9 @@ export const PartsRequisitionSchema = z.object({
     .refine(val => val !== NO_TECHNICIAN_SELECTED_VALUE_FOR_SCHEMA_CHECK, {
       message: "Selecione um Técnico válido.",
     }),
-  technicianName: z.string().optional(), // Pode ser preenchido programaticamente
-  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida.").optional(), // Será serverTimestamp
+  technicianName: z.string().optional(), 
+  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida.").optional(),
   status: z.enum(partsRequisitionStatusOptions, { required_error: "Status da requisição é obrigatório."}),
   items: z.array(PartsRequisitionItemSchema).min(1, "A requisição deve ter pelo menos uma peça."),
   generalNotes: z.string().optional().nullable(),
 });
-
-    

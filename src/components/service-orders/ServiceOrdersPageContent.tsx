@@ -4,7 +4,7 @@
 import { ServiceOrderClientPage } from "@/components/service-orders/ServiceOrderClientPage";
 import { useState, useEffect } from 'react';
 import type { FC } from 'react';
-import { useSearchParams } from "next/navigation"; 
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import type { Budget, Customer, Maquina } from "@/types";
 import { db } from "@/lib/firebase";
@@ -40,7 +40,7 @@ async function fetchEquipmentById(equipmentId: string): Promise<Maquina | null> 
 
 export const ServiceOrdersPageContent: FC = () => {
   const [isClient, setIsClient] = useState(false);
-  const searchParams = useSearchParams(); 
+  const searchParams = useSearchParams();
   const orderIdToOpen = searchParams ? searchParams.get('openServiceOrderId') : null;
   const action = searchParams ? searchParams.get('action') : null;
   const budgetIdFromUrl = searchParams ? searchParams.get('fromBudgetId') : null;
@@ -83,25 +83,26 @@ export const ServiceOrdersPageContent: FC = () => {
       </div>
     );
   }
-  
+
   let initialDataForOS;
   if (action === 'create' && budgetToPrefill && customerForBudget && equipmentForBudget) {
       const budgetItemsDescription = budgetToPrefill.items
         .map(item => `- ${item.description} (Qtd: ${item.quantity}, Valor Unit.: ${formatCurrency(item.unitPrice)}, Subtotal: ${formatCurrency(item.quantity * item.unitPrice)})`)
-        .join('\n');
-      
-      const description = `Serviço referente ao Orçamento Nº ${budgetToPrefill.budgetNumber}.\n\nCliente: ${toTitleCase(customerForBudget.name)}\nMáquina: ${toTitleCase(equipmentForBudget.brand)} ${toTitleCase(equipmentForBudget.model)} (Chassi: ${equipmentForBudget.chassisNumber || 'N/A'})\n\nItens do Orçamento:\n${budgetItemsDescription}\n\nValor Total do Orçamento: ${formatCurrency(budgetToPrefill.totalAmount)}`;
+        .join('\\n');
+
+      const description = `Serviço referente ao Orçamento Nº ${budgetToPrefill.budgetNumber}.\\n\\nCliente: ${toTitleCase(customerForBudget.name)}\\nMáquina: ${toTitleCase(equipmentForBudget.brand)} ${toTitleCase(equipmentForBudget.model)} (Chassi: ${equipmentForBudget.chassisNumber || 'N/A'})\\n\\nItens do Orçamento:\\n${budgetItemsDescription}\\n\\nValor Total do Orçamento: ${formatCurrency(budgetToPrefill.totalAmount)}`;
 
     initialDataForOS = {
       customerId: budgetToPrefill.customerId,
       equipmentId: budgetToPrefill.equipmentId,
       description: description,
-      // Poderia adicionar budget.notes para as notas da OS também, ou o técnico decide.
+      notes: budgetToPrefill.notes || "",
     };
   }
 
-  return <ServiceOrderClientPage 
-            serviceOrderIdFromUrl={orderIdToOpen} 
-            initialDataFromBudget={initialDataForOS} 
+  return <ServiceOrderClientPage
+            serviceOrderIdFromUrl={orderIdToOpen}
+            initialDataFromBudget={initialDataForOS}
+            budgetIdToCreateFrom={action === 'create' && budgetIdFromUrl ? budgetIdFromUrl : undefined}
          />;
 }

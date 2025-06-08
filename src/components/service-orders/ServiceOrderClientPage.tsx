@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId, Budget } from "@/types"; // Adicionado Budget
+import type { ServiceOrder, Customer, Maquina, Technician, Vehicle, ServiceOrderPhaseType, OwnerReferenceType, Company, CompanyId, Budget } from "@/types";
 import { ServiceOrderSchema, serviceTypeOptionsList, serviceOrderPhaseOptions, companyDisplayOptions, OWNER_REF_CUSTOMER, companyIds, maquinaTypeOptions, maquinaOperationalStatusOptions, GOLDMAQ_COMPANY_ID } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
@@ -57,6 +57,7 @@ const phaseIcons: Record<ServiceOrderPhaseType, JSX.Element> = {
 };
 
 const FIRESTORE_COLLECTION_NAME = "ordensDeServico";
+const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets"; // Adicionado
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
@@ -278,10 +279,12 @@ async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
 
 interface ServiceOrderClientPageProps {
   serviceOrderIdFromUrl?: string | null;
-  initialDataFromBudget?: Partial<ServiceOrder>; // NOVO PROP
+  initialDataFromBudget?: Partial<ServiceOrder>;
+  budgetIdToCreateFrom?: string; // Adicionado
 }
 
-export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromBudget }: ServiceOrderClientPageProps) { // MODIFICADO para aceitar initialDataFromBudget
+export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
+  const { serviceOrderIdFromUrl, initialDataFromBudget, budgetIdToCreateFrom } = props;
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -474,11 +477,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
               const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
               form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
               toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
-            } else if (result.estimatedTollCostByAI === 0 || result.estimatedTollCostByAI === null) { // MODIFICADO AQUI
-              toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00 ou não aplicável.`; // MODIFICADO AQUI
-              if (currentTollValue === null || currentTollValue === undefined) { // MODIFICADO AQUI
-                  form.setValue('estimatedTollCosts', 0, { shouldValidate: true }); // MODIFICADO AQUI
-              } // MODIFICADO AQUI
+            } else if (result.estimatedTollCostByAI === 0 || result.estimatedTollCostByAI === null) {
+              toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00 ou não aplicável.`;
+              if (currentTollValue === null || currentTollValue === undefined) {
+                  form.setValue('estimatedTollCosts', 0, { shouldValidate: true });
+              }
             }
             toast({ title: "Estimativas Calculadas", description: toastMessage.trim() });
 
@@ -534,7 +537,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
   }, [equipmentList, selectedCustomerId, isLoadingEquipment]);
 
   useEffect(() => {
-    if (!editingOrder && !initialDataFromBudget) { // MODIFICADO: Não sobrescrever se preenchendo do orçamento
+    if (!editingOrder && !initialDataFromBudget) {
         if (selectedCustomerId) {
             const customer = (customers || []).find(c => c.id === selectedCustomerId);
             if (customer?.preferredTechnician) {
@@ -548,11 +551,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
         }
     }
 
-    if (selectedCustomerId && !initialDataFromBudget) { // MODIFICADO: Não sobrescrever se preenchendo do orçamento
+    if (selectedCustomerId && !initialDataFromBudget) {
       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
-    } else if (!initialDataFromBudget) { // MODIFICADO: Não sobrescrever se preenchendo do orçamento
+    } else if (!initialDataFromBudget) {
        if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
@@ -597,7 +600,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
 
 
   const addServiceOrderMutation = useMutation({
-    mutationFn: async (data: { formData: z.infer<typeof ServiceOrderSchema>; filesToUpload: File[] }) => {
+    mutationFn: async (data: { formData: z.infer<typeof ServiceOrderSchema>; filesToUpload: File[]; budgetIdToMark?: string }) => {
       if (!db) throw new Error("Firebase DB is not available for adding service order.");
       setIsUploadingFile(true);
       const newOrderId = doc(collection(db, FIRESTORE_COLLECTION_NAME)).id;
@@ -611,10 +614,19 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       }
       const orderDataForFirestore = prepareDataForFirestore(data.formData, uploadedUrls);
       await setDoc(doc(db, FIRESTORE_COLLECTION_NAME, newOrderId), orderDataForFirestore);
+
+      if (data.budgetIdToMark) {
+        const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, data.budgetIdToMark);
+        await updateDoc(budgetRef, { serviceOrderCreated: true });
+      }
+
       return { ...orderDataForFirestore, id: newOrderId };
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      if (variables.budgetIdToMark) {
+        queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] }); // Invalidate budget cache
+      }
       toast({ title: "Ordem de Serviço Criada", description: `Ordem ${data.orderNumber} criada.` });
       closeModal();
     },
@@ -709,10 +721,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
         estimatedTravelCost: order.estimatedTravelCost !== undefined ? order.estimatedTravelCost : null,
       });
       setShowCustomServiceType(!!(order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any)));
-    } else { // Nova OS
+    } else {
       setEditingOrder(null);
       setIsEditMode(true);
-      // Se initialDataFromBudget existir, use-o, senão, use os padrões.
       const defaultValuesForNewOS = {
         orderNumber: getNextOrderNumber(serviceOrdersRaw),
         customerId: initialDataFromBudget?.customerId || "",
@@ -733,7 +744,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       };
       form.reset(defaultValuesForNewOS);
       setShowCustomServiceType(false);
-      // Se preenchendo do orçamento, pode já selecionar o cliente/equipamento
        if (initialDataFromBudget?.customerId) {
         form.setValue('customerId', initialDataFromBudget.customerId, { shouldValidate: true });
       }
@@ -815,7 +825,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
         originalMediaUrls: editingOrder.mediaUrls || [],
       });
     } else {
-      addServiceOrderMutation.mutate({ formData: values, filesToUpload: mediaFiles });
+      addServiceOrderMutation.mutate({
+        formData: values,
+        filesToUpload: mediaFiles,
+        budgetIdToMark: budgetIdToCreateFrom
+      });
     }
   };
 
@@ -880,7 +894,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     const largeText = 12;
     const titleText = 16;
 
-    // Header - Company Details
     if (companyDetails) {
       doc.setFontSize(largeText);
       doc.setFont("helvetica", "bold");
@@ -899,13 +912,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Title
     doc.setFontSize(titleText);
     doc.setFont("helvetica", "bold");
     doc.text(`ORDEM DE SERVIÇO Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
     yPos += lineSpacing * 1.5;
 
-    // Basic Info
     doc.setFontSize(normalText);
     doc.setFont("helvetica", "bold");
     doc.text("INFORMAÇÕES GERAIS", 14, yPos);
@@ -917,7 +928,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     doc.text(`Previsão Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 14, yPos);
     yPos += lineSpacing * 1.5;
 
-    // Customer Info
     doc.setFont("helvetica", "bold");
     doc.text("DADOS DO CLIENTE", 14, yPos);
     yPos += lineSpacing;
@@ -937,7 +947,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Equipment Info
     doc.setFont("helvetica", "bold");
     doc.text("DADOS DO EQUIPAMENTO", 14, yPos);
     yPos += lineSpacing;
@@ -955,7 +964,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Service Details
     doc.setFont("helvetica", "bold");
     doc.text("DETALHES DO SERVIÇO", 14, yPos);
     yPos += lineSpacing;
@@ -968,27 +976,24 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     doc.text(problemLines, 14, yPos);
     yPos += (problemLines.length * lineSpacing * 0.7) + lineSpacing;
 
-    // Notes and Conclusion Area
     doc.setFont("helvetica", "bold");
     doc.text("OBSERVAÇÕES / DIAGNÓSTICO TÉCNICO:", 14, yPos);
     yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 30); // Box for notes
+    doc.rect(14, yPos, 182, 30); 
     yPos += 30 + lineSpacing;
 
     doc.setFont("helvetica", "bold");
     doc.text("SERVIÇOS REALIZADOS / PEÇAS UTILIZADAS:", 14, yPos);
     yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 30); // Box for services/parts
+    doc.rect(14, yPos, 182, 30); 
     yPos += 30 + lineSpacing * 1.5;
 
-    // Signatures
-    doc.line(14, yPos, 84, yPos); // Technician signature line
+    doc.line(14, yPos, 84, yPos); 
     doc.text("Assinatura do Técnico", 14, yPos + 5);
-    doc.line(112, yPos, 182, yPos); // Customer signature line
+    doc.line(112, yPos, 182, yPos); 
     doc.text("Assinatura do Cliente", 112, yPos + 5);
     yPos += lineSpacing * 1.5;
 
-    // Footer
     doc.setFontSize(smallText - 1);
     doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
 
@@ -1012,7 +1017,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     const largeText = 12;
     const titleText = 16;
 
-    // Header
     if (companyDetails) {
       doc.setFontSize(largeText);
       doc.setFont("helvetica", "bold");
@@ -1031,20 +1035,17 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Title
     doc.setFontSize(titleText);
     doc.setFont("helvetica", "bold");
     doc.text(`RECIBO DE SERVIÇO - OS Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
     yPos += lineSpacing * 1.5;
 
-    // Dates
     doc.setFontSize(normalText);
     doc.setFont("helvetica", "normal");
     doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
     doc.text(`Data Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 100, yPos);
     yPos += lineSpacing * 1.5;
 
-    // Customer
     doc.setFont("helvetica", "bold");
     doc.text("CLIENTE", 14, yPos);
     yPos += lineSpacing;
@@ -1058,7 +1059,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Equipment
     doc.setFont("helvetica", "bold");
     doc.text("EQUIPAMENTO", 14, yPos);
     yPos += lineSpacing;
@@ -1070,7 +1070,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing * 1.5;
     }
 
-    // Service Details
     doc.setFont("helvetica", "bold");
     doc.text("SERVIÇO REALIZADO", 14, yPos);
     yPos += lineSpacing;
@@ -1090,7 +1089,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += (conclusionLines.length * lineSpacing * 0.7) + lineSpacing * 2;
 
 
-    // Signature placeholder
     doc.line(14, yPos, 84, yPos);
     doc.text("Assinatura do Cliente", 14, yPos + 5);
     yPos += lineSpacing * 1.5;
@@ -1134,14 +1132,13 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
 
 
   useEffect(() => {
-    // Priorizar abertura por ID de URL, depois por dados de orçamento
     if (serviceOrderIdFromUrl && !isLoadingServiceOrders && serviceOrdersRaw.length > 0 && !isModalOpen) {
       const orderToOpen = serviceOrdersRaw.find(o => o.id === serviceOrderIdFromUrl);
       if (orderToOpen) {
         openModal(orderToOpen);
       }
-    } else if (initialDataFromBudget && !isModalOpen && !serviceOrderIdFromUrl) { // MODIFICADO: Apenas abrir se não houver serviceOrderIdFromUrl
-      openModal(); // Chama openModal sem argumento para usar initialDataFromBudget
+    } else if (initialDataFromBudget && !isModalOpen && !serviceOrderIdFromUrl) {
+      openModal();
     }
   }, [serviceOrderIdFromUrl, initialDataFromBudget, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen]);
 
@@ -1406,7 +1403,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
                 )} />
                 <FormField control={form.control} name="customerId" render={({ field }) => (
                   <FormItem><FormLabel>Cliente</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={!!editingOrder || !!initialDataFromBudget?.customerId}> {/* MODIFICADO: Desabilitar se preenchendo de orçamento */}
+                    <Select onValueChange={field.onChange} value={field.value} disabled={!!editingOrder || !!initialDataFromBudget?.customerId}>
                       <FormControl><SelectTrigger><SelectValue placeholder={isLoadingCustomers ? "Carregando..." : "Selecione o cliente"} /></SelectTrigger></FormControl>
                       <SelectContent>
                         {customers.map(cust => <SelectItem key={cust.id} value={cust.id}>{cust.name} ({cust.cnpj})</SelectItem>)}
@@ -1417,7 +1414,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
               </div>
               <FormField control={form.control} name="equipmentId" render={({ field }) => (
                 <FormItem><FormLabel>Máquina</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCustomerId || !!editingOrder || !!initialDataFromBudget?.equipmentId}> {/* MODIFICADO: Desabilitar se preenchendo de orçamento */}
+                  <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCustomerId || !!editingOrder || !!initialDataFromBudget?.equipmentId}>
                     <FormControl><SelectTrigger><SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (selectedCustomerId ? "Selecione a máquina" : "Selecione um cliente primeiro")} /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value={NO_EQUIPMENT_SELECTED_VALUE} disabled>
