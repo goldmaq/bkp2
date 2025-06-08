@@ -67,10 +67,10 @@ async function fetchRouteFromGoogleMaps(
   destination: string
 ): Promise<{ distanceKm: number; durationText: string; googleIndicatesTolls: boolean } | { error: string; status: CalculateDistanceOutput['status'] }> {
   console.log(`[DistanceFlow/GoogleMaps] Fetching route. Origin: "${origin}", Destination: "${destination}"`);
-  const apiKey = process.env.GOOGLE_API_KEY; // Corrected: Use GOOGLE_API_KEY
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY; // Reverted to GOOGLE_MAPS_API_KEY
   if (!apiKey) {
-    console.error("[DistanceFlow/GoogleMaps] Google API Key is missing from environment variables (expected GOOGLE_API_KEY).");
-    return { error: "Google API Key (GOOGLE_API_KEY) is not configured.", status: 'ERROR_GOOGLE_API_KEY_MISSING' };
+    console.error("[DistanceFlow/GoogleMaps] Google API Key is missing from environment variables (expected GOOGLE_MAPS_API_KEY).");
+    return { error: "Google API Key (GOOGLE_MAPS_API_KEY) is not configured.", status: 'ERROR_GOOGLE_API_KEY_MISSING' };
   }
 
   const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&key=${apiKey}&language=pt-BR&units=metric`;
@@ -99,7 +99,7 @@ async function fetchRouteFromGoogleMaps(
     if (route.warnings && route.warnings.some((w: string) => w.toLowerCase().includes("pedágio") || w.toLowerCase().includes("toll"))) {
         googleIndicatesTolls = true;
     }
-    if (leg.tolls_info || (leg as any).tolls ) {
+    if (leg.tolls_info || (leg as any).tolls ) { // Type assertion for tolls in case it's not in standard types
         googleIndicatesTolls = true;
     }
     if (route.summary && (route.summary.toLowerCase().includes("toll") || route.summary.toLowerCase().includes("pedágio"))){
@@ -192,23 +192,33 @@ if (ai && tollEstimationPrompt) {
     if (!input.originAddress || !input.destinationAddress) {
       return { distanceKm: 0, status: 'ERROR_NO_ADDRESS', errorMessage: "Origin or destination address is missing in dummy flow." };
     }
+    // Simulate a random distance between 50 and 500 km for dummy flow
     const simulatedDistance = Math.floor(Math.random() * 450) + 50;
     return {
-      distanceKm: simulatedDistance,
+      distanceKm: simulatedDistance, // Example: Random distance
       status: 'SIMULATED',
       errorMessage: 'Dummy flow: Simulating API key missing, as Genkit/Google Maps is not fully initialized.',
-      estimatedTollCostByAI: Math.random() > 0.5 ? Math.floor(Math.random() * 50) : 0,
-      googleMapsApiIndicstedTolls: Math.random() > 0.5,
+      estimatedTollCostByAI: Math.random() > 0.5 ? Math.floor(Math.random() * 50) : 0, // Example: Random toll
+      googleMapsApiIndicstedTolls: Math.random() > 0.5, // Example: Random toll indication
     };
   };
 }
 
+/**
+ * Calculates the driving distance between two addresses and estimates toll costs.
+ * This function wraps the Genkit flow `calculateDistanceFlow`.
+ *
+ * @param input - An object containing the origin and destination addresses.
+ * @returns A promise that resolves to an object with distance, status, and optional toll information.
+ */
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
+  // Ensure calculateDistanceFlow is defined before calling it
   if (typeof calculateDistanceFlow !== 'function') {
     console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. Critical initialization issue.");
+    // Fallback to a simulated response or throw a more specific error
     return {
-        distanceKm: Math.floor(Math.random() * 450) + 50, 
-        status: 'ERROR_GOOGLE_API_FAILED', 
+        distanceKm: Math.floor(Math.random() * 450) + 50, // Example random distance
+        status: 'ERROR_GOOGLE_API_FAILED', // Generic error for uninitialized flow
         errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized. Using simulated distance.',
         estimatedTollCostByAI: null,
         googleMapsApiIndicstedTolls: undefined,
@@ -219,7 +229,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   } catch (error: any) {
     console.error("[DistanceFlow] Error executing calculateDistanceFlow:", error);
     return {
-      distanceKm: Math.floor(Math.random() * 450) + 50, 
+      distanceKm: Math.floor(Math.random() * 450) + 50, // Example random distance
       status: 'ERROR_GOOGLE_API_FAILED',
       errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
       estimatedTollCostByAI: null,
