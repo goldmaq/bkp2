@@ -5,13 +5,14 @@ import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, HardHat, UserCircle, Wrench, Loader2, AlertTriangle, BadgeCheck, Phone } from "lucide-react";
+import { PlusCircle, HardHat, UserCircle, Wrench, Loader2, AlertTriangle, Phone, Briefcase } from "lucide-react"; // Added Briefcase
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { Technician } from "@/types";
-import { TechnicianSchema } from "@/types";
+import { TechnicianSchema, roleOptionsList } from "@/types"; // Added roleOptionsList
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -20,7 +21,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-const FIRESTORE_COLLECTION_NAME = "tecnicos";
+const FIRESTORE_COLLECTION_NAME = "tecnicos"; // This collection name can remain "tecnicos"
 
 const getWhatsAppNumber = (phone?: string): string => {
   if (!phone) return "";
@@ -66,7 +67,7 @@ const formatPhoneNumberForInputDisplay = (value: string): string => {
   return `(${ddd}) ${firstDigits}-${secondDigits}`;
 };
 
-async function fetchTechnicians(): Promise<Technician[]> {
+async function fetchTechnicians(): Promise<Technician[]> { // Function name can remain fetchTechnicians
   if (!db) {
     console.error("fetchTechnicians: Firebase DB is not available.");
     throw new Error("Firebase DB is not available");
@@ -81,15 +82,15 @@ export function TechnicianClientPage() {
   const { toast } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTechnician, setEditingTechnician] = useState<Technician | null>(null);
+  const [editingTechnician, setEditingTechnician] = useState<Technician | null>(null); // Variable name can remain editingTechnician
   const [isEditMode, setIsEditMode] = useState(false);
 
   const form = useForm<z.infer<typeof TechnicianSchema>>({
     resolver: zodResolver(TechnicianSchema),
-    defaultValues: { name: "", employeeId: "", specialization: "", phone: "" },
+    defaultValues: { name: "", role: "", specialization: "", phone: "" }, // Added role, removed employeeId
   });
 
-  const { data: technicians = [], isLoading, isError, error } = useQuery<Technician[], Error>({
+  const { data: technicians = [], isLoading, isError, error } = useQuery<Technician[], Error>({ // Variable name can remain technicians
     queryKey: [FIRESTORE_COLLECTION_NAME],
     queryFn: fetchTechnicians,
     enabled: !!db,
@@ -111,50 +112,50 @@ export function TechnicianClientPage() {
 
   const addTechnicianMutation = useMutation({
     mutationFn: async (newTechnicianData: z.infer<typeof TechnicianSchema>) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível para adicionar técnico.");
+      if (!db) throw new Error("Conexão com Firebase não disponível para adicionar colaborador.");
       return addDoc(collection(db!, FIRESTORE_COLLECTION_NAME), newTechnicianData);
     },
     onSuccess: (docRef, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Técnico Adicionado", description: `${variables.name} foi adicionado.` });
+      toast({ title: "Colaborador Adicionado", description: `${variables.name} foi adicionado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar o técnico ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar o colaborador ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
   const updateTechnicianMutation = useMutation({
     mutationFn: async (technicianData: Technician) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível para atualizar técnico.");
+      if (!db) throw new Error("Conexão com Firebase não disponível para atualizar colaborador.");
       const { id, ...dataToUpdate } = technicianData;
-      if (!id) throw new Error("ID do técnico é necessário para atualização.");
+      if (!id) throw new Error("ID do colaborador é necessário para atualização.");
       const techRef = doc(db!, FIRESTORE_COLLECTION_NAME, id);
       return updateDoc(techRef, dataToUpdate);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Técnico Atualizado", description: `${variables.name} foi atualizado.` });
+      toast({ title: "Colaborador Atualizado", description: `${variables.name} foi atualizado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar o técnico ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar o colaborador ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
   const deleteTechnicianMutation = useMutation({
     mutationFn: async (technicianId: string) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível para excluir técnico.");
-      if (!technicianId) throw new Error("ID do técnico é necessário para exclusão.");
+      if (!db) throw new Error("Conexão com Firebase não disponível para excluir colaborador.");
+      if (!technicianId) throw new Error("ID do colaborador é necessário para exclusão.");
       return deleteDoc(doc(db!, FIRESTORE_COLLECTION_NAME, technicianId));
     },
     onSuccess: (_, technicianId) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Técnico Excluído", description: `O técnico foi removido.` });
+      toast({ title: "Colaborador Excluído", description: `O colaborador foi removido.` });
       closeModal(); 
     },
     onError: (err: Error, technicianId) => {
-      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o técnico. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o colaborador. Detalhe: ${err.message}`, variant: "destructive" });
     },
   });
 
@@ -168,7 +169,7 @@ export function TechnicianClientPage() {
       setIsEditMode(false); 
     } else {
       setEditingTechnician(null);
-      form.reset({ name: "", employeeId: "", specialization: "", phone: "" });
+      form.reset({ name: "", role: "", specialization: "", phone: "" }); // Updated defaultValues
       setIsEditMode(true); 
     }
     setIsModalOpen(true);
@@ -196,7 +197,7 @@ export function TechnicianClientPage() {
 
   const handleModalDeleteConfirm = () => {
     if (editingTechnician && editingTechnician.id) {
-      if (window.confirm(`Tem certeza que deseja excluir o técnico "${editingTechnician.name}"?`)) {
+      if (window.confirm(`Tem certeza que deseja excluir o colaborador "${editingTechnician.name}"?`)) {
         deleteTechnicianMutation.mutate(editingTechnician.id);
       }
     }
@@ -208,7 +209,7 @@ export function TechnicianClientPage() {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2">Carregando técnicos...</p>
+        <p className="ml-2">Carregando colaboradores...</p>
       </div>
     );
   }
@@ -217,7 +218,7 @@ export function TechnicianClientPage() {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-destructive">
         <AlertTriangle className="h-12 w-12 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Técnicos</h2>
+        <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Colaboradores</h2>
         <p className="text-center">Não foi possível buscar os dados. Tente novamente mais tarde.</p>
         <p className="text-sm mt-2">Detalhe: {error?.message}</p>
       </div>
@@ -227,10 +228,10 @@ export function TechnicianClientPage() {
   return (
     <>
       <PageHeader 
-        title="Cadastro de Técnicos"
+        title="Técnicos / Colaboradores" // Updated title
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteTechnicianMutation.isPending}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Técnico
+            <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Colaborador
           </Button>
         }
       />
@@ -238,9 +239,9 @@ export function TechnicianClientPage() {
       {technicians.length === 0 && !isLoading ? (
         <DataTablePlaceholder
           icon={HardHat}
-          title="Nenhum Técnico Cadastrado"
-          description="Adicione seu primeiro técnico ao cadastro."
-          buttonLabel="Adicionar Técnico"
+          title="Nenhum Colaborador Cadastrado"
+          description="Adicione seu primeiro colaborador ao cadastro."
+          buttonLabel="Adicionar Colaborador"
           onButtonClick={() => openModal()}
         />
       ) : (
@@ -266,9 +267,9 @@ export function TechnicianClientPage() {
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2 text-sm">
                   <p className="flex items-center text-sm">
-                    <BadgeCheck className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Matrícula:</span>
-                    <span>{tech.employeeId}</span>
+                    <Briefcase className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> {/* Icon for Role */}
+                    <span className="font-medium text-muted-foreground mr-1">Cargo:</span>
+                    <span>{tech.role}</span>
                   </p>
                   {tech.specialization && (
                     <p className="flex items-center text-sm">
@@ -305,8 +306,8 @@ export function TechnicianClientPage() {
       <FormModal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingTechnician ? "Editar Técnico" : "Adicionar Novo Técnico"}
-        description="Insira os detalhes do técnico."
+        title={editingTechnician ? "Editar Colaborador" : "Adicionar Novo Colaborador"}
+        description="Insira os detalhes do colaborador."
         formId="technician-form"
         isSubmitting={isMutating}
         editingItem={editingTechnician}
@@ -314,19 +315,34 @@ export function TechnicianClientPage() {
         isDeleting={deleteTechnicianMutation.isPending}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        deleteButtonLabel="Excluir Técnico"
+        deleteButtonLabel="Excluir Colaborador"
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="technician-form" className="space-y-4">
-            <FormField control={form.control} name="name" render={({ field }) => (
-              <FormItem><FormLabel>Nome</FormLabel><FormControl><Input placeholder="Nome completo do técnico" {...field} disabled={!!editingTechnician && !isEditMode} /></FormControl><FormMessage /></FormItem>
-            )} />
             <fieldset disabled={!!editingTechnician && !isEditMode} className="space-y-4">
-              <FormField control={form.control} name="employeeId" render={({ field }) => (
-                <FormItem><FormLabel>Matrícula</FormLabel><FormControl><Input placeholder="Identificador único do funcionário" {...field} /></FormControl><FormMessage /></FormItem>
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem><FormLabel>Nome</FormLabel><FormControl><Input placeholder="Nome completo do colaborador" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="role" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cargo</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o cargo" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {roleOptionsList.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
               )} />
               <FormField control={form.control} name="specialization" render={({ field }) => (
-                <FormItem><FormLabel>Especialização (Opcional)</FormLabel><FormControl><Input placeholder="ex: Hidráulica, Elétrica" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Especialização (Opcional)</FormLabel><FormControl><Input placeholder="ex: Hidráulica, Elétrica (para técnicos)" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="phone" render={({ field }) => (
                 <FormItem>
@@ -357,4 +373,3 @@ export function TechnicianClientPage() {
     </>
   );
 }
-

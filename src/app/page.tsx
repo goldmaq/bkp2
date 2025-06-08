@@ -10,7 +10,7 @@ const quickLinks = [
   { title: "Máquinas", href: "/maquinas", icon: Construction, description: "Rastrear máquinas e equipamentos" },
   { title: "Equip. Auxiliares", href: "/auxiliary-equipment", icon: PackageSearch, description: "Controlar baterias, carregadores, etc." },
   { title: "Ordens de Serviço", href: "/service-orders", icon: ClipboardList, description: "Supervisionar operações de serviço" },
-  { title: "Técnicos", href: "/technicians", icon: HardHat, description: "Manter registro de técnicos" },
+  { title: "Técnicos / Colaboradores", href: "/technicians", icon: HardHat, description: "Manter registro de colaboradores" }, // Updated title and description
   { title: "Veículos", href: "/vehicles", icon: CarFront, description: "Administrar dados de veículos" },
   { title: "Dados das Empresas", href: "/company-config", icon: SlidersHorizontal, description: "Definir detalhes das empresas do grupo" },
 ];
