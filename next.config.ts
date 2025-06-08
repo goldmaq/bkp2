@@ -35,11 +35,10 @@ const nextConfig: NextConfig = {
         'node:async_hooks': false,  // Explicitly set node:async_hooks to false in fallback
       };
 
-      // Ensure alias object exists and remove our specific aliases for async_hooks
-      // as we are now relying on fallback: false
+      // Ensure alias object exists and explicitly set aliases to false
       config.resolve.alias = config.resolve.alias || {};
-      delete config.resolve.alias['async_hooks'];
-      delete config.resolve.alias['node:async_hooks'];
+      config.resolve.alias['async_hooks'] = false;
+      config.resolve.alias['node:async_hooks'] = false;
       
       // Suppress errors related to expressions in context (often involves dynamic imports)
       config.module.exprContextCritical = false; 
