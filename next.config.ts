@@ -25,8 +25,7 @@ const nextConfig: NextConfig = {
       // Prevent bundling of Node.js-specific modules for the client
       config.resolve.fallback = {
         ...config.resolve.fallback, 
-        async_hooks: false,        
-        'node:async_hooks': false, 
+        // async_hooks and node:async_hooks removed from here, handled by alias
         fs: false,                 
         tls: false,                
         net: false,                
