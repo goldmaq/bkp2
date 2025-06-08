@@ -18,12 +18,15 @@ const CalculateDistanceInputSchema = z.object({
   originAddress: z.string().describe("The full starting address."),
   destinationAddress: z.string().describe("The full destination address."),
 });
+export type CalculateDistanceInput = z.infer<typeof CalculateDistanceInputSchema>;
+
 
 const CalculateDistanceOutputSchema = z.object({
   distanceKm: z.number().describe("The calculated distance in kilometers."),
   status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_API_FAILED', 'SIMULATED', 'ERROR_GEOCODING_FAILED']).describe("Status of the calculation."),
   errorMessage: z.string().optional().describe("Error message if the status is an error."),
 });
+export type CalculateDistanceOutput = z.infer<typeof CalculateDistanceOutputSchema>;
 
 // Helper function to fetch with timeout
 async function fetchWithTimeout(resource: RequestInfo | URL, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
@@ -107,17 +110,23 @@ function getSimulatedDistance(): number {
 export async function calculateDistance(input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> {
   if (!ai || typeof calculateDistanceFlow !== 'function') {
     console.error("calculateDistance Flow: Genkit AI instance or flow is not available or not a function.");
-    return {
-      distanceKm: getSimulatedDistance(),
-      status: 'SIMULATED',
-      errorMessage: 'Genkit AI not initialized or flow not defined. Using simulated distance.',
-    };
+    // If calculateDistanceFlow itself is not defined (e.g. ai was null during its definition),
+    // we need to call a simple async function that returns the simulated response directly.
+    if (typeof calculateDistanceFlow !== 'function') {
+        return {
+            distanceKm: getSimulatedDistance(),
+            status: 'SIMULATED',
+            errorMessage: 'Genkit AI not initialized or flow not defined at all. Using simulated distance.',
+        };
+    }
+    // If calculateDistanceFlow IS a function (meaning ai was null and it's the dummy flow), call it.
+    return calculateDistanceFlow(input);
   }
   return calculateDistanceFlow(input);
 }
 
 // Genkit Flow Definition
-let calculateDistanceFlow: Flow<z.infer<typeof CalculateDistanceInputSchema>, z.infer<typeof CalculateDistanceOutputSchema>>;
+let calculateDistanceFlow: Flow<typeof CalculateDistanceInputSchema, typeof CalculateDistanceOutputSchema>;
 
 if (ai) {
   calculateDistanceFlow = ai.defineFlow(
@@ -175,10 +184,10 @@ if (ai) {
           errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
         };
       }
-    } // Closes the async arrow function (2nd arg to defineFlow)
-  ); // Closes the ai.defineFlow call and the assignment to calculateDistanceFlow
+    }
+  );
 } else {
-  // If ai is null, define calculateDistanceFlow as a function that returns a simulated response
+  // If ai is null, define calculateDistanceFlow as a simple async function that returns a simulated response
   calculateDistanceFlow = async (input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> => {
     console.warn("calculateDistanceFlow (dummy): Genkit AI not initialized. Input:", input);
     return {

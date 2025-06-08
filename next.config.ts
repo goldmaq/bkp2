@@ -25,19 +25,23 @@ const nextConfig: NextConfig = {
       // Prevent bundling of Node.js-specific modules for the client
       config.resolve.fallback = {
         ...config.resolve.fallback, 
-        // async_hooks and node:async_hooks removed from here, handled by alias
+        // fs, tls, net, http2, dns are handled by fallback: false
         fs: false,                 
         tls: false,                
         net: false,                
         http2: false,              
-        dns: false,                
+        dns: false,
+        // async_hooks and node:async_hooks will be handled by alias below
       };
-      
+
+      // Suppress errors related to expressions in context (often involves dynamic imports)
+      config.module.exprContextCritical = false;
+
       config.resolve.alias = {
         ...config.resolve.alias,
         // Aponta 'node:async_hooks' para um módulo vazio real
         'node:async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
-        // Manter o alias para async_hooks simples também pode ser útil
+        // Keep the alias for simple async_hooks imports as well
         'async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
       };
     }
