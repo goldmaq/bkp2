@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban } from "lucide-react"; // Added Ban icon & ClipboardEdit
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone } from "lucide-react"; // Added Ban icon & ClipboardEdit, Phone
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
-import { buttonVariants } from "@/components/ui/button"; 
+import { buttonVariants } from "@/components/ui/button";
 
 const MAX_FILES_ALLOWED = 5;
 
@@ -244,8 +244,7 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  console.log(`DEBUG: getDeadlineStatusInfo for OrderPhase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
-
+  console.log(`DEBUG: getDeadlineStatusInfo - OS Phase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
     console.log("DEBUG: Status Overdue - isBefore:", isBefore(endDateNormalized, today), "isToday:", isToday(endDateNormalized));
@@ -262,6 +261,30 @@ const getDeadlineStatusInfo = (
   }
   console.log("DEBUG: Status None");
   return { status: 'none', alertClass: "" };
+};
+
+const getWhatsAppNumber = (phone?: string): string => {
+  if (!phone) return "";
+  let cleaned = phone.replace(/\D/g, '');
+
+  if (cleaned.startsWith('55') && (cleaned.length === 12 || cleaned.length === 13)) {
+    return cleaned;
+  }
+  if (!cleaned.startsWith('55') && (cleaned.length === 10 || cleaned.length === 11)) {
+    return `55${cleaned}`;
+  }
+  return cleaned; // Return as is if no specific country code logic applies
+};
+
+const formatPhoneNumberForDisplay = (phone?: string): string => {
+  if (!phone) return "N/A";
+  const cleaned = phone.replace(/\D/g, "");
+  if (cleaned.length === 11) { // (XX) XXXXX-XXXX
+    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
+  } else if (cleaned.length === 10) { // (XX) XXXX-XXXX
+    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
+  }
+  return phone; // Return original if not matching common formats
 };
 
 
@@ -418,7 +441,7 @@ export function ServiceOrderClientPage() {
       notes: (restOfData.notes === undefined || restOfData.notes === null || restOfData.notes.trim() === "") ? null : restOfData.notes,
     };
   };
- 
+
 
   const addServiceOrderMutation = useMutation({
     mutationFn: async (data: { formData: z.infer<typeof ServiceOrderSchema>; filesToUpload: File[] }) => {
@@ -454,7 +477,7 @@ export function ServiceOrderClientPage() {
       formData: z.infer<typeof ServiceOrderSchema>,
       filesToUpload: File[],
       existingUrlsToKeep: string[],
-      originalMediaUrls: string[] 
+      originalMediaUrls: string[]
     }) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
@@ -564,7 +587,7 @@ export function ServiceOrderClientPage() {
     setMediaFiles([]);
     if (order) {
       setEditingOrder(order);
-      setIsEditMode(false); 
+      setIsEditMode(false);
       const isServiceTypePredefined = serviceTypeOptionsList.includes(order.serviceType as any);
       form.reset({
         ...order,
@@ -582,7 +605,7 @@ export function ServiceOrderClientPage() {
       setShowCustomServiceType(!isServiceTypePredefined);
     } else {
       setEditingOrder(null);
-      setIsEditMode(true); 
+      setIsEditMode(true);
       const nextOrderNum = getNextOrderNumber(serviceOrdersRaw);
       form.reset({
         orderNumber: nextOrderNum,
@@ -713,7 +736,7 @@ export function ServiceOrderClientPage() {
       cancelServiceOrderMutation.mutate(editingOrder.id);
     }
   };
-  
+
   const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
   const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles;
@@ -738,13 +761,13 @@ export function ServiceOrderClientPage() {
     );
   }
 
-  const getCustomerDetails = (id: string): { name: string; cnpj: string } => {
+  const getCustomerDetails = (id: string): { name: string; cnpj: string; phone?: string } => {
     const customer = customers.find(c => c.id === id);
-    return customer ? { name: customer.name, cnpj: customer.cnpj } : { name: id, cnpj: "CNPJ não encontrado" };
+    return customer ? { name: customer.name, cnpj: customer.cnpj, phone: customer.phone } : { name: id, cnpj: "CNPJ não encontrado" };
   };
-  const getEquipmentDetails = (id: string): { identifier: string, id: string } => {
+  const getEquipmentDetails = (id: string): { brand: string, model: string, chassisNumber: string, id: string } => {
     const eq = equipmentList.find(e => e.id === id);
-    return eq ? { identifier: `${eq.brand} ${eq.model} (Chassi: ${eq.chassisNumber})`, id: eq.id } : { identifier: id, id };
+    return eq ? { brand: eq.brand, model: eq.model, chassisNumber: eq.chassisNumber, id: eq.id } : { brand: "Equipamento", model: "não encontrado", chassisNumber: "N/A", id };
   };
   const getTechnicianName = (id?: string | null) => {
     if (!id) return "Não Atribuído";
@@ -755,6 +778,32 @@ export function ServiceOrderClientPage() {
     const vehicle = vehicles.find(v => v.id === id);
     return vehicle ? { identifier: `${vehicle.model} (${vehicle.licensePlate})`, id: vehicle.id } : { identifier: id };
   };
+
+  const generateWhatsAppMessage = (
+    order: ServiceOrder,
+    customer: { name: string; cnpj: string; phone?: string },
+    equipment: { brand: string, model: string, chassisNumber: string, id: string },
+    technicianName: string
+  ): string => {
+    let message = `Olá ${customer.name},\n\n`;
+    message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
+    message += `*Cliente:* ${customer.name} (CNPJ: ${customer.cnpj})\n`;
+    message += `*Equipamento:* ${equipment.brand} ${equipment.model} (Chassi: ${equipment.chassisNumber})\n`;
+    message += `*Fase Atual:* ${order.phase}\n`;
+    message += `*Problema Relatado:* ${order.description}\n`;
+    if (technicianName !== "Não Atribuído") {
+      message += `*Técnico Designado:* ${technicianName}\n`;
+    }
+    if (order.startDate && isValid(parseISO(order.startDate))) {
+      message += `*Data de Início:* ${format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}\n`;
+    }
+    if (order.endDate && isValid(parseISO(order.endDate))) {
+      message += `*Previsão de Conclusão:* ${format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}\n`;
+    }
+    message += `\nAtenciosamente,\nEquipe Gold Maq`;
+    return message;
+  };
+
 
   return (
     <>
@@ -797,12 +846,18 @@ export function ServiceOrderClientPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServiceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
+            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
             const customerDetails = getCustomerDetails(order.customerId);
             const equipmentDetails = getEquipmentDetails(order.equipmentId);
             const vehicleDetails = getVehicleDetails(order.vehicleId);
+            const technicianName = getTechnicianName(order.technicianId);
+            const whatsappNumber = customerDetails.phone ? getWhatsAppNumber(customerDetails.phone) : null;
+            const whatsappMessage = whatsappNumber ? generateWhatsAppMessage(order, customerDetails, equipmentDetails, technicianName) : "";
+            const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
+
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
@@ -820,8 +875,8 @@ export function ServiceOrderClientPage() {
                   <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
                 </div>
                 <CardDescription className="flex items-center text-sm pt-1">
-                  {phaseIcons[order.phase]} 
-                  <span className="font-medium text-muted-foreground ml-1 mr-1">Fase:</span> 
+                  {phaseIcons[order.phase]}
+                  <span className="font-medium text-muted-foreground ml-1 mr-1">Fase:</span>
                   <span className="text-base font-semibold">{order.phase}</span>
                 </CardDescription>
               </CardHeader>
@@ -836,6 +891,26 @@ export function ServiceOrderClientPage() {
                   )}
                   <span className="text-muted-foreground/80 ml-1">({customerDetails.cnpj || 'CNPJ não disp.'})</span>
                 </p>
+                {customerDetails.phone && (
+                  <p className="flex items-center">
+                    <Phone className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">Tel:</span>
+                    {whatsappNumber ? (
+                      <a
+                        href={whatsappLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-primary hover:underline"
+                        title={`Abrir WhatsApp para ${formatPhoneNumberForDisplay(customerDetails.phone)}`}
+                      >
+                        {formatPhoneNumberForDisplay(customerDetails.phone)}
+                      </a>
+                    ) : (
+                      <span>{formatPhoneNumberForDisplay(customerDetails.phone)}</span>
+                    )}
+                  </p>
+                )}
                 {order.requesterName && (
                   <p className="flex items-start">
                     <User className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
@@ -847,12 +922,12 @@ export function ServiceOrderClientPage() {
                   <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
                   {isLoadingEquipment ? 'Carregando...' : (
-                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${equipmentDetails.identifier}`}>
-                       {equipmentDetails.identifier}
+                     <Link href={`/maquinas?openMaquinaId=${equipmentDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver máquina: ${equipmentDetails.brand} ${equipmentDetails.model}`}>
+                       {equipmentDetails.brand} {equipmentDetails.model} (Chassi: {equipmentDetails.chassisNumber})
                      </Link>
                   )}
                 </p>
-                <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : getTechnicianName(order.technicianId)}</p>
+                <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : technicianName}</p>
                 {order.vehicleId && (
                   <p className="flex items-center">
                     <VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
@@ -958,7 +1033,7 @@ export function ServiceOrderClientPage() {
                     <Select
                       onValueChange={field.onChange}
                       value={field.value || NO_EQUIPMENT_SELECTED_VALUE}
-                      
+
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (filteredEquipmentList.length === 0 && !selectedCustomerId ? "Nenhum equipamento da frota disponível" : "Selecione o Equipamento")} />
@@ -999,7 +1074,7 @@ export function ServiceOrderClientPage() {
                     <Select
                       onValueChange={(selectedValue) => field.onChange(selectedValue === NO_TECHNICIAN_SELECTED_VALUE ? null : selectedValue)}
                       value={field.value ?? NO_TECHNICIAN_SELECTED_VALUE}
-                      
+
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingTechnicians ? "Carregando..." : "Atribuir Técnico (Opcional)"} />
@@ -1050,7 +1125,7 @@ export function ServiceOrderClientPage() {
                     <Select
                       onValueChange={(selectedValue) => field.onChange(selectedValue === NO_VEHICLE_SELECTED_VALUE ? null : selectedValue)}
                       value={field.value ?? NO_VEHICLE_SELECTED_VALUE}
-                      
+
                     >
                       <FormControl><SelectTrigger>
                         <SelectValue placeholder={isLoadingVehicles ? "Carregando..." : "Selecione o Veículo"} />
@@ -1157,7 +1232,7 @@ export function ServiceOrderClientPage() {
               )}
               <FormMessage />
             </FormItem>
-            
+
             <fieldset disabled={(!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled) || (isOrderConcludedOrCancelled && !isEditMode) }>
               {editingOrder && (isOrderConcludedOrCancelled || (editingOrder.phase === 'Concluída' && !isEditMode)) && (
                   <FormField control={form.control} name="technicalConclusion" render={({ field }) => (
@@ -1251,3 +1326,4 @@ export function ServiceOrderClientPage() {
     </>
   );
 }
+
