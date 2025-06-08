@@ -138,17 +138,29 @@ export interface Company {
   bankPixKey?: string;
 }
 
+export interface FuelingRecord {
+  id: string; // UUID for the record, generated client-side
+  date: string; // ISO string format
+  liters: number;
+  pricePerLiter: number;
+  totalCost: number;
+  mileageAtFueling: number;
+  fuelStation?: string | null;
+  notes?: string | null;
+}
+
 export interface Vehicle {
   id: string;
   model: string;
   licensePlate: string;
   kind: string;
   currentMileage: number;
-  fuelConsumption: number;
-  costPerKilometer: number;
+  fuelConsumption: number; // km/L - could be an average or last calculated
+  costPerKilometer: number; // R$/km - could be an average or last calculated
   fipeValue?: number | null;
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
+  fuelingHistory?: FuelingRecord[] | null;
 }
 
 export const auxiliaryEquipmentTypeOptions = ["Bateria", "Carregador", "Berço", "Cabo"] as const;
@@ -167,6 +179,7 @@ export interface AuxiliaryEquipment {
 
 
 import { z } from 'zod';
+import { formatISO, parseISO } from 'date-fns';
 
 export const CustomerSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -220,7 +233,7 @@ export const MaquinaSchema = z.object({
   notes: z.string().optional().nullable(),
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
-  auxiliaryEquipmentIds: z.array(z.string()).optional().nullable(), 
+  linkedAuxiliaryEquipmentIds: z.array(z.string()).optional().nullable(), 
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;
@@ -239,16 +252,34 @@ export const TechnicianSchema = z.object({
   phone: z.string().optional(),
 });
 
+export const FuelingRecordSchema = z.object({
+  id: z.string().uuid("ID inválido").optional(), // Será gerado no cliente
+  date: z.string().refine((val) => {
+    try {
+      return !!parseISO(val);
+    } catch (e) {
+      return false;
+    }
+  }, "Data inválida").transform((val) => formatISO(parseISO(val), { representation: 'date' })),
+  liters: z.coerce.number().positive("Litros devem ser um número positivo."),
+  pricePerLiter: z.coerce.number().positive("Preço por litro deve ser um número positivo."),
+  totalCost: z.coerce.number().positive("Custo total deve ser um número positivo.").optional(), // Será calculado, mas pode ser sobrescrito
+  mileageAtFueling: z.coerce.number().int().min(0, "Quilometragem deve ser um número positivo."),
+  fuelStation: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
 export const VehicleSchema = z.object({
   model: z.string().min(1, "Modelo é obrigatório"),
   licensePlate: z.string().min(1, "Placa é obrigatória"),
   kind: z.string().min(1, "Tipo de veículo é obrigatório"),
-  currentMileage: z.coerce.number().min(0, "Quilometragem deve ser positiva"),
-  fuelConsumption: z.coerce.number().min(0, "Consumo de combustível deve ser positivo"),
-  costPerKilometer: z.coerce.number().min(0, "Custo por quilômetro deve ser positivo"),
-  fipeValue: z.coerce.number().min(0, "Valor FIPE deve ser positivo ou zero").optional().nullable(),
+  currentMileage: z.coerce.number().min(0, "Quilometragem deve ser um número não negativo"),
+  fuelConsumption: z.coerce.number().min(0, "Consumo de combustível deve ser um número não negativo"),
+  costPerKilometer: z.coerce.number().min(0, "Custo por quilômetro deve ser um número não negativo"),
+  fipeValue: z.coerce.number().min(0, "Valor FIPE deve ser um número não negativo").optional().nullable(),
   registrationInfo: z.string().optional(),
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
+  fuelingHistory: z.array(FuelingRecordSchema).optional().nullable(),
 });
 
 export const ServiceOrderSchema = z.object({
