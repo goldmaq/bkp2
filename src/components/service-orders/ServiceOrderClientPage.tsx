@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardClock, ThumbsUp, PackageSearch } from "lucide-react";
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Pause, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban } from "lucide-react"; // Added Ban icon & ClipboardEdit
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,16 +36,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
+import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
 
 const MAX_FILES_ALLOWED = 5;
 
 const phaseIcons: Record<ServiceOrderPhaseType, JSX.Element> = {
-  'Aguardando Avaliação Técnica': <ClipboardClock className="h-4 w-4 text-yellow-500" />,
+  'Aguardando Avaliação Técnica': <ClipboardEdit className="h-4 w-4 text-yellow-500" />,
   'Avaliado, Aguardando Autorização': <ThumbsUp className="h-4 w-4 text-purple-500" />,
   'Autorizado, Aguardando Peça': <PackageSearch className="h-4 w-4 text-orange-500" />,
   'Em Execução': <Play className="h-4 w-4 text-blue-500" />,
   'Concluída': <Check className="h-4 w-4 text-green-500" />,
-  'Cancelada': <X className="h-4 w-4 text-red-500" />,
+  'Cancelada': <Ban className="h-4 w-4 text-red-500" />,
 };
 
 const FIRESTORE_COLLECTION_NAME = "ordensDeServico";
@@ -232,6 +233,7 @@ const getDeadlineStatusInfo = (
 
   const parsedEndDate = parseISO(endDateString);
   if (!isValid(parsedEndDate)) {
+    console.log(`DEBUG: Invalid ParsedEndDate for ${endDateString}`);
     return { status: 'none', alertClass: "" };
   }
 
@@ -241,7 +243,8 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  console.log(`DEBUG: EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
+  console.log(`DEBUG: getDeadlineStatusInfo - OrderPhase: ${phase}, EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
+
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
     console.log("DEBUG: Status Overdue - isBefore:", isBefore(endDateNormalized, today), "isToday:", isToday(endDateNormalized));
@@ -274,6 +277,7 @@ export function ServiceOrderClientPage() {
   const [technicalConclusionText, setTechnicalConclusionText] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<ServiceOrderPhaseType | "Todos">("Todos");
+  const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false);
 
 
   const form = useForm<z.infer<typeof ServiceOrderSchema>>({
@@ -514,6 +518,27 @@ export function ServiceOrderClientPage() {
     },
   });
 
+  const cancelServiceOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      if (!db) throw new Error("Firebase DB is not available for cancelling service order.");
+      const orderRef = doc(db, FIRESTORE_COLLECTION_NAME, orderId);
+      await updateDoc(orderRef, {
+        phase: "Cancelada",
+        // Consider if endDate or technicalConclusion should be nulled or handled differently
+      });
+      return orderId;
+    },
+    onSuccess: (orderId) => {
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      toast({ title: "Ordem de Serviço Cancelada", description: `A OS foi marcada como cancelada.` });
+      setIsCancelConfirmModalOpen(false);
+      closeModal();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao Cancelar OS", description: `Não foi possível cancelar a OS. Detalhe: ${err.message}`, variant: "destructive" });
+    },
+  });
+
   const deleteServiceOrderMutation = useMutation({
     mutationFn: async (orderToDelete: ServiceOrder) => {
       if (!db) throw new Error("Firebase DB is not available for deleting service order.");
@@ -580,6 +605,7 @@ export function ServiceOrderClientPage() {
     setIsConclusionModalOpen(false);
     setTechnicalConclusionText("");
     setIsEditMode(false);
+    setIsCancelConfirmModalOpen(false);
   };
 
   const onSubmit = async (values: z.infer<typeof ServiceOrderSchema>) => {
@@ -587,7 +613,8 @@ export function ServiceOrderClientPage() {
     const newFilesToUpload = mediaFiles;
     const originalMediaUrls = editingOrder?.mediaUrls || [];
 
-    if (editingOrder?.phase === 'Concluída' && editingOrder?.id) {
+    // If the order is already concluded or cancelled, but we are saving (e.g. adding notes to a concluded OS)
+    if (editingOrder?.id && (editingOrder.phase === 'Concluída' || editingOrder.phase === 'Cancelada')) {
         updateServiceOrderMutation.mutate({
           id: editingOrder.id,
           formData: values,
@@ -613,7 +640,7 @@ export function ServiceOrderClientPage() {
 
   const handleModalDeleteConfirm = () => {
     if (editingOrder && editingOrder.id) {
-       if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"?`)) {
+       if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.`)) {
         deleteServiceOrderMutation.mutate(editingOrder);
       }
     }
@@ -675,9 +702,21 @@ export function ServiceOrderClientPage() {
       });
     }
   };
+
+  const handleOpenCancelConfirmModal = () => {
+    if (editingOrder) {
+      setIsCancelConfirmModalOpen(true);
+    }
+  };
+
+  const handleFinalizeCancellation = () => {
+    if (editingOrder && editingOrder.id) {
+      cancelServiceOrderMutation.mutate(editingOrder.id);
+    }
+  };
   
   const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
-  const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
+  const isMutating = addServiceOrderMutation.isPending || updateServiceOrderMutation.isPending || isUploadingFile || concludeServiceOrderMutation.isPending || cancelServiceOrderMutation.isPending || deleteServiceOrderMutation.isPending;
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles;
 
   if (isLoadingPageData && !isModalOpen) {
@@ -759,12 +798,11 @@ export function ServiceOrderClientPage() {
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
-            console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
-                <div className={cn(
+                 <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
                   deadlineInfo.alertClass
                 )}>
@@ -1023,6 +1061,21 @@ export function ServiceOrderClientPage() {
               )} />
             </fieldset>
 
+            {/* Moved action buttons here, to be inside the Form but outside the first fieldset */}
+            <div className="pt-4 space-y-2">
+              {editingOrder && isEditMode && !isOrderConcludedOrCancelled && (
+                <div className="flex flex-col sm:flex-row gap-2">
+                   <Button type="button" variant="outline" onClick={handleOpenConclusionModal} disabled={isMutating} className="w-full sm:w-auto">
+                    <Check className="mr-2 h-4 w-4" /> Concluir OS
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={handleOpenCancelConfirmModal} disabled={isMutating} className="w-full sm:w-auto">
+                    <Ban className="mr-2 h-4 w-4" /> Cancelar OS
+                  </Button>
+                </div>
+              )}
+            </div>
+
+
             <FormItem>
               <FormLabel>Anexos (Foto/Vídeo/PDF - Opcional){(isEditMode || !editingOrder) ? ` - Máx ${MAX_FILES_ALLOWED} arquivos.` : ''}</FormLabel>
               {editingOrder && formMediaUrls && formMediaUrls.length > 0 && (
@@ -1073,36 +1126,27 @@ export function ServiceOrderClientPage() {
               )}
               <FormMessage />
             </FormItem>
-
-            {editingOrder && !isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada' && isEditMode && (
-              <div className="pt-4">
-                <Button type="button" variant="outline" onClick={handleOpenConclusionModal} disabled={isMutating} className="w-full sm:w-auto">
-                  <Check className="mr-2 h-4 w-4" /> Concluir OS
-                </Button>
-              </div>
-            )}
-
-            {editingOrder && (isOrderConcludedOrCancelled || (editingOrder.phase === 'Concluída' && !isEditMode)) && (
-              <FormField control={form.control} name="technicalConclusion" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Conclusão Técnica</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Nenhuma conclusão técnica registrada."
-                      {...field}
-                      value={field.value ?? ""}
-                      readOnly
-                      rows={3}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            )}
             
-            <fieldset disabled={(!!editingOrder && !isEditMode) || isOrderConcludedOrCancelled}>
+            <fieldset disabled={(!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled) || (isOrderConcludedOrCancelled && !isEditMode) }>
+              {editingOrder && (isOrderConcludedOrCancelled || (editingOrder.phase === 'Concluída' && !isEditMode)) && (
+                  <FormField control={form.control} name="technicalConclusion" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Conclusão Técnica</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Nenhuma conclusão técnica registrada."
+                          {...field}
+                          value={field.value ?? ""}
+                          readOnly={!isEditMode || editingOrder.phase === 'Cancelada'}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Observações adicionais, peças utilizadas, etc." {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Observações adicionais, peças utilizadas, etc." {...field} value={field.value ?? ""} readOnly={!isEditMode && isOrderConcludedOrCancelled && editingOrder.phase !== 'Cancelada'} /></FormControl><FormMessage /></FormItem>
               )} />
             </fieldset>
 
@@ -1145,7 +1189,34 @@ export function ServiceOrderClientPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={isCancelConfirmModalOpen} onOpenChange={setIsCancelConfirmModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar Ordem de Serviço</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja cancelar esta Ordem de Serviço? A fase será alterada para "Cancelada".
+              Esta ação não pode ser desfeita facilmente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+           {cancelServiceOrderMutation.isError && (
+                <p className="text-sm text-destructive mt-2">
+                    Erro: {(cancelServiceOrderMutation.error as Error)?.message || "Não foi possível cancelar a OS."}
+                </p>
+            )}
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsCancelConfirmModalOpen(false)} disabled={cancelServiceOrderMutation.isPending}>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleFinalizeCancellation}
+              disabled={cancelServiceOrderMutation.isPending}
+              className={buttonVariants({variant: "destructive"})}
+            >
+              {cancelServiceOrderMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : <Ban className="mr-2 h-4 w-4" />}
+              Confirmar Cancelamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
-
