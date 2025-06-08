@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send } from "lucide-react";
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send, Layers, Tag } from "lucide-react";
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -581,11 +581,31 @@ export function BudgetClientPage() {
                       <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
                       {isLoadingCustomers ? 'Carregando...' : toTitleCase(customer?.name) || 'N/A'}
                     </p>
-                    <p className="flex items-center">
-                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
-                      {isLoadingEquipment ? 'Carregando...' : `${toTitleCase(equipment?.brand)} ${toTitleCase(equipment?.model)} (Chassi: ${equipment?.chassisNumber || 'N/A'})`}
-                    </p>
+                    {isLoadingEquipment ? (
+                      <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                    ) : equipment ? (
+                      <>
+                        <p className="flex items-center">
+                          <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Equip.:</span>
+                          {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                        </p>
+                        <p className="flex items-center">
+                          <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                          {equipment.chassisNumber || "N/A"}
+                        </p>
+                        {equipment.manufactureYear && (
+                          <p className="flex items-center">
+                            <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                            {equipment.manufactureYear}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="flex items-center text-muted-foreground"><Construction className="mr-2 h-4 w-4" /> Equipamento não especificado</p>
+                    )}
                     <p className="flex items-center">
                       <DollarSign className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium text-muted-foreground mr-1">Valor Total:</span>
@@ -856,6 +876,3 @@ export function BudgetClientPage() {
     </>
   );
 }
-    
-
-    

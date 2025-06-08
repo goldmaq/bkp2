@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
+import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon, MessageSquare, Layers, Tag } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image"; // Import next/image
 
@@ -97,7 +97,6 @@ async function fetchEquipmentList(): Promise<Maquina[]> {
       operationalStatus: data.operationalStatus,
       customerId: data.customerId || null,
       ownerReference: data.ownerReference || null,
-      // Add other fields as needed by Maquina type, or ensure they are optional
     } as Maquina;
   });
 }
@@ -523,25 +522,28 @@ export function PartsRequisitionClientPage() {
                     <span className="font-medium text-muted-foreground mr-1">Data:</span>
                     {formatDateForDisplay(req.createdDate)}
                   </p>
-                  {equipment ? (
-                    <p className="flex items-center">
-                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
-                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
-                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </p>
-                  ) : isLoadingEquipment ? (
-                    <p className="flex items-center text-xs text-muted-foreground">
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
-                    </p>
+                  {isLoadingEquipment ? (
+                    <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                  ) : equipment ? (
+                    <>
+                      <p className="flex items-center">
+                        <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                        {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                      </p>
+                      <p className="flex items-center">
+                        <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                        {equipment.chassisNumber || "N/A"}
+                      </p>
+                      {equipment.manufactureYear && (
+                        <p className="flex items-center">
+                          <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                          {equipment.manufactureYear}
+                        </p>
+                      )}
+                    </>
                   ) : serviceOrder?.equipmentId ? (
                     <p className="flex items-center text-xs text-destructive">
                       <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
@@ -741,4 +743,3 @@ export function PartsRequisitionClientPage() {
     </TooltipProvider>
   );
 }
-

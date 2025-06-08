@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type * as z from "zod";
-import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare } from "lucide-react";
+import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare, Layers, Tag } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -320,25 +320,28 @@ export function PartsTriageClientPage() {
                     <span className="font-medium text-muted-foreground mr-1">Data:</span>
                     {formatDateForDisplay(req.createdDate)}
                   </p>
-                  {equipment ? (
-                    <p className="flex items-center">
-                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
-                       <Tooltip>
-                        <TooltipTrigger asChild>
-                           <span className="truncate">{`${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}</p>
-                          <p>Chassi: {equipment.chassisNumber || 'N/A'}</p>
-                          <p>Ano: {equipment.manufactureYear || 'N/A'}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </p>
-                  ) : isLoadingEquipment ? (
-                    <p className="flex items-center text-xs text-muted-foreground">
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
-                    </p>
+                  {isLoadingEquipment ? (
+                    <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                  ) : equipment ? (
+                    <>
+                      <p className="flex items-center">
+                        <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                        {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                      </p>
+                      <p className="flex items-center">
+                        <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                        {equipment.chassisNumber || "N/A"}
+                      </p>
+                      {equipment.manufactureYear && (
+                        <p className="flex items-center">
+                          <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                          {equipment.manufactureYear}
+                        </p>
+                      )}
+                    </>
                   ) : serviceOrder?.equipmentId ? (
                     <p className="flex items-center text-xs text-destructive">
                       <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
@@ -450,4 +453,3 @@ export function PartsTriageClientPage() {
     </TooltipProvider>
   );
 }
-    

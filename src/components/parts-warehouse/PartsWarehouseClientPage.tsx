@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-import { Archive, Loader2, User, ClipboardList, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter, Construction } from "lucide-react";
+import { Archive, Loader2, User, ClipboardList, CalendarDays, PackageSearch, AlertTriangle, Image as ImageIcon, CheckCircle, ShoppingCart, Search, Filter, Construction, Layers, Tag } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ interface ApprovedItem extends PartsRequisitionItem {
   requisitionCreatedDate: string;
   requisitionStatus: PartsRequisition['status'];
   equipmentDetails?: {
-    id: string; // Added ID for linking
+    id: string; 
     brand: string;
     model: string;
     chassisNumber: string;
@@ -430,7 +430,7 @@ export function PartsWarehouseClientPage() {
                 <CardTitle className="font-headline text-lg text-primary">{item.partName}</CardTitle>
                 <CardDescription>
                   Req: {item.requisitionNumber} | OS:{" "}
-                  {item.serviceOrderNumber ? (
+                  {item.serviceOrderNumber && item.serviceOrderId ? (
                     <Link
                       href={`/service-orders?openServiceOrderId=${item.serviceOrderId}`}
                       onClick={(e) => e.stopPropagation()}
@@ -440,7 +440,7 @@ export function PartsWarehouseClientPage() {
                       {item.serviceOrderNumber}
                     </Link>
                   ) : (
-                    item.serviceOrderId
+                    item.serviceOrderId || 'N/A'
                   )}
                 </CardDescription>
               </CardHeader>
@@ -467,30 +467,33 @@ export function PartsWarehouseClientPage() {
                         {item.customerName}
                     </p>
                 )}
-                {item.equipmentDetails ? (
-                    <div className="flex items-center">
-                      <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                {isLoadingEquipment ? (
+                  <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                ) : item.equipmentDetails ? (
+                  <>
+                    <p className="flex items-center">
+                      <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
-                       <Tooltip>
-                        <TooltipTrigger asChild>
-                           <span className="truncate">{`${toTitleCase(item.equipmentDetails.brand)} ${toTitleCase(item.equipmentDetails.model)}`}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{toTitleCase(item.equipmentDetails.brand)} {toTitleCase(item.equipmentDetails.model)}</p>
-                          <p>Chassi: {item.equipmentDetails.chassisNumber || 'N/A'}</p>
-                          <p>Ano: {item.equipmentDetails.manufactureYear || 'N/A'}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  ) : isLoadingEquipment ? (
-                    <p className="flex items-center text-xs text-muted-foreground">
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Carregando dados da máquina...
+                      {toTitleCase(item.equipmentDetails.brand)} {toTitleCase(item.equipmentDetails.model)}
                     </p>
-                  ) : item.serviceOrderId ? (
-                    <p className="flex items-center text-xs text-destructive">
-                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina não encontrada para esta OS.
+                    <p className="flex items-center">
+                      <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                      {item.equipmentDetails.chassisNumber || "N/A"}
                     </p>
-                  ) : null}
+                    {item.equipmentDetails.manufactureYear && (
+                      <p className="flex items-center">
+                        <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                        {item.equipmentDetails.manufactureYear}
+                      </p>
+                    )}
+                  </>
+                ) : item.serviceOrderId ? (
+                  <p className="flex items-center text-xs text-destructive">
+                    <AlertTriangle className="mr-2 h-3 w-3" /> Máquina não encontrada para esta OS.
+                  </p>
+                ) : null}
                  {item.notes && (
                   <p className="text-xs text-muted-foreground mt-1">
                     <span className="font-medium">Obs. Técnico:</span> {item.notes}
@@ -620,4 +623,3 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
-
