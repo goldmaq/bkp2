@@ -181,7 +181,7 @@ export function PartsRequisitionClientPage() {
         items: requisition.items.map(item => ({...item, id: item.id || crypto.randomUUID()})),
         generalNotes: requisition.generalNotes || "",
       });
-      const previews: Record<string, string> = {};
+      const previews: Record<string, string | null> = {};
       requisition.items.forEach(item => {
         if (item.imageUrl && item.id) previews[item.id] = item.imageUrl;
       });
@@ -222,7 +222,7 @@ export function PartsRequisitionClientPage() {
     } else {
       const currentItemInForm = form.getValues('items').find(i => i.id === itemId);
       if (currentItemInForm?.imageUrl) {
-         setImagePreviews(prev => ({ ...prev, [itemId]: currentItemInForm.imageUrl }));
+         setImagePreviews(prev => ({ ...prev, [itemId]: currentItemInForm.imageUrl ?? null }));
       } else {
         setImagePreviews(prev => ({ ...prev, [itemId]: null }));
       }
@@ -239,7 +239,7 @@ export function PartsRequisitionClientPage() {
         update(itemIndex, { ...currentItem, imageUrl: null });
     }
 
-    if (editingRequisition && currentItem?.imageUrl) { // Check currentItem for imageUrl
+    if (editingRequisition && currentItem?.imageUrl) { 
         toast({ title: "Imagem Marcada para Remoção", description: "A imagem será removida ao salvar a requisição."});
     }
   };

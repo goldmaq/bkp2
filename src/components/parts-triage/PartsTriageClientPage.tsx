@@ -237,6 +237,8 @@ export function PartsTriageClientPage() {
         <DataTablePlaceholder
           icon={ClipboardCheck}
           title="Nenhuma Requisição Pendente de Triagem"
+ buttonLabel="Create Part Triage"
+ onButtonClick={() => {}}
           description="Aguardando novas requisições de peças dos técnicos ou todas já foram triadas."
         />
       ) : (
