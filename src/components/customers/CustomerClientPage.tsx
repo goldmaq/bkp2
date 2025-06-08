@@ -173,6 +173,7 @@ export function CustomerClientPage() {
   const [isCepLoading, setIsCepLoading] = useState(false);
   const [isCnpjLoading, setIsCnpjLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const form = useForm<z.infer<typeof CustomerSchema>>({
     resolver: zodResolver(CustomerSchema),
@@ -215,6 +216,20 @@ export function CustomerClientPage() {
     queryFn: fetchMaquinas,
     enabled: !!db,
   });
+
+  const filteredCustomers = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return customers;
+    }
+    const lowercasedSearchTerm = searchTerm.toLowerCase();
+    return customers.filter((customer) =>
+      customer.name.toLowerCase().includes(lowercasedSearchTerm) ||
+      customer.cnpj.toLowerCase().includes(lowercasedSearchTerm) ||
+      (customer.contactName && customer.contactName.toLowerCase().includes(lowercasedSearchTerm)) ||
+      customer.email.toLowerCase().includes(lowercasedSearchTerm)
+    );
+  }, [customers, searchTerm]);
+
 
   if (!db) {
     return (
@@ -460,7 +475,19 @@ export function CustomerClientPage() {
         }
       />
 
-      {customers.length === 0 && !isLoadingCustomers ? (
+      <div className="mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome, CNPJ, contato ou email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10"
+          />
+        </div>
+      </div>
+
+      {customers.length === 0 && !isLoadingCustomers && !searchTerm.trim() ? (
         <DataTablePlaceholder
           icon={Users}
           title="Nenhum Cliente Ainda"
@@ -468,9 +495,17 @@ export function CustomerClientPage() {
           buttonLabel="Adicionar Cliente"
           onButtonClick={() => openModal()}
         />
+      ) : filteredCustomers.length === 0 ? (
+        <div className="text-center py-10">
+          <Search className="mx-auto h-12 w-12 text-muted-foreground" />
+          <h3 className="mt-2 text-lg font-semibold">Nenhum Cliente Encontrado</h3>
+          <p className="text-sm text-muted-foreground">
+            Sua busca não retornou resultados. Tente um termo diferente.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {customers.map((customer) => {
+          {filteredCustomers.map((customer) => {
             const linkedMaquinas = maquinaList.filter(eq => eq.customerId === customer.id);
             const whatsappNumber = getWhatsAppNumber(customer.phone);
             const whatsappLink = whatsappNumber
@@ -793,6 +828,8 @@ export function CustomerClientPage() {
   );
 }
     
+    
+
     
 
     
