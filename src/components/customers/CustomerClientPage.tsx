@@ -22,7 +22,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "../ui/textarea";
-import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay } from "@/lib/utils"; // Import centralized utils
+import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils"; // Import centralized utils
 
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
@@ -88,20 +88,6 @@ interface BrasilApiResponseCnpj {
   message?: string;
 }
 
-const generateGoogleMapsUrl = (customer: Customer): string => {
-  const addressParts = [
-    customer.street,
-    customer.number,
-    customer.neighborhood,
-    customer.city,
-    customer.state,
-    customer.cep,
-  ].filter(Boolean).join(', ');
-
-  if (!addressParts) return "#";
-
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressParts)}`;
-};
 
 export function CustomerClientPage() {
   const queryClient = useQueryClient();
@@ -452,7 +438,7 @@ export function CustomerClientPage() {
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(customer.name)}`
               : "#";
             const displayAddress = formatAddressForDisplay(customer);
-            const googleMapsUrl = generateGoogleMapsUrl({ ...customer, street: displayAddress.split(',')[0] }); 
+            const googleMapsUrl = generateGoogleMapsUrl(customer); 
             const preferredTechnicianDetails = technicians.find(t => t.name === customer.preferredTechnician);
 
             return (

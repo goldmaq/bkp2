@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails } from "lucide-react"; // Added Tag, Layers, CalendarIconDetails
+import { PlusCircle, ClipboardList, User, Construction, HardHat, Settings2, Calendar, FileText, Play, Check, AlertTriangle as AlertIconLI, X, Loader2, CarFront as VehicleIcon, UploadCloud, Link as LinkIconLI, XCircle, AlertTriangle, Save, Trash2, Pencil, ClipboardEdit, ThumbsUp, PackageSearch, Ban, Phone, Building, Route, Coins as CoinsIcon, Brain, Search as SearchIcon, Tag, Layers, CalendarDays as CalendarIconDetails, MapPin } from "lucide-react"; // Added Tag, Layers, CalendarIconDetails, MapPin
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +40,7 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow"; // Import types from flow
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber } from "@/lib/utils"; // Import centralized utils
+import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils"; // Import centralized utils
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -309,7 +309,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   });
 
   const selectedCustomerId = useWatch({ control: form.control, name: 'customerId' });
-  const formEquipmentId = useWatch({ control: form.control, name: 'equipmentId' }); // Renamed to avoid conflict
+  const formEquipmentId = useWatch({ control: form.control, name: 'equipmentId' }); 
   const formMediaUrls = useWatch({ control: form.control, name: 'mediaUrls' });
   const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
   const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
@@ -353,9 +353,8 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   });
 
 
-  const getCustomerDetails = useCallback((id: string): { name: string; phone?: string; id: string; } => {
-    const customer = (customers || []).find(c => c.id === id);
-    return customer ? { name: customer.name, phone: customer.phone, id: customer.id } : { name: id, id };
+  const getCustomerDetails = useCallback((id: string): Customer | undefined => {
+    return (customers || []).find(c => c.id === id);
   }, [customers]);
 
   const getEquipmentDetails = useCallback((id: string): Maquina | undefined => {
@@ -426,12 +425,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         isModalOpen &&
         (!editingOrder || (editingOrder && isEditMode)) && 
         selectedCustomerId &&
-        formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && // Use formEquipmentId
+        formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && 
         !isCalculatingDistance &&
         typeof calculateDistance === 'function'
       ) {
         const customer = (customers || []).find(c => c.id === selectedCustomerId);
-        const equipment = (equipmentList || []).find(e => e.id === formEquipmentId); // Use formEquipmentId
+        const equipment = (equipmentList || []).find(e => e.id === formEquipmentId); 
 
         if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
           return;
@@ -497,7 +496,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         });
     }
   }, [
-    isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId, // Use formEquipmentId
+    isModalOpen, editingOrder, isEditMode, selectedCustomerId, formEquipmentId, 
     isCalculatingDistance, customers, equipmentList, companies, form, toast
   ]);
 
@@ -545,15 +544,15 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
 
     if (selectedCustomerId) {
-      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { // Use formEquipmentId
+      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { 
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     } else {
-       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { // Use formEquipmentId
+       if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) { 
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
       }
     }
-  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, formEquipmentId]); // Use formEquipmentId
+  }, [selectedCustomerId, customers, technicians, form, editingOrder, filteredEquipmentList, formEquipmentId]); 
 
 
   const prepareDataForFirestore = (
@@ -936,10 +935,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
 
   const generateWhatsAppMessage = (
     order: ServiceOrder,
-    customer: { name: string; phone?: string },
+    customer: Customer | undefined,
     equipment: Maquina | undefined,
     technicianName: string
   ): string => {
+    if (!customer) return "Erro: Cliente não encontrado.";
     let message = `Olá ${toTitleCase(customer.name)},\n\n`;
     message += `Referente à Ordem de Serviço Nº: *${order.orderNumber}*.\n\n`;
     message += `*Cliente:* ${toTitleCase(customer.name)}\n`;
@@ -1038,9 +1038,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const equipmentDetails = getEquipmentDetails(order.equipmentId);
             const vehicleDetails = getVehicleDetails(order.vehicleId);
             const technicianName = getTechnicianName(order.technicianId);
-            const whatsappNumber = customerDetails.phone ? getWhatsAppNumber(customerDetails.phone) : null;
+            const whatsappNumber = customerDetails?.phone ? getWhatsAppNumber(customerDetails.phone) : null;
             const whatsappMessage = whatsappNumber ? generateWhatsAppMessage(order, customerDetails, equipmentDetails, technicianName) : "";
             const whatsappLink = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}` : "#";
+            const customerAddress = customerDetails ? formatAddressForDisplay(customerDetails) : "Endereço não disponível";
+            const googleMapsLink = customerDetails ? generateGoogleMapsUrl(customerDetails) : "#";
+
 
             let equipmentOwnerDisplay = null;
             if (equipmentDetails?.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
@@ -1077,13 +1080,33 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                 <p className="flex items-center">
                   <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
-                  {isLoadingCustomers ? 'Carregando...' : (
+                  {isLoadingCustomers || !customerDetails ? 'Carregando...' : (
                     <Link href={`/customers?openCustomerId=${customerDetails.id}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline truncate" title={`Ver cliente: ${toTitleCase(customerDetails.name)}`}>
                       {toTitleCase(customerDetails.name)}
                     </Link>
                   )}
                 </p>
-                {customerDetails.phone && (
+                {customerDetails && (
+                  <p className="flex items-start">
+                    <MapPin className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="font-medium text-muted-foreground mr-1">End.:</span>
+                    {googleMapsLink !== "#" ? (
+                        <a
+                        href={googleMapsLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline text-primary truncate"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Abrir no Google Maps"
+                        >
+                        {customerAddress}
+                        </a>
+                    ) : (
+                        <span className="truncate">{customerAddress}</span>
+                    )}
+                  </p>
+                )}
+                {customerDetails?.phone && (
                   <p className="flex items-center">
                     <Phone className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                     <span className="font-medium text-muted-foreground mr-1">Tel:</span>
@@ -1252,7 +1275,17 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <FormMessage />
                   </FormItem>
                 )} />
+              </div>
+              
+              {selectedCustomerId && !isLoadingCustomers && customers.find(c => c.id === selectedCustomerId) && (
+                <div className="mt-2 p-3 border rounded-md bg-muted/20 text-sm space-y-1">
+                  <h4 className="font-semibold mb-1 text-xs text-muted-foreground uppercase">Detalhes do Cliente Selecionado:</h4>
+                  <p><strong>Nome:</strong> {toTitleCase(customers.find(c => c.id === selectedCustomerId)?.name || 'N/A')}</p>
+                  <p><strong>Endereço:</strong> {formatAddressForDisplay(customers.find(c => c.id === selectedCustomerId))}</p>
+                </div>
+              )}
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="equipmentId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Equipamento</FormLabel>
@@ -1644,4 +1677,3 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     </TooltipProvider>
   );
 }
-

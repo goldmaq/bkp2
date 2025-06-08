@@ -169,3 +169,21 @@ export const formatAddressForDisplay = (addressSource: Customer | Company | null
   
   return addressString || "Endereço não fornecido";
 };
+
+// Google Maps URL Generator
+export const generateGoogleMapsUrl = (addressSource: Customer | Company | null | undefined): string => {
+  if (!addressSource) return "#";
+
+  const addressParts = [
+    addressSource.street,
+    addressSource.number,
+    addressSource.neighborhood,
+    addressSource.city,
+    addressSource.state,
+    addressSource.cep,
+  ].filter(Boolean).join(', ');
+
+  if (!addressParts) return "#";
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressParts)}`;
+};
