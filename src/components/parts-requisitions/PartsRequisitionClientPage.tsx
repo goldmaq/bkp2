@@ -7,7 +7,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import type * as z from "zod";
 import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+import Image from "next/image"; // Ensure Next.js Image is imported
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,13 +23,14 @@ import { db, storage } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp, Timestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, PartsRequisitionItem, ServiceOrder, Technician } from "@/types";
-import { PartsRequisitionSchema, PartsRequisitionItemSchema } from "@/types";
-import { cn, formatDateForDisplay, formatDateForInput, getFileNameFromUrl } from "@/lib/utils";
+import type { PartsRequisition, PartsRequisitionItem, ServiceOrder, Technician, Customer } from "@/types"; // Added Customer
+import { PartsRequisitionSchema } from "@/types"; // Removed PartsRequisitionItemSchema as it's part of PartsRequisitionSchema
+import { cn, formatDateForDisplay, getFileNameFromUrl } from "@/lib/utils";
 
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
+const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes"; // Added customer collection name
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_OS_SELECTED_";
 const NO_TECHNICIAN_SELECTED = "_NO_TECHNICIAN_SELECTED_";
@@ -63,6 +64,16 @@ async function fetchTechnicians(): Promise<Technician[]> {
   const q = query(collection(db, FIRESTORE_TECHNICIAN_COLLECTION_NAME), orderBy("name", "asc"));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Technician));
+}
+
+async function fetchCustomers(): Promise<Customer[]> { // Added fetchCustomers
+    if (!db) {
+      console.error("fetchCustomers: Firebase DB is not available.");
+      throw new Error("Firebase DB is not available");
+    }
+    const q = query(collection(db!, FIRESTORE_CUSTOMER_COLLECTION_NAME), orderBy("name", "asc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Customer));
 }
 
 const getNextRequisitionNumber = (currentRequisitions: PartsRequisition[]): string => {
@@ -100,7 +111,6 @@ async function deletePartImageFromStorage(imageUrl?: string | null) {
       console.warn("Image not found in storage, skipping deletion:", imageUrl);
     } else {
       console.error("Error deleting image from storage:", error);
-      // Optionally re-throw or handle more gracefully
     }
   }
 }
@@ -113,8 +123,8 @@ export function PartsRequisitionClientPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRequisition, setEditingRequisition] = useState<PartsRequisition | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [partImageFiles, setPartImageFiles] = useState<Record<string, File | null>>({}); // { 'itemId': File }
-  const [imagePreviews, setImagePreviews] = useState<Record<string, string | null>>({}); // { 'itemId': 'dataURL' }
+  const [partImageFiles, setPartImageFiles] = useState<Record<string, File | null>>({});
+  const [imagePreviews, setImagePreviews] = useState<Record<string, string | null>>({});
 
   const form = useForm<z.infer<typeof PartsRequisitionSchema>>({
     resolver: zodResolver(PartsRequisitionSchema),
@@ -148,6 +158,11 @@ export function PartsRequisitionClientPage() {
     queryFn: fetchTechnicians,
   });
 
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({ // Added customer query
+    queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
+    queryFn: fetchCustomers,
+  });
+
   const openModal = useCallback((requisition?: PartsRequisition) => {
     setPartImageFiles({});
     setImagePreviews({});
@@ -162,7 +177,7 @@ export function PartsRequisitionClientPage() {
       });
       const previews: Record<string, string> = {};
       requisition.items.forEach(item => {
-        if (item.imageUrl) previews[item.id] = item.imageUrl;
+        if (item.imageUrl && item.id) previews[item.id] = item.imageUrl;
       });
       setImagePreviews(previews);
     } else {
@@ -198,7 +213,6 @@ export function PartsRequisitionClientPage() {
       };
       reader.readAsDataURL(file);
     } else {
-      // If file is null (removed), check if there was an existing imageUrl to keep
       const currentItem = fields.find(f => f.id === itemId);
       if (currentItem && currentItem.imageUrl) {
         setImagePreviews(prev => ({ ...prev, [itemId]: currentItem.imageUrl }));
@@ -211,7 +225,6 @@ export function PartsRequisitionClientPage() {
   const handleRemoveItemImage = (itemId: string, itemIndex: number) => {
     setPartImageFiles(prev => ({ ...prev, [itemId]: null }));
     setImagePreviews(prev => ({ ...prev, [itemId]: null }));
-    // Also update the form to set imageUrl to null for this item
     const currentItem = form.getValues(`items.${itemIndex}`);
     if (currentItem) {
         update(itemIndex, { ...currentItem, imageUrl: null });
@@ -232,7 +245,6 @@ export function PartsRequisitionClientPage() {
   const removeItem = async (index: number, itemId: string) => {
     const itemToRemove = fields[index];
     if (itemToRemove?.imageUrl) {
-        // No need to await here, let it happen in background
         deletePartImageFromStorage(itemToRemove.imageUrl).catch(err => console.error("Failed to delete image on item remove", err));
     }
     remove(index);
@@ -253,9 +265,9 @@ export function PartsRequisitionClientPage() {
       const itemsWithImageUrls = await Promise.all(
         newRequisitionData.items.map(async (item) => {
           let imageUrl = item.imageUrl || null;
-          const imageFile = partImageFiles[item.id];
-          if (imageFile) {
-            if (imageUrl) await deletePartImageFromStorage(imageUrl); // Delete old if exists
+          const imageFile = item.id ? partImageFiles[item.id] : null;
+          if (imageFile && item.id) {
+            if (imageUrl) await deletePartImageFromStorage(imageUrl);
             imageUrl = await uploadPartImageToStorage(imageFile, requisitionId, item.id);
           }
           return { ...item, imageUrl };
@@ -264,7 +276,7 @@ export function PartsRequisitionClientPage() {
 
       const dataToSave = {
         ...newRequisitionData,
-        id: requisitionId, // ensure ID is part of the saved data for consistency
+        id: requisitionId,
         createdDate: serverTimestamp(),
         items: itemsWithImageUrls,
       };
@@ -276,7 +288,7 @@ export function PartsRequisitionClientPage() {
       toast({ title: "Requisição Criada", description: `Requisição ${data.requisitionNumber} foi criada.` });
       closeModal();
     },
-    onError: (err: Error, variables) => {
+    onError: (err: Error) => {
       toast({ title: "Erro ao Criar Requisição", description: err.message, variant: "destructive" });
     },
   });
@@ -290,19 +302,18 @@ export function PartsRequisitionClientPage() {
       const itemsWithImageUrls = await Promise.all(
         items.map(async (item) => {
           let imageUrl = item.imageUrl || null;
-          const imageFile = partImageFiles[item.id];
+          const imageFile = item.id ? partImageFiles[item.id] : null;
           const originalItem = editingRequisition?.items.find(orig => orig.id === item.id);
 
-          if (imageFile) { // New image uploaded
+          if (imageFile && item.id) {
             if (originalItem?.imageUrl) {
               await deletePartImageFromStorage(originalItem.imageUrl);
             }
             imageUrl = await uploadPartImageToStorage(imageFile, id, item.id);
-          } else if (!imageFile && originalItem?.imageUrl && !item.imageUrl) { // Image was removed (imageUrl set to null in form)
+          } else if (!imageFile && originalItem?.imageUrl && !item.imageUrl && item.id) {
             await deletePartImageFromStorage(originalItem.imageUrl);
             imageUrl = null;
           }
-          // If no new file and imageUrl exists, it means keep existing image or it was already null.
           return { ...item, imageUrl };
         })
       );
@@ -316,7 +327,7 @@ export function PartsRequisitionClientPage() {
       toast({ title: "Requisição Atualizada", description: `Requisição ${data.requisitionNumber} foi atualizada.` });
       closeModal();
     },
-    onError: (err: Error, variables) => {
+    onError: (err: Error) => {
       toast({ title: "Erro ao Atualizar Requisição", description: err.message, variant: "destructive" });
     },
   });
@@ -327,7 +338,7 @@ export function PartsRequisitionClientPage() {
       const reqToDelete = requisitions.find(r => r.id === requisitionId);
       if (reqToDelete?.items) {
         for (const item of reqToDelete.items) {
-          if (item.imageUrl) {
+          if (item.imageUrl && item.id) {
             await deletePartImageFromStorage(item.imageUrl);
           }
         }
@@ -361,7 +372,7 @@ export function PartsRequisitionClientPage() {
     }
   };
   
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians;
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers; // Added isLoadingCustomers
   const isMutating = addRequisitionMutation.isPending || updateRequisitionMutation.isPending || deleteRequisitionMutation.isPending;
 
   if (!db || !storage) {
@@ -446,12 +457,22 @@ export function PartsRequisitionClientPage() {
                         <li key={item.id} className="p-2 border rounded-md bg-muted/30 text-xs">
                           <div className="flex justify-between items-start">
                             <span className="font-medium">{item.partName} (Qtd: {item.quantity})</span>
-                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold
-                              bg-slate-200 text-slate-700
-                            ">{item.status}</span>
+                            <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", {
+                                "bg-yellow-200 text-yellow-800": item.status === "Pendente Aprovação",
+                                "bg-green-200 text-green-800": item.status === "Aprovado" || item.status === "Separado" || item.status === "Entregue",
+                                "bg-red-200 text-red-800": item.status === "Recusado",
+                                "bg-blue-200 text-blue-800": item.status === "Aguardando Compra",
+                            })}>
+                                {item.status}
+                            </span>
                           </div>
                           {item.notes && <p className="text-muted-foreground mt-0.5">Obs: {item.notes}</p>}
-                          {item.imageUrl && (
+                          {item.imageUrl && item.id && imagePreviews[item.id] && ( // Check for item.id and imagePreviews[item.id]
+                            <div className="mt-1.5">
+                                <Image src={imagePreviews[item.id]!} alt={`Imagem de ${item.partName}`} width={40} height={40} className="rounded object-cover aspect-square" data-ai-hint="product part"/>
+                            </div>
+                          )}
+                           {item.imageUrl && item.id && !imagePreviews[item.id] && ( // Fallback to direct URL if preview not loaded yet but URL exists
                             <div className="mt-1.5">
                                 <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={40} height={40} className="rounded object-cover aspect-square" data-ai-hint="product part"/>
                             </div>
@@ -562,36 +583,52 @@ export function PartsRequisitionClientPage() {
                             id={`items.${index}.imageFile`}
                             type="file"
                             accept="image/*"
-                            onChange={(e) => handleItemImageChange(item.id, e.target.files ? e.target.files[0] : null)}
+                            onChange={(e) => handleItemImageChange(item.id!, e.target.files ? e.target.files[0] : null)}
                             className="text-xs"
                             disabled={!!editingRequisition && !isEditMode && !!item.imageUrl}
                         />
-                        {imagePreviews[item.id] && (
+                        {item.id && imagePreviews[item.id] && (
                             <div className="relative group">
-                                <Image src={imagePreviews[item.id]!} alt="Preview" width={32} height={32} className="rounded object-cover aspect-square" data-ai-hint="product part"/>
+                                <Image src={imagePreviews[item.id]!} alt="Preview" width={32} height={32} className="rounded object-cover aspect-square" data-ai-hint="part preview"/>
                                 <Button
                                     type="button"
                                     variant="ghost"
                                     size="icon"
                                     className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100"
-                                    onClick={() => handleRemoveItemImage(item.id, index)}
+                                    onClick={() => handleRemoveItemImage(item.id!, index)}
                                 >
                                     <XCircle className="h-3.5 w-3.5" />
                                 </Button>
                             </div>
                         )}
                       </div>
-                       {item.imageUrl && !partImageFiles[item.id] && !imagePreviews[item.id] && ( // Show existing if no new preview and URL exists
+                       {item.imageUrl && !partImageFiles[item.id!] && !imagePreviews[item.id!] && (
                           <Link href={item.imageUrl} target="_blank" className="text-xs text-primary hover:underline mt-1 block">Ver imagem atual</Link>
                         )}
                     </div>
                     <div className="col-span-2 sm:col-span-3 md:col-span-2 flex justify-end items-end h-full">
                       {fields.length > 1 && (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index, item.id)} className="text-destructive hover:text-destructive self-center sm:self-end">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index, item.id!)} className="text-destructive hover:text-destructive self-center sm:self-end">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
+                     {/* Hidden field to store imageUrl for react-hook-form */}
+                    <Controller
+                        name={`items.${index}.imageUrl`}
+                        control={form.control}
+                        render={({ field: imageUrlField }) => <input type="hidden" {...imageUrlField} />}
+                    />
+                     <Controller
+                        name={`items.${index}.id`}
+                        control={form.control}
+                        render={({ field: idField }) => <input type="hidden" {...idField} />}
+                    />
+                     <Controller
+                        name={`items.${index}.status`}
+                        control={form.control}
+                        render={({ field: statusField }) => <input type="hidden" {...statusField} />}
+                    />
                   </div>
                 ))}
                 <Button type="button" variant="outline" size="sm" onClick={addItem} className="mt-3">
@@ -605,5 +642,3 @@ export function PartsRequisitionClientPage() {
     </>
   );
 }
-
-    
