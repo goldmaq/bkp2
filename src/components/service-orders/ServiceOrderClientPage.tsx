@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -1394,7 +1393,7 @@ export function ServiceOrderClientPage() {
                             className="bg-muted/50"
                           />
                         </FormControl>
-                        <FormDescription>Calculado com base na distância, custo/km do veículo e pedágios.</FormDescription>
+                        <FormDescription>Custo total = (Distância Ida/Volta * Custo/km do Veículo) + Pedágios (Ida/Volta).</FormDescription>
                         <FormMessage />
                     </FormItem>
                 )} />
