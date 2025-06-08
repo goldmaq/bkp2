@@ -241,22 +241,23 @@ const getDeadlineStatusInfo = (
   const endDateNormalized = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
 
-  // console.log(`DEBUG: EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
+  console.log(`DEBUG: Order EndDateString: ${endDateString}, ParsedEndDate: ${parsedEndDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
+
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
-    // console.log("DEBUG: Status Overdue");
+    console.log("DEBUG: Status Overdue - Dates:", {endDateNormalized, today, isBefore: isBefore(endDateNormalized, today), isToday: isToday(endDateNormalized)});
     return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5 text-destructive" />, alertClass: "bg-destructive/20 border-destructive/50 text-destructive" };
   }
   if (isToday(endDateNormalized)) {
-    // console.log("DEBUG: Status Due Today");
+    console.log("DEBUG: Status Due Today - Dates:", {endDateNormalized, today, isToday: isToday(endDateNormalized)});
     return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
   const twoDaysFromNow = addDays(today, 2);
-  if (isBefore(endDateNormalized, twoDaysFromNow)) { // Removed isToday check here as it's covered above
-    // console.log("DEBUG: Status Due Soon");
+  if (isBefore(endDateNormalized, twoDaysFromNow)) {
+    console.log("DEBUG: Status Due Soon - Dates:", {endDateNormalized, twoDaysFromNow, isBefore: isBefore(endDateNormalized, twoDaysFromNow)});
      return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
   }
-  // console.log("DEBUG: Status None");
+  console.log("DEBUG: Status None - Dates:", {endDateNormalized, today, twoDaysFromNow});
   return { status: 'none', alertClass: "" };
 };
 
@@ -729,7 +730,6 @@ export function ServiceOrderClientPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {serviceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
-            // console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
             const cardClasses = cn(
               "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
             );
@@ -739,7 +739,7 @@ export function ServiceOrderClientPage() {
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
                  <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
-                  deadlineInfo.alertClass // Apply the class string directly
+                  deadlineInfo.alertClass 
                 )}>
                   {deadlineInfo.icon}
                   <span className="ml-2">{deadlineInfo.message}</span>
@@ -750,7 +750,9 @@ export function ServiceOrderClientPage() {
                   <CardTitle className="font-headline text-xl text-primary">OS: {order.orderNumber}</CardTitle>
                 </div>
                 <CardDescription className="flex items-center text-sm pt-1">
-                  {phaseIcons[order.phase]} <span className="font-medium text-muted-foreground ml-1 mr-1">Fase:</span> {order.phase}
+                  {phaseIcons[order.phase]} 
+                  <span className="font-medium text-muted-foreground ml-1 mr-1">Fase:</span> 
+                  <span className="text-base font-semibold">{order.phase}</span>
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
@@ -766,7 +768,7 @@ export function ServiceOrderClientPage() {
                 <p className="flex items-center"><HardHat className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Técnico:</span> {isLoadingTechnicians ? 'Carregando...' : getTechnicianName(order.technicianId)}</p>
                 {order.vehicleId && <p className="flex items-center"><VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Veículo:</span> {isLoadingVehicles ? 'Carregando...' : getVehicleIdentifier(order.vehicleId)}</p>}
                 <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}</p>
-                {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy')}</p>}
+                {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Problema Relatado:</span> <span className="whitespace-pre-wrap break-words">{order.description}</span></p>
                 {order.technicalConclusion && <p className="flex items-start"><Check className="mr-2 mt-0.5 h-4 w-4 text-green-500 flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Técnica:</span> <span className="whitespace-pre-wrap break-words">{order.technicalConclusion}</span></p>}
