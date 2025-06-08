@@ -11,7 +11,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z, Flow } from 'genkit';
+import { z, type Flow } from 'genkit'; // Ensure Flow is imported if its type is used
 
 // Define Zod schemas based on the interfaces from types/index.ts
 const CalculateDistanceInputSchema = z.object({
@@ -106,36 +106,18 @@ function getSimulatedDistance(): number {
   return Math.floor(Math.random() * 450) + 50;
 }
 
-// Exported wrapper function
-export async function calculateDistance(input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> {
-  if (!ai || typeof calculateDistanceFlow !== 'function') {
-    console.error("calculateDistance Flow: Genkit AI instance or flow is not available or not a function.");
-    // If calculateDistanceFlow itself is not defined (e.g. ai was null during its definition),
-    // we need to call a simple async function that returns the simulated response directly.
-    if (typeof calculateDistanceFlow !== 'function') {
-        return {
-            distanceKm: getSimulatedDistance(),
-            status: 'SIMULATED',
-            errorMessage: 'Genkit AI not initialized or flow not defined at all. Using simulated distance.',
-        };
-    }
-    // If calculateDistanceFlow IS a function (meaning ai was null and it's the dummy flow), call it.
-    return calculateDistanceFlow(input);
-  }
-  return calculateDistanceFlow(input);
-}
-
-// Genkit Flow Definition
+// Declare calculateDistanceFlow with its type
 let calculateDistanceFlow: Flow<typeof CalculateDistanceInputSchema, typeof CalculateDistanceOutputSchema>;
 
 if (ai) {
+  console.log("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) IS available. Defining real flow.");
   calculateDistanceFlow = ai.defineFlow(
     {
       name: 'calculateDistanceFlow',
       inputSchema: CalculateDistanceInputSchema,
       outputSchema: CalculateDistanceOutputSchema,
     },
-    async (input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> => {
+    async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
       console.log("calculateDistanceFlow: Received input", input);
 
       if (!input.originAddress || !input.destinationAddress) {
@@ -168,27 +150,31 @@ if (ai) {
 
       try {
         const directDistanceKm = haversineDistance(originCoords, destinationCoords);
+        // Estimate driving distance as 1.4 times the direct distance.
+        // This is a rough heuristic and can be improved with a proper routing API.
         const estimatedDrivingDistanceKm = directDistanceKm * 1.4;
 
         console.log(`calculateDistanceFlow: Direct distance: ${directDistanceKm.toFixed(2)} km, Estimated driving: ${estimatedDrivingDistanceKm.toFixed(2)} km`);
 
         return {
-          distanceKm: parseFloat(estimatedDrivingDistanceKm.toFixed(1)),
+          distanceKm: parseFloat(estimatedDrivingDistanceKm.toFixed(1)), // Round to one decimal place
           status: 'SUCCESS',
         };
       } catch (error: any) {
         console.error("calculateDistanceFlow: Error during Haversine calculation or API interaction:", error);
+        // Fallback to simulated distance if any error occurs
         return {
           distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED',
+          status: 'SIMULATED', // Changed from ERROR_API_FAILED to SIMULATED as it's a fallback
           errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
         };
       }
     }
-  );
+  ); // Correctly terminate the ai.defineFlow call
 } else {
+  console.warn("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) is NOT available. Defining dummy flow.");
   // If ai is null, define calculateDistanceFlow as a simple async function that returns a simulated response
-  calculateDistanceFlow = async (input: z.infer<typeof CalculateDistanceInputSchema>): Promise<z.infer<typeof CalculateDistanceOutputSchema>> => {
+  calculateDistanceFlow = async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
     console.warn("calculateDistanceFlow (dummy): Genkit AI not initialized. Input:", input);
     return {
       distanceKm: getSimulatedDistance(),
@@ -196,4 +182,26 @@ if (ai) {
       errorMessage: 'Genkit AI not initialized at flow definition. Using simulated distance.',
     };
   };
+}
+
+// Exported wrapper function
+export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
+  if (typeof calculateDistanceFlow !== 'function') {
+    console.error("calculateDistance Flow: calculateDistanceFlow is not defined or not a function. This indicates a severe initialization issue.");
+    return {
+        distanceKm: getSimulatedDistance(),
+        status: 'SIMULATED',
+        errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized.',
+    };
+  }
+  try {
+    return await calculateDistanceFlow(input);
+  } catch (error: any) {
+    console.error("Error executing calculateDistanceFlow:", error);
+    return {
+      distanceKm: getSimulatedDistance(),
+      status: 'SIMULATED',
+      errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
+    };
+  }
 }

@@ -1,6 +1,6 @@
 
 import type {NextConfig} from 'next';
-import path from 'path'; // Importar o módulo path
+import path from 'path'; // Ensure path module is imported
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -31,17 +31,17 @@ const nextConfig: NextConfig = {
         net: false,                
         http2: false,              
         dns: false,
-        // async_hooks and node:async_hooks will be handled by alias below
+        // async_hooks and node:async_hooks will be handled by alias below, so remove from fallback
       };
 
       // Suppress errors related to expressions in context (often involves dynamic imports)
+      // This can be useful but also mask issues if not understood. Keeping it for now.
       config.module.exprContextCritical = false;
 
       config.resolve.alias = {
         ...config.resolve.alias,
-        // Aponta 'node:async_hooks' para um módulo vazio real
+        // Point 'node:async_hooks' and 'async_hooks' to a real empty module for client-side
         'node:async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
-        // Keep the alias for simple async_hooks imports as well
         'async_hooks': path.resolve(__dirname, 'src/lib/empty-module.ts'),
       };
     }
