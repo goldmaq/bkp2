@@ -20,9 +20,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: { // Moved serverComponentsExternalPackages here
-    serverComponentsExternalPackages: ['handlebars', 'dotprompt'],
-  },
+  serverExternalPackages: ['handlebars', 'dotprompt'], // Moved and renamed from experimental
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Ensure resolve and fallback objects exist and are properly initialized
