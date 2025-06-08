@@ -1,4 +1,8 @@
 
+import { z } from 'zod';
+import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
+import { Timestamp } from 'firebase/firestore';
+
 export interface Customer {
   id: string;
   name: string;
@@ -190,35 +194,62 @@ export interface BudgetItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  totalPrice?: number; // Será calculado
+  totalPrice?: number;
 }
 
 export interface Budget {
   id: string;
   budgetNumber: string;
-  serviceOrderId: string; // ID da Ordem de Serviço vinculada
-  customerId: string; // Redundante para facilitar busca, mas virá da OS
-  equipmentId: string; // Redundante, virá da OS
+  serviceOrderId: string;
+  customerId: string;
+  equipmentId: string;
   status: BudgetStatusType;
   items: BudgetItem[];
   shippingCost?: number | null;
-  subtotal?: number; // Soma dos items.totalPrice
-  totalAmount?: number; // subtotal + shippingCost
-  createdDate: string; // ISO string
-  validUntilDate?: string | null; // ISO string
+  subtotal?: number;
+  totalAmount?: number;
+  createdDate: string;
+  validUntilDate?: string | null;
   notes?: string | null;
-  // Informações que podem ser úteis para exibição e contato, buscadas separadamente:
-  // customerName?: string;
-  // customerEmail?: string;
-  // customerPhone?: string;
-  // equipmentDetails?: string; // Ex: "Toyota 8FGCU25 (Chassi: 12345)"
 }
 
+// --- Requisição de Peças ---
+export const partsRequisitionStatusOptions = [
+  "Pendente", "Triagem Realizada", "Atendida Parcialmente", "Atendida Totalmente", "Cancelada"
+] as const;
+export type PartsRequisitionStatusType = typeof partsRequisitionStatusOptions[number];
 
-import { z } from 'zod';
-import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
+export const partsRequisitionItemStatusOptions = [
+  "Pendente Aprovação", "Aprovado", "Recusado", "Aguardando Compra", "Separado", "Entregue"
+] as const;
+export type PartsRequisitionItemStatusType = typeof partsRequisitionItemStatusOptions[number];
 
-const requiredString = (field: string) => z.string().min(1, `${field} é obrigatório`);
+export interface PartsRequisitionItem {
+  id: string; // UUID
+  requisitionId: string;
+  partName: string;
+  quantity: number;
+  notes?: string | null;
+  imageUrl?: string | null; // URL da imagem da peça, se houver
+  status: PartsRequisitionItemStatusType;
+  triageNotes?: string | null; // Notas do gerente da oficina
+  warehouseNotes?: string | null; // Notas do almoxarifado
+  estimatedCost?: number | null; // Custo estimado preenchido pelo almoxarifado
+}
+
+export interface PartsRequisition {
+  id: string; // UUID
+  requisitionNumber: string; // Ex: REQ-0001
+  serviceOrderId: string;
+  technicianId: string; // ID do técnico que solicitou
+  technicianName?: string; // Nome do técnico (para exibição)
+  createdDate: string; // ISO string (Timestamp no Firestore)
+  status: PartsRequisitionStatusType;
+  items: PartsRequisitionItem[]; // Array de itens solicitados (armazenado como subcoleção ou array)
+  generalNotes?: string | null; // Observações gerais da requisição
+}
+
+const requiredString = (field: string) => z.string().min(1, `${field} é obrigatório.`);
 
 export const CustomerSchema = z.object({
   name: requiredString("Nome"),
@@ -258,15 +289,12 @@ export const MaquinaSchema = z.object({
   ownerReference: ownerReferenceSchema.nullable().optional(),
   customBrand: z.string().optional(),
   customEquipmentType: z.string().optional(),
-
   towerOpenHeightMm: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
   towerClosedHeightMm: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
   nominalCapacityKg: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
-
   batteryBoxWidthMm: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
   batteryBoxHeightMm: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
   batteryBoxDepthMm: z.coerce.number().positive("Deve ser positivo").optional().nullable(),
-
   monthlyRentalValue: z.coerce.number().min(0, "Valor deve ser positivo ou zero").optional().nullable(),
   hourMeter: z.coerce.number().min(0, "Horímetro deve ser positivo ou zero").optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -391,7 +419,7 @@ export const BudgetItemSchema = z.object({
   description: requiredString("Descrição do item"),
   quantity: z.coerce.number().min(0.01, "Quantidade deve ser maior que zero"),
   unitPrice: z.coerce.number().min(0, "Preço unitário não pode ser negativo"),
-  totalPrice: z.coerce.number().optional(), // Será calculado, não precisa de validação aqui se for sempre derivado
+  totalPrice: z.coerce.number().optional(),
 });
 
 export const BudgetSchema = z.object({
@@ -402,24 +430,37 @@ export const BudgetSchema = z.object({
   status: z.enum(budgetStatusOptions, { required_error: "Status do orçamento é obrigatório" }),
   items: z.array(BudgetItemSchema).min(1, "Orçamento deve ter pelo menos um item"),
   shippingCost: z.coerce.number().min(0, "Custo de frete não pode ser negativo").optional().nullable(),
-  subtotal: z.coerce.number().optional(), // Calculado
-  totalAmount: z.coerce.number().optional(), // Calculado
+  subtotal: z.coerce.number().optional(),
+  totalAmount: z.coerce.number().optional(),
   createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida"),
   validUntilDate: z.string().optional().nullable().refine(val => !val || isValidDate(parseISO(val)), "Data de validade inválida"),
   notes: z.string().optional().nullable(),
 });
 
-// Removed CalculateDistanceInput and CalculateDistanceOutput as they are now imported from the flow file.
-// // Type for the input of the calculate distance flow
-// export interface CalculateDistanceInput {
-//   originAddress: string;
-//   destinationAddress: string;
-// }
+// --- Requisição de Peças Schemas ---
+export const PartsRequisitionItemSchema = z.object({
+  id: z.string().uuid("ID do item deve ser um UUID válido."),
+  requisitionId: z.string().min(1, "ID da Requisição é obrigatório."),
+  partName: requiredString("Nome da peça"),
+  quantity: z.coerce.number().int().min(1, "Quantidade deve ser pelo menos 1."),
+  notes: z.string().optional().nullable(),
+  imageUrl: z.string().url("URL da imagem inválida.").optional().nullable(),
+  status: z.enum(partsRequisitionItemStatusOptions, { required_error: "Status do item é obrigatório."}),
+  triageNotes: z.string().optional().nullable(),
+  warehouseNotes: z.string().optional().nullable(),
+  estimatedCost: z.coerce.number().min(0, "Custo estimado não pode ser negativo.").optional().nullable(),
+});
 
-// // Type for the output of the calculate distance flow
-// export interface CalculateDistanceOutput {
-//   distanceKm: number;
-//   status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED' | 'ERROR_LLM_TOLL_ESTIMATION';
-//   errorMessage?: string;
-//   estimatedTollCostByAI?: number | null; // Estimativa de pedágio (apenas ida)
-// }
+export const PartsRequisitionSchema = z.object({
+  id: z.string().uuid("ID da requisição deve ser um UUID válido."),
+  requisitionNumber: requiredString("Número da Requisição"),
+  serviceOrderId: requiredString("Ordem de Serviço vinculada"),
+  technicianId: requiredString("ID do Técnico"),
+  technicianName: z.string().optional(),
+  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida."),
+  status: z.enum(partsRequisitionStatusOptions, { required_error: "Status da requisição é obrigatório."}),
+  items: z.array(PartsRequisitionItemSchema).min(1, "A requisição deve ter pelo menos uma peça."),
+  generalNotes: z.string().optional().nullable(),
+});
+
+    

@@ -2,20 +2,23 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image"; 
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   LayoutDashboard,
   Users,
-  Construction, 
+  Construction,
   ClipboardList,
   HardHat,
   CarFront,
   SlidersHorizontal,
   Settings,
   PackageSearch,
-  FileText, // Ícone para Orçamentos
+  FileText,
+  Wrench, // Ícone para Requisições de Peças (Técnico)
+  ClipboardCheck, // Ícone para Triagem de Peças (Oficina)
+  Archive, // Ícone para Almoxarifado (Estoque)
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -44,7 +47,10 @@ const navItems: NavItem[] = [
   { href: "/maquinas", icon: Construction, label: "Máquinas" },
   { href: "/auxiliary-equipment", icon: PackageSearch, label: "Equip. Auxiliares" },
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
-  { href: "/budgets", icon: FileText, label: "Orçamentos" }, // Novo item Orçamentos
+  { href: "/budgets", icon: FileText, label: "Orçamentos" },
+  { href: "/parts-requisitions", icon: Wrench, label: "Requisições Peças" },
+  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem Peças" },
+  { href: "/parts-warehouse", icon: Archive, label: "Almoxarifado Peças" },
   { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" },
   { href: "/vehicles", icon: CarFront, label: "Veículos" },
   { href: "/company-config", icon: SlidersHorizontal, label: "Dados das Empresas" },
@@ -64,7 +70,7 @@ function MainSidebar() {
         <Link href="/" className="flex items-center gap-2">
           {open ? (
             <Image
-              src="/images/logo.png" 
+              src="/images/logo.png"
               alt="Gold Maq Controle Logo"
               width={120}
               height={30}
@@ -133,3 +139,5 @@ export function AppLayout({ children }: { children: ReactNode }) {
     </SidebarProvider>
   );
 }
+
+    
