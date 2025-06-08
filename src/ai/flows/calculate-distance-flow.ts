@@ -21,7 +21,7 @@ export type CalculateDistanceInput = z.infer<typeof CalculateDistanceInputSchema
 
 const CalculateDistanceOutputSchema = z.object({
   distanceKm: z.number().describe("The calculated distance in kilometers (one-way)."),
-  status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_GOOGLE_API_FAILED', 'ERROR_GOOGLE_API_KEY_MISSING', 'ERROR_NO_ROUTE_FOUND', 'ERROR_LLM_TOLL_ESTIMATION']).describe("Status of the calculation."),
+  status: z.enum(['SUCCESS', 'SIMULATED', 'ERROR_NO_ADDRESS', 'ERROR_GOOGLE_API_FAILED', 'ERROR_GOOGLE_API_KEY_MISSING', 'ERROR_NO_ROUTE_FOUND', 'ERROR_LLM_TOLL_ESTIMATION']).describe("Status of the calculation."),
   errorMessage: z.string().optional().describe("Error message if the status is an error."),
   estimatedTollCostByAI: z.number().optional().nullable().describe("Rough estimate of one-way toll cost in BRL by AI, if tolls are likely. May not be accurate."),
   googleMapsApiIndicstedTolls: z.boolean().optional().describe("Indicates if Google Maps API suggested the route has tolls.")
@@ -199,7 +199,7 @@ if (ai && tollEstimationPrompt) {
     const simulatedDistance = Math.floor(Math.random() * 450) + 50;
     return {
       distanceKm: simulatedDistance,
-      status: 'ERROR_GOOGLE_API_KEY_MISSING', // Simulate a common error if dummy is used
+ status: 'SIMULATED', // Simulate a common error if dummy is used
       errorMessage: 'Dummy flow: Simulating API key missing, as Genkit/Google Maps is not fully initialized.',
       estimatedTollCostByAI: Math.random() > 0.5 ? Math.floor(Math.random() * 50) : 0,
       googleMapsApiIndicstedTolls: Math.random() > 0.5,
