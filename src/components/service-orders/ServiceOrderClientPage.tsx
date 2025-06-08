@@ -40,7 +40,7 @@ import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils";
+import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -282,8 +282,8 @@ interface ServiceOrderClientPageProps {
 const printHTML = (htmlContent: string, documentTitle: string) => {
   const printWindow = window.open('', '_blank');
   if (printWindow) {
-    printWindow.document.write(
-`<!DOCTYPE html>
+    printWindow.document.write(`
+<!DOCTYPE html>
 <html>
   <head>
     <title>${documentTitle}</title>
@@ -328,8 +328,8 @@ const printHTML = (htmlContent: string, documentTitle: string) => {
       }, 250);
     </script>
   </body>
-</html>`
-    );
+</html>
+    `);
     printWindow.document.close();
   } else {
     alert("Seu navegador bloqueou a abertura da janela de impressão. Por favor, desabilite o bloqueador de pop-ups para este site.");
@@ -1851,7 +1851,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     )}
                 </div>
                 <div className="flex-grow-0">
-                    {editingOrder && onDeleteConfirm && isEditMode && (
+                    {editingOrder && handleModalDeleteConfirm && isEditMode && (
                         <Button
                             type="button"
                             variant="outline"
@@ -1873,7 +1873,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     <Button type="button" variant="outline" onClick={closeModal} disabled={isMutating}>
                         {isEditMode && editingOrder ? "Cancelar Edição" : "Fechar"}
                     </Button>
-                    {!!editingOrder && !isEditMode && onEditModeToggle && !isOrderConcludedOrCancelled && (
+                    {!!editingOrder && !isEditMode && !isOrderConcludedOrCancelled && (
                         <Button
                             type="button"
                             onClick={() => setIsEditMode(true)}
