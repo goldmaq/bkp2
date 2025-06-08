@@ -358,6 +358,6 @@ export interface CalculateDistanceInput {
 // Type for the output of the calculate distance flow
 export interface CalculateDistanceOutput {
   distanceKm: number;
-  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED';
+  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED';
   errorMessage?: string;
 }

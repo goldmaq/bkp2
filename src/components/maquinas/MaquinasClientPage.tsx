@@ -198,7 +198,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
       notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
       partsCatalogUrl: null, errorCodesUrl: null,
-      auxiliaryEquipmentIds: [],
+      linkedAuxiliaryEquipmentIds: [],
     },
   });
 
@@ -250,7 +250,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         notes: maquina.notes || null,
         partsCatalogUrl: maquina.partsCatalogUrl || null,
         errorCodesUrl: maquina.errorCodesUrl || null,
-        auxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
+        linkedAuxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
       });
       setShowCustomFields({ brand: !isBrandPredefined, equipmentType: !isEquipmentTypePredefined });
     } else {
@@ -266,7 +266,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
         batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
         notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
         partsCatalogUrl: null, errorCodesUrl: null,
-        auxiliaryEquipmentIds: [],
+        linkedAuxiliaryEquipmentIds: [],
       });
       setShowCustomFields({ brand: false, equipmentType: false });
     }
@@ -310,7 +310,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       customEquipmentType,
       customerId: formCustomerId,
       ownerReference: formOwnerReferenceFromForm,
-      auxiliaryEquipmentIds: formAuxiliaryEquipmentIds,
+      linkedAuxiliaryEquipmentIds: formLinkedAuxiliaryEquipmentIds,
       ...restOfData
     } = formData;
 
@@ -326,7 +326,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       monthlyRentalValue: parseNumericToNullOrNumber(restOfData.monthlyRentalValue),
       hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter)
     };
-
+    
     const finalOwnerReference: OwnerReferenceType | null = formOwnerReferenceFromForm ?? null;
 
     return {
@@ -339,7 +339,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       notes: parsedData.notes || null,
       partsCatalogUrl: newPartsCatalogUrl === undefined ? formData.partsCatalogUrl : newPartsCatalogUrl,
       errorCodesUrl: newErrorCodesUrl === undefined ? formData.errorCodesUrl : newErrorCodesUrl,
-      linkedAuxiliaryEquipmentIds: formAuxiliaryEquipmentIds || null,
+      linkedAuxiliaryEquipmentIds: formLinkedAuxiliaryEquipmentIds || null,
     };
   };
 
@@ -627,11 +627,11 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   }
 
   const handleAuxiliaryEquipmentSelect = (equipmentId: string) => {
-    const currentSelected = form.getValues("auxiliaryEquipmentIds") || [];
+    const currentSelected = form.getValues("linkedAuxiliaryEquipmentIds") || [];
     const newSelected = currentSelected.includes(equipmentId)
       ? currentSelected.filter(id => id !== equipmentId)
       : [...currentSelected, equipmentId];
-    form.setValue("auxiliaryEquipmentIds", newSelected, { shouldDirty: true, shouldValidate: true });
+    form.setValue("linkedAuxiliaryEquipmentIds", newSelected, { shouldDirty: true, shouldValidate: true });
   };
 
 
@@ -965,8 +965,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Equipamentos Auxiliares Vinculados</h3>
             <FormField
               control={form.control}
-              name="auxiliaryEquipmentIds"
-              render={({ field }) => (
+              name="linkedAuxiliaryEquipmentIds" 
+              render={({ field: { onChange, value } }) => (
                 <FormItem>
                   <Popover open={isAuxiliaryEquipmentPopoverOpen} onOpenChange={setIsAuxiliaryEquipmentPopoverOpen}>
                     <PopoverTrigger asChild>
@@ -977,8 +977,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                           aria-expanded={isAuxiliaryEquipmentPopoverOpen}
                           className="w-full justify-between font-normal"
                         >
-                          {field.value && field.value.length > 0
-                            ? `${field.value.length} selecionado(s)`
+                          {Array.isArray(value) && value && value.length > 0
+                            ? `${value.length} selecionado(s)`
                             : "Selecionar equipamentos..."}
                            <Layers className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
@@ -1004,11 +1004,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                                   key={equipment.id}
                                   value={equipment.name}
                                   onSelect={() => {
-                                    handleAuxiliaryEquipmentSelect(equipment.id);
+                                    const currentVal = Array.isArray(value) ? value : [];
+                                    onChange(currentVal?.includes(equipment.id) ? currentVal.filter((id: string) => id !== equipment.id) : [...(currentVal || []), equipment.id]);
                                   }}
                                 >
                                   <Checkbox
-                                    checked={field.value?.includes(equipment.id)}
+                                    checked={Array.isArray(value) && value?.includes(equipment.id)}
                                     onCheckedChange={() => handleAuxiliaryEquipmentSelect(equipment.id)}
                                     className="mr-2"
                                     aria-labelledby={`aux-label-${equipment.id}`}
@@ -1016,7 +1017,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                                   <Label htmlFor={`aux-label-${equipment.id}`} className="flex-grow cursor-pointer">
                                     {equipment.name} ({equipment.type})
                                   </Label>
-                                  {field.value?.includes(equipment.id) && (
+                                  {Array.isArray(value) && value?.includes(equipment.id) && (
                                     <Check className="ml-auto h-4 w-4 text-primary" />
                                   )}
                                 </CommandItem>
@@ -1028,9 +1029,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                     </PopoverContent>
                   </Popover>
                   <FormMessage />
-                   {field.value && field.value.length > 0 && (
+                   {Array.isArray(value) && value && value.length > 0 && (
                     <div className="mt-2 text-sm text-muted-foreground">
-                      <strong>Selecionados:</strong> {field.value.map(id => allAuxiliaryEquipments?.find(eq => eq.id === id)?.name).filter(Boolean).join(", ")}
+                      <strong>Selecionados:</strong> {value.map((id: string) => allAuxiliaryEquipments?.find(eq => eq.id === id)?.name).filter(Boolean).join(", ")}
                     </div>
                   )}
                 </FormItem>
