@@ -234,13 +234,12 @@ export function PartsRequisitionClientPage() {
     setImagePreviews(prev => ({ ...prev, [itemId]: null })); 
 
     const currentItem = form.getValues(`items.${itemIndex}`);
-    const existingImageUrl = currentItem?.imageUrl;
     
     if (currentItem) {
         update(itemIndex, { ...currentItem, imageUrl: null });
     }
 
-    if (editingRequisition && existingImageUrl) {
+    if (editingRequisition && currentItem?.imageUrl) { // Check currentItem for imageUrl
         toast({ title: "Imagem Marcada para Remoção", description: "A imagem será removida ao salvar a requisição."});
     }
   };
@@ -457,7 +456,9 @@ export function PartsRequisitionClientPage() {
                         {req.status === "Atendida Parcialmente" && (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <MessageSquare className="h-5 w-5 text-orange-500" />
+                                    <button type="button" className="p-0 border-0 bg-transparent cursor-help">
+                                     <MessageSquare className="h-5 w-5 text-orange-500" />
+                                    </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                     <p>Atendimento parcial pelo almoxarifado.</p>
@@ -659,7 +660,7 @@ export function PartsRequisitionClientPage() {
                     <Controller
                         name={`items.${index}.imageUrl`}
                         control={form.control}
-                        render={({ field: imageUrlField }) => <input type="hidden" {...imageUrlField} />}
+                        render={({ field: imageUrlField }) => <input type="hidden" {...imageUrlField} value={imageUrlField.value || ""} />}
                     />
                      <Controller
                         name={`items.${index}.id`}
@@ -684,3 +685,4 @@ export function PartsRequisitionClientPage() {
     </TooltipProvider>
   );
 }
+
