@@ -171,7 +171,7 @@ async function fetchVehicles(): Promise<Vehicle[]> {
 
 async function fetchCompanyById(companyId: CompanyId): Promise<Company | null> {
   if (!db) {
-    console.error(\`fetchCompanyById (\${companyId}): Firebase DB is not available.\`);
+    console.error(`fetchCompanyById (${companyId}): Firebase DB is not available.`);
     throw new Error("Firebase DB is not available");
   }
   const docRef = doc(db, FIRESTORE_COMPANY_COLLECTION_NAME, companyId);
@@ -179,7 +179,7 @@ async function fetchCompanyById(companyId: CompanyId): Promise<Company | null> {
   if (docSnap.exists()) {
     return { id: docSnap.id as CompanyId, ...docSnap.data() } as Company;
   }
-  console.warn(\`fetchCompanyById: Company with ID \${companyId} not found.\`);
+  console.warn(`fetchCompanyById: Company with ID ${companyId} not found.`);
   return null;
 }
 
@@ -253,7 +253,7 @@ async function uploadServiceOrderFile(
     console.error("uploadServiceOrderFile: Firebase Storage is not available.");
     throw new Error("Firebase Storage is not available");
   }
-  const filePath = \`service_order_media/\${orderId}/\${Date.now()}-\${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}\`;
+  const filePath = `service_order_media/${orderId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
   const fileStorageRef = storageRef(storage, filePath);
   await uploadBytes(fileStorageRef, file);
   return getDownloadURL(fileStorageRef);
@@ -271,7 +271,7 @@ async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
       const fileStorageRef = storageRef(storage, decodedPath);
       await deleteObject(fileStorageRef);
     } catch (e) {
-      console.warn(\`[DELETE SO FILE] Failed to delete file from storage: \${fileUrl}\`, e);
+      console.warn(`[DELETE SO FILE] Failed to delete file from storage: ${fileUrl}`, e);
     }
   }
 }
@@ -467,15 +467,15 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
             const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
             form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
-            toastMessage += \`Distância (ida/volta): \${roundTripDistance} km (\${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).\`;
+            toastMessage += `Distância (ida/volta): ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).`;
 
             if ((currentTollValue === null || currentTollValue === undefined) &&
                 result.estimatedTollCostByAI && result.estimatedTollCostByAI > 0) {
               const roundTripTollAI = parseFloat((result.estimatedTollCostByAI * 2).toFixed(2));
               form.setValue('estimatedTollCosts', roundTripTollAI, { shouldValidate: true });
-              toastMessage += \` Pedágio (est. IA): R$ \${roundTripTollAI}.\`;
+              toastMessage += ` Pedágio (est. IA): R$ ${roundTripTollAI}.`;
             } else if (result.estimatedTollCostByAI === 0 || result.estimatedTollCostByAI === null) { // MODIFICADO AQUI
-              toastMessage += \` Estimativa de pedágio pela IA: R$ 0.00 ou não aplicável.\`; // MODIFICADO AQUI
+              toastMessage += ` Estimativa de pedágio pela IA: R$ 0.00 ou não aplicável.`; // MODIFICADO AQUI
               if (currentTollValue === null || currentTollValue === undefined) { // MODIFICADO AQUI
                   form.setValue('estimatedTollCosts', 0, { shouldValidate: true }); // MODIFICADO AQUI
               } // MODIFICADO AQUI
@@ -615,11 +615,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Criada", description: \`Ordem \${data.orderNumber} criada.\` });
+      toast({ title: "Ordem de Serviço Criada", description: `Ordem ${data.orderNumber} criada.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Criar OS", description: \`Não foi possível criar a OS \${variables.formData.orderNumber}. Detalhe: \${err.message}\`, variant: "destructive" });
+      toast({ title: "Erro ao Criar OS", description: `Não foi possível criar a OS ${variables.formData.orderNumber}. Detalhe: ${err.message}`, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFile(false)
   });
@@ -658,11 +658,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Atualizada", description: \`Ordem \${data.orderNumber} atualizada.\` });
+      toast({ title: "Ordem de Serviço Atualizada", description: `Ordem ${data.orderNumber} atualizada.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar OS", description: \`Não foi possível atualizar a OS \${variables.formData.orderNumber}. Detalhe: \${err.message}\`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar OS", description: `Não foi possível atualizar a OS ${variables.formData.orderNumber}. Detalhe: ${err.message}`, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFile(false),
   });
@@ -762,7 +762,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
         endDate: Timestamp.fromDate(new Date()),
       });
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Concluída", description: \`OS \${editingOrder.orderNumber} marcada como concluída.\` });
+      toast({ title: "Ordem de Serviço Concluída", description: `OS ${editingOrder.orderNumber} marcada como concluída.` });
       setIsConclusionModalOpen(false);
       setEditingOrder(null);
       setTechnicalConclusionText("");
@@ -785,7 +785,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
         endDate: Timestamp.fromDate(new Date()),
       });
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Ordem de Serviço Cancelada", description: \`OS \${editingOrder.orderNumber} marcada como cancelada.\` });
+      toast({ title: "Ordem de Serviço Cancelada", description: `OS ${editingOrder.orderNumber} marcada como cancelada.` });
       setIsCancelConfirmModalOpen(false);
       setEditingOrder(null);
     } catch (e: any) {
@@ -821,7 +821,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
 
   const handleModalDeleteConfirm = () => {
     if (editingOrder && editingOrder.id) {
-      if (window.confirm(\`Tem certeza que deseja excluir a Ordem de Serviço "\${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.\`)) {
+      if (window.confirm(`Tem certeza que deseja excluir a Ordem de Serviço "${editingOrder.orderNumber}"? Esta ação não pode ser desfeita.`)) {
         deleteServiceOrderMutation.mutate(editingOrder.id);
       }
     }
@@ -834,7 +834,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       if (currentTotalFiles + newFilesArray.length > MAX_FILES_ALLOWED) {
         toast({
           title: "Limite de Arquivos Excedido",
-          description: \`Você pode anexar no máximo \${MAX_FILES_ALLOWED} arquivos no total.\`,
+          description: `Você pode anexar no máximo ${MAX_FILES_ALLOWED} arquivos no total.`,
           variant: "destructive",
         });
         return;
@@ -888,7 +888,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing;
       doc.setFontSize(smallText);
       doc.setFont("helvetica", "normal");
-      doc.text(\`CNPJ: \${companyDetails.cnpj}\`, 14, yPos);
+      doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
       yPos += lineSpacing / 1.5;
       doc.text(formatAddressForDisplay(companyDetails), 14, yPos);
       yPos += lineSpacing;
@@ -902,7 +902,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     // Title
     doc.setFontSize(titleText);
     doc.setFont("helvetica", "bold");
-    doc.text(\`ORDEM DE SERVIÇO Nº \${order.orderNumber}\`, 105, yPos, { align: "center" });
+    doc.text(`ORDEM DE SERVIÇO Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
     yPos += lineSpacing * 1.5;
 
     // Basic Info
@@ -911,10 +911,10 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     doc.text("INFORMAÇÕES GERAIS", 14, yPos);
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
-    doc.text(\`Data Abertura: \${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}\`, 14, yPos);
-    doc.text(\`Técnico: \${technicianName || 'N/A'}\`, 100, yPos);
+    doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
+    doc.text(`Técnico: ${technicianName || 'N/A'}`, 100, yPos);
     yPos += lineSpacing;
-    doc.text(\`Previsão Conclusão: \${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}\`, 14, yPos);
+    doc.text(`Previsão Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 14, yPos);
     yPos += lineSpacing * 1.5;
 
     // Customer Info
@@ -923,14 +923,14 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
     if (customer) {
-      doc.text(\`Nome/Razão Social: \${toTitleCase(customer.name)}\`, 14, yPos);
+      doc.text(`Nome/Razão Social: ${toTitleCase(customer.name)}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`CNPJ: \${customer.cnpj}\`, 14, yPos);
-      doc.text(\`Solicitante: \${toTitleCase(order.requesterName) || 'N/A'}\`, 100, yPos);
+      doc.text(`CNPJ: ${customer.cnpj}`, 14, yPos);
+      doc.text(`Solicitante: ${toTitleCase(order.requesterName) || 'N/A'}`, 100, yPos);
       yPos += lineSpacing;
-      doc.text(\`Telefone: \${customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}\`, 14, yPos);
+      doc.text(`Telefone: ${customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : 'N/A'}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`Endereço: \${formatAddressForDisplay(customer)}\`, 14, yPos);
+      doc.text(`Endereço: ${formatAddressForDisplay(customer)}`, 14, yPos);
       yPos += lineSpacing * 1.5;
     } else {
       doc.text("Cliente não especificado.", 14, yPos);
@@ -943,12 +943,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
     if (equipment) {
-      doc.text(\`Marca/Modelo: \${toTitleCase(equipment.brand)} \${toTitleCase(equipment.model)}\`, 14, yPos);
+      doc.text(`Marca/Modelo: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`Chassi: \${equipment.chassisNumber || 'N/A'}\`, 14, yPos);
-      doc.text(\`Ano: \${equipment.manufactureYear || 'N/A'}\`, 100, yPos);
+      doc.text(`Chassi: ${equipment.chassisNumber || 'N/A'}`, 14, yPos);
+      doc.text(`Ano: ${equipment.manufactureYear || 'N/A'}`, 100, yPos);
       yPos += lineSpacing;
-      doc.text(\`Tipo: \${equipment.equipmentType}\`, 14, yPos);
+      doc.text(`Tipo: ${equipment.equipmentType}`, 14, yPos);
       yPos += lineSpacing * 1.5;
     } else {
       doc.text("Equipamento não especificado.", 14, yPos);
@@ -960,7 +960,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     doc.text("DETALHES DO SERVIÇO", 14, yPos);
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
-    doc.text(\`Tipo de Serviço: \${order.serviceType || 'N/A'}\`, 14, yPos);
+    doc.text(`Tipo de Serviço: ${order.serviceType || 'N/A'}`, 14, yPos);
     yPos += lineSpacing;
     doc.text("Problema Relatado:", 14, yPos);
     yPos += lineSpacing * 0.8;
@@ -990,9 +990,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
 
     // Footer
     doc.setFontSize(smallText - 1);
-    doc.text(\`Documento gerado em: \${formatDateForDisplay(new Date().toISOString())}\`, 14, doc.internal.pageSize.height - 10);
+    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
 
-    doc.save(\`OS_Tecnico_\${order.orderNumber}.pdf\`);
+    doc.save(`OS_Tecnico_${order.orderNumber}.pdf`);
     console.log("[PrintDebug] generateTechnicianOsPDF finished for OS:", order.orderNumber);
   };
 
@@ -1020,7 +1020,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       yPos += lineSpacing;
       doc.setFontSize(smallText);
       doc.setFont("helvetica", "normal");
-      doc.text(\`CNPJ: \${companyDetails.cnpj}\`, 14, yPos);
+      doc.text(`CNPJ: ${companyDetails.cnpj}`, 14, yPos);
       yPos += lineSpacing / 1.5;
       doc.text(formatAddressForDisplay(companyDetails), 14, yPos);
       yPos += lineSpacing;
@@ -1034,14 +1034,14 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     // Title
     doc.setFontSize(titleText);
     doc.setFont("helvetica", "bold");
-    doc.text(\`RECIBO DE SERVIÇO - OS Nº \${order.orderNumber}\`, 105, yPos, { align: "center" });
+    doc.text(`RECIBO DE SERVIÇO - OS Nº ${order.orderNumber}`, 105, yPos, { align: "center" });
     yPos += lineSpacing * 1.5;
 
     // Dates
     doc.setFontSize(normalText);
     doc.setFont("helvetica", "normal");
-    doc.text(\`Data Abertura: \${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}\`, 14, yPos);
-    doc.text(\`Data Conclusão: \${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}\`, 100, yPos);
+    doc.text(`Data Abertura: ${order.startDate ? formatDateForDisplay(order.startDate) : 'N/A'}`, 14, yPos);
+    doc.text(`Data Conclusão: ${order.endDate ? formatDateForDisplay(order.endDate) : 'N/A'}`, 100, yPos);
     yPos += lineSpacing * 1.5;
 
     // Customer
@@ -1050,11 +1050,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
     if (customer) {
-      doc.text(\`Nome/Razão Social: \${toTitleCase(customer.name)}\`, 14, yPos);
+      doc.text(`Nome/Razão Social: ${toTitleCase(customer.name)}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`CNPJ: \${customer.cnpj}\`, 14, yPos);
+      doc.text(`CNPJ: ${customer.cnpj}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`Endereço: \${formatAddressForDisplay(customer)}\`, 14, yPos);
+      doc.text(`Endereço: ${formatAddressForDisplay(customer)}`, 14, yPos);
       yPos += lineSpacing * 1.5;
     }
 
@@ -1064,9 +1064,9 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
     if (equipment) {
-      doc.text(\`Marca/Modelo: \${toTitleCase(equipment.brand)} \${toTitleCase(equipment.model)}\`, 14, yPos);
+      doc.text(`Marca/Modelo: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}`, 14, yPos);
       yPos += lineSpacing;
-      doc.text(\`Chassi: \${equipment.chassisNumber || 'N/A'}\`, 14, yPos);
+      doc.text(`Chassi: ${equipment.chassisNumber || 'N/A'}`, 14, yPos);
       yPos += lineSpacing * 1.5;
     }
 
@@ -1075,7 +1075,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     doc.text("SERVIÇO REALIZADO", 14, yPos);
     yPos += lineSpacing;
     doc.setFont("helvetica", "normal");
-    doc.text(\`Tipo de Serviço: \${order.serviceType || 'N/A'}\`, 14, yPos);
+    doc.text(`Tipo de Serviço: ${order.serviceType || 'N/A'}`, 14, yPos);
     yPos += lineSpacing;
     doc.text("Problema Relatado:", 14, yPos);
     yPos += lineSpacing * 0.8;
@@ -1096,8 +1096,8 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
     yPos += lineSpacing * 1.5;
 
     doc.setFontSize(smallText - 1);
-    doc.text(\`Documento gerado em: \${formatDateForDisplay(new Date().toISOString())}\`, 14, doc.internal.pageSize.height - 10);
-    doc.save(\`Recibo_OS_\${order.orderNumber}.pdf\`);
+    doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
+    doc.save(`Recibo_OS_${order.orderNumber}.pdf`);
     console.log("[PrintDebug] generateCustomerReceiptPDF finished for OS:", order.orderNumber);
   };
 
@@ -1233,7 +1233,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             const whatsappNumber = getWhatsAppNumber(customer?.phone);
             const whatsappLink = whatsappNumber && customer
-              ? \`https://wa.me/\${whatsappNumber}?text=Ol%C3%A1%20\${encodeURIComponent(toTitleCase(customer.name))},%20sobre%20a%20OS%20\${order.orderNumber}...\`
+              ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(toTitleCase(customer.name))},%20sobre%20a%20OS%20${order.orderNumber}...`
               : "#";
             const localIsOrderConcludedOrCancelled = order.phase === 'Concluída' || order.phase === 'Cancelada';
 
@@ -1385,7 +1385,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
       <FormModal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingOrder ? \`Editar OS: \${editingOrder.orderNumber}\` : "Nova Ordem de Serviço"}
+        title={editingOrder ? `Editar OS: ${editingOrder.orderNumber}` : "Nova Ordem de Serviço"}
         description="Preencha os detalhes da ordem de serviço."
         formId="service-order-form"
         isSubmitting={isMutating}
@@ -1559,7 +1559,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
               )} />
 
               <FormItem>
-                <FormLabel>Mídia (Fotos/Vídeos - Máx. {MAX_FILES_ALLOWED} arquivos)</FormLabel>
+                <FormLabel>Mídia (Fotos/Vídeos - Máx. ${MAX_FILES_ALLOWED} arquivos)</FormLabel>
                 <FormControl>
                   <Input
                     type="file"
@@ -1572,11 +1572,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
                 <FormDescription>
                   Arquivos selecionados para upload: {mediaFiles.length}.
                   Arquivos existentes: {formMediaUrls?.length || 0}.
-                  Total: {(formMediaUrls?.length || 0) + mediaFiles.length} de {MAX_FILES_ALLOWED}.
+                  Total: {(formMediaUrls?.length || 0) + mediaFiles.length} de ${MAX_FILES_ALLOWED}.
                 </FormDescription>
                 <div className="mt-2 space-y-2">
                   {formMediaUrls?.map((url, index) => (
-                    <div key={`existing-\${index}\`} className="flex items-center justify-between p-2 border rounded-md bg-muted/50 text-sm">
+                    <div key={`existing-${index}`} className="flex items-center justify-between p-2 border rounded-md bg-muted/50 text-sm">
                       <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex items-center gap-1">
                         <LinkIconLI className="h-3 w-3"/> {getFileNameFromUrl(url)} (Salvo)
                       </a>
@@ -1588,7 +1588,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl, initialDataFromB
                     </div>
                   ))}
                   {mediaFiles.map((file, index) => (
-                    <div key={`new-\${index}\`} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                    <div key={`new-${index}`} className="flex items-center justify-between p-2 border rounded-md text-sm">
                       <span className="truncate">{file.name} (Novo)</span>
                       <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveNewFile(index)} className="text-destructive hover:text-destructive">
                         <XCircle className="h-4 w-4 mr-1"/> Remover
