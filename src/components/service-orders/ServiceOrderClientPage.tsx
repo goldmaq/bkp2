@@ -315,7 +315,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
   const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
   const formEstimatedTollCosts = useWatch({ control: form.control, name: 'estimatedTollCosts' });
-  const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
+  const isOrderConcludedOrCancelled = !!editingOrder && (editingOrder.phase === 'Concluída' || editingOrder.phase === 'Cancelada');
 
 
   const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrdersData } = useQuery<ServiceOrder[], Error>({
@@ -438,7 +438,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           return;
         }
 
-        // const companyOwnerId = equipment.ownerReference as CompanyId; // Not used currently, but kept for potential future use
         const originCompany = goldmaqCompanyDetails;
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
@@ -847,6 +846,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     companyDetails: Company | null
   ) => {
     if (!order) return;
+    console.log("[PrintDebug] generateTechnicianOsPDF called for OS:", order.orderNumber, "Tech:", technicianName);
     const doc = new jsPDF();
     let yPos = 15;
     const lineSpacing = 7;
@@ -968,6 +968,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
 
     doc.save(`OS_Tecnico_${order.orderNumber}.pdf`);
+    console.log("[PrintDebug] generateTechnicianOsPDF finished for OS:", order.orderNumber);
   };
 
   const generateCustomerReceiptPDF = (
@@ -977,6 +978,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     companyDetails: Company | null
   ) => {
     if (!order) return;
+    console.log("[PrintDebug] generateCustomerReceiptPDF called for OS:", order.orderNumber);
     const doc = new jsPDF();
     let yPos = 15;
     const lineSpacing = 7;
@@ -1071,11 +1073,17 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     doc.setFontSize(smallText - 1);
     doc.text(`Documento gerado em: ${formatDateForDisplay(new Date().toISOString())}`, 14, doc.internal.pageSize.height - 10);
     doc.save(`Recibo_OS_${order.orderNumber}.pdf`);
+    console.log("[PrintDebug] generateCustomerReceiptPDF finished for OS:", order.orderNumber);
   };
 
   const handlePrintForTechnician = (order: ServiceOrder) => {
+    console.log("[PrintDebug] handlePrintForTechnician called for OS:", order.id);
     if (isLoadingGoldmaqCompany) {
       toast({ title: "Aguarde", description: "Carregando dados da empresa..."});
+      return;
+    }
+    if (!order) {
+      toast({ title: "Erro", description: "Dados da OS não encontrados para impressão.", variant: "destructive"});
       return;
     }
     const customer = getCustomerDetails(order.customerId);
@@ -1085,8 +1093,13 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   };
 
   const handlePrintForCustomer = (order: ServiceOrder) => {
-     if (isLoadingGoldmaqCompany) {
+    console.log("[PrintDebug] handlePrintForCustomer called for OS:", order.id);
+    if (isLoadingGoldmaqCompany) {
       toast({ title: "Aguarde", description: "Carregando dados da empresa..."});
+      return;
+    }
+     if (!order) {
+      toast({ title: "Erro", description: "Dados da OS não encontrados para impressão.", variant: "destructive"});
       return;
     }
     const customer = getCustomerDetails(order.customerId);
@@ -1130,36 +1143,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
       </div>
     );
   }
-
-  const additionalFooterActions = (
-    <div className="flex flex-wrap gap-2">
-      {editingOrder && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => handlePrintForTechnician(editingOrder)}
-          disabled={isMutating || isLoadingGoldmaqCompany}
-          className="border-primary text-primary hover:bg-primary/10"
-        >
-          <Printer className="mr-2 h-4 w-4" /> Imprimir (Técnico)
-        </Button>
-      )}
-      {editingOrder && editingOrder.phase === 'Concluída' && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => handlePrintForCustomer(editingOrder)}
-          disabled={isMutating || isLoadingGoldmaqCompany}
-          className="border-primary text-primary hover:bg-primary/10"
-        >
-          <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
-        </Button>
-      )}
-    </div>
-  );
-
 
   return (
     <TooltipProvider>
@@ -1222,7 +1205,6 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const customer = getCustomerDetails(order.customerId);
             const equipment = getEquipmentDetails(order.equipmentId);
             const technicianName = getTechnicianName(order.technicianId);
-            // const PhaseIcon = phaseIcons[order.phase] || ClipboardList; // Not directly used in card display anymore
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             const whatsappNumber = getWhatsAppNumber(customer?.phone);
             const whatsappLink = whatsappNumber && customer
@@ -1334,39 +1316,39 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     )}
                   </CardContent>
                 </div>
-                <CardFooter className="border-t pt-4 flex flex-wrap gap-2 justify-end">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handlePrintForTechnician(order);}}
-                        disabled={isLoadingGoldmaqCompany || isMutating}
-                        className="border-primary text-primary hover:bg-primary/10"
-                    >
-                        <Printer className="mr-2 h-4 w-4" /> Técnico
-                    </Button>
-                    {order.phase === 'Concluída' && (
+                <CardFooter className="border-t pt-4 flex flex-wrap gap-2 justify-between items-center">
+                    <div className="flex flex-wrap gap-2">
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={(e) => { e.stopPropagation(); handlePrintForCustomer(order);}}
+                            onClick={(e) => { e.stopPropagation(); handlePrintForTechnician(order);}}
                             disabled={isLoadingGoldmaqCompany || isMutating}
                             className="border-primary text-primary hover:bg-primary/10"
                         >
-                            <Printer className="mr-2 h-4 w-4" /> Cliente
+                            <Printer className="mr-2 h-4 w-4" /> Técnico
                         </Button>
-                    )}
-                     {!localIsOrderConcludedOrCancelled && (
-                        <>
+                        {order.phase === 'Concluída' && (
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleOpenConclusionModal(order); }}
-                                disabled={isMutating}
-                                className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700"
+                                onClick={(e) => { e.stopPropagation(); handlePrintForCustomer(order);}}
+                                disabled={isLoadingGoldmaqCompany || isMutating}
+                                className="border-primary text-primary hover:bg-primary/10"
                             >
-                                <Check className="mr-2 h-4 w-4" /> Concluir OS
+                                <Printer className="mr-2 h-4 w-4" /> Cliente
                             </Button>
-                        </>
+                        )}
+                    </div>
+                    {!localIsOrderConcludedOrCancelled && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleOpenConclusionModal(order); }}
+                            disabled={isMutating}
+                            className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700"
+                        >
+                            <Check className="mr-2 h-4 w-4" /> Concluir
+                        </Button>
                     )}
                 </CardFooter>
               </Card>
@@ -1388,11 +1370,11 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         deleteButtonLabel="Excluir OS"
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        additionalFooterActions={null} // Removido, pois os botões de impressão foram para o card
+        additionalFooterActions={null}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
-            <fieldset disabled={!!editingOrder && !isEditMode && (editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada')} className="space-y-4">
+            <fieldset disabled={!!editingOrder && !isEditMode && (isOrderConcludedOrCancelled)} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="orderNumber" render={({ field }) => (
                   <FormItem><FormLabel>Número da OS</FormLabel><FormControl><Input {...field} readOnly className="bg-muted/50" /></FormControl><FormMessage /></FormItem>
@@ -1427,7 +1409,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="phase" render={({ field }) => (
                   <FormItem><FormLabel>Fase da OS</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={(editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={(isOrderConcludedOrCancelled) && !!editingOrder}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger></FormControl>
                       <SelectContent>
                         {serviceOrderPhaseOptions.map(phase => <SelectItem key={phase} value={phase}>{phase}</SelectItem>)}
@@ -1646,5 +1628,3 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     </TooltipProvider>
   );
 }
-
-

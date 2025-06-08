@@ -67,10 +67,10 @@ async function fetchRouteFromGoogleMaps(
   destination: string
 ): Promise<{ distanceKm: number; durationText: string; googleIndicatesTolls: boolean } | { error: string; status: CalculateDistanceOutput['status'] }> {
   console.log(`[DistanceFlow/GoogleMaps] Fetching route. Origin: "${origin}", Destination: "${destination}"`);
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = process.env.GOOGLE_API_KEY; // Corrected: Use GOOGLE_API_KEY
   if (!apiKey) {
-    console.error("[DistanceFlow/GoogleMaps] Google Maps API Key is missing from environment variables.");
-    return { error: "Google Maps API Key is not configured.", status: 'ERROR_GOOGLE_API_KEY_MISSING' };
+    console.error("[DistanceFlow/GoogleMaps] Google API Key is missing from environment variables (expected GOOGLE_API_KEY).");
+    return { error: "Google API Key (GOOGLE_API_KEY) is not configured.", status: 'ERROR_GOOGLE_API_KEY_MISSING' };
   }
 
   const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&key=${apiKey}&language=pt-BR&units=metric`;
@@ -95,16 +95,13 @@ async function fetchRouteFromGoogleMaps(
     const distanceKm = parseFloat((leg.distance.value / 1000).toFixed(1)); // Distance in km, one decimal place
     const durationText = leg.duration.text;
 
-    // Check for toll information. This can vary by region and response structure.
-    // A common indicator is the presence of a 'tolls' field or if 'warnings' mention tolls.
     let googleIndicatesTolls = false;
     if (route.warnings && route.warnings.some((w: string) => w.toLowerCase().includes("pedágio") || w.toLowerCase().includes("toll"))) {
         googleIndicatesTolls = true;
     }
-    if (leg.tolls_info || (leg as any).tolls ) { // 'tolls' is not standard but sometimes appears
+    if (leg.tolls_info || (leg as any).tolls ) {
         googleIndicatesTolls = true;
     }
-    // More robust check: if the route summary contains "toll" or "pedágio"
     if (route.summary && (route.summary.toLowerCase().includes("toll") || route.summary.toLowerCase().includes("pedágio"))){
         googleIndicatesTolls = true;
     }
@@ -157,7 +154,7 @@ if (ai && tollEstimationPrompt) {
           const llmResponse = await tollEstimationPrompt({
             originAddress: input.originAddress,
             destinationAddress: input.destinationAddress,
-            distanceKm: distanceKm, // Use one-way distance for LLM prompt
+            distanceKm: distanceKm,
           });
           if (llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
             estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
@@ -167,9 +164,8 @@ if (ai && tollEstimationPrompt) {
           }
         } catch (llmError: any) {
           console.error("[DistanceFlow] Error during LLM toll estimation:", llmError);
-          // Non-fatal error for toll estimation, proceed without it but log it.
            return {
-            distanceKm: distanceKm, // Still return the distance
+            distanceKm: distanceKm,
             status: 'ERROR_LLM_TOLL_ESTIMATION',
             errorMessage: `Successfully fetched distance from Google Maps, but LLM toll estimation failed: ${llmError.message}`,
             estimatedTollCostByAI: null,
@@ -182,9 +178,9 @@ if (ai && tollEstimationPrompt) {
       }
 
       return {
-        distanceKm: distanceKm, // This is one-way distance
+        distanceKm: distanceKm,
         status: 'SUCCESS',
-        estimatedTollCostByAI: estimatedTollCostOneWay, // This is one-way toll
+        estimatedTollCostByAI: estimatedTollCostOneWay,
         googleMapsApiIndicstedTolls: googleIndicatesTolls,
       };
     }
@@ -199,7 +195,7 @@ if (ai && tollEstimationPrompt) {
     const simulatedDistance = Math.floor(Math.random() * 450) + 50;
     return {
       distanceKm: simulatedDistance,
- status: 'SIMULATED', // Simulate a common error if dummy is used
+      status: 'SIMULATED',
       errorMessage: 'Dummy flow: Simulating API key missing, as Genkit/Google Maps is not fully initialized.',
       estimatedTollCostByAI: Math.random() > 0.5 ? Math.floor(Math.random() * 50) : 0,
       googleMapsApiIndicstedTolls: Math.random() > 0.5,
@@ -211,8 +207,8 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   if (typeof calculateDistanceFlow !== 'function') {
     console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. Critical initialization issue.");
     return {
-        distanceKm: Math.floor(Math.random() * 450) + 50, // Fallback simulated distance
-        status: 'ERROR_GOOGLE_API_FAILED', // Generic failure status
+        distanceKm: Math.floor(Math.random() * 450) + 50, 
+        status: 'ERROR_GOOGLE_API_FAILED', 
         errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized. Using simulated distance.',
         estimatedTollCostByAI: null,
         googleMapsApiIndicstedTolls: undefined,
@@ -223,7 +219,7 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   } catch (error: any) {
     console.error("[DistanceFlow] Error executing calculateDistanceFlow:", error);
     return {
-      distanceKm: Math.floor(Math.random() * 450) + 50, // Fallback simulated distance
+      distanceKm: Math.floor(Math.random() * 450) + 50, 
       status: 'ERROR_GOOGLE_API_FAILED',
       errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
       estimatedTollCostByAI: null,
