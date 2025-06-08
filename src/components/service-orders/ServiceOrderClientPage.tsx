@@ -42,6 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay, parseNumericToNullOrNumber, formatAddressForDisplay, generateGoogleMapsUrl, formatDateForDisplay } from "@/lib/utils";
 import { calculateDistance, type CalculateDistanceOutput } from '@/ai/flows/calculate-distance-flow';
+import { DialogFooter } from "@/components/ui/dialog";
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -314,6 +315,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   const formVehicleId = useWatch({ control: form.control, name: 'vehicleId' });
   const formEstimatedTravelDistanceKm = useWatch({ control: form.control, name: 'estimatedTravelDistanceKm' });
   const formEstimatedTollCosts = useWatch({ control: form.control, name: 'estimatedTollCosts' });
+  const isOrderConcludedOrCancelled = editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada';
 
 
   const { data: serviceOrdersRaw = [], isLoading: isLoadingServiceOrders, isError: isErrorServiceOrders, error: errorServiceOrdersData } = useQuery<ServiceOrder[], Error>({
@@ -703,7 +705,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         estimatedTollCosts: order.estimatedTollCosts !== undefined ? order.estimatedTollCosts : null,
         estimatedTravelCost: order.estimatedTravelCost !== undefined ? order.estimatedTravelCost : null,
       });
-      setShowCustomServiceType(order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any));
+      setShowCustomServiceType(!!(order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any)));
     } else {
       setEditingOrder(null);
       setIsEditMode(true);
@@ -1079,7 +1081,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     const customer = getCustomerDetails(order.customerId);
     const equipment = getEquipmentDetails(order.equipmentId);
     const technicianName = getTechnicianName(order.technicianId);
-    generateTechnicianOsPDF(order, customer, equipment, technicianName, goldmaqCompanyDetails);
+    generateTechnicianOsPDF(order, customer, equipment, technicianName, goldmaqCompanyDetails || null);
   };
 
   const handlePrintForCustomer = (order: ServiceOrder) => {
@@ -1089,7 +1091,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     }
     const customer = getCustomerDetails(order.customerId);
     const equipment = getEquipmentDetails(order.equipmentId);
-    generateCustomerReceiptPDF(order, customer, equipment, goldmaqCompanyDetails);
+    generateCustomerReceiptPDF(order, customer, equipment, goldmaqCompanyDetails || null);
   };
 
 
@@ -1130,7 +1132,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
   }
 
   const additionalFooterActions = (
-    <>
+    <div className="flex flex-wrap gap-2">
       {editingOrder && (
         <Button
           type="button"
@@ -1150,12 +1152,12 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
           size="sm"
           onClick={() => handlePrintForCustomer(editingOrder)}
           disabled={isMutating || isLoadingGoldmaqCompany}
-          className="border-primary text-primary hover:bg-primary/10 ml-2"
+          className="border-primary text-primary hover:bg-primary/10"
         >
           <Printer className="mr-2 h-4 w-4" /> Imprimir (Cliente)
         </Button>
       )}
-    </>
+    </div>
   );
 
 
@@ -1226,7 +1228,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
             const whatsappLink = whatsappNumber && customer
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(toTitleCase(customer.name))},%20sobre%20a%20OS%20${order.orderNumber}...`
               : "#";
-            const isOrderConcludedOrCancelled = order.phase === 'Concluída' || order.phase === 'Cancelada';
+            const localIsOrderConcludedOrCancelled = order.phase === 'Concluída' || order.phase === 'Cancelada';
 
 
             return (
@@ -1353,7 +1355,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                             <Printer className="mr-2 h-4 w-4" /> Cliente
                         </Button>
                     )}
-                     {!isOrderConcludedOrCancelled && (
+                     {!localIsOrderConcludedOrCancelled && (
                         <>
                             <Button
                                 variant="outline"
@@ -1386,7 +1388,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
         deleteButtonLabel="Excluir OS"
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        additionalFooterActions={additionalFooterActions}
+        additionalFooterActions={null} // Removido, pois os botões de impressão foram para o card
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="service-order-form" className="space-y-4">
@@ -1557,7 +1559,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                     multiple
                     accept="image/*,video/*"
                     onChange={handleFileChange}
-                    disabled={(formMediaUrls?.length || 0) + mediaFiles.length >= MAX_FILES_ALLOWED || ((editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder)}
+                    disabled={(formMediaUrls?.length || 0) + mediaFiles.length >= MAX_FILES_ALLOWED || (isOrderConcludedOrCancelled && !!editingOrder)}
                   />
                 </FormControl>
                 <FormDescription>
@@ -1571,7 +1573,7 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
                       <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex items-center gap-1">
                         <LinkIconLI className="h-3 w-3"/> {getFileNameFromUrl(url)} (Salvo)
                       </a>
-                      {(!((editingOrder?.phase === 'Concluída' || editingOrder?.phase === 'Cancelada') && !!editingOrder)) && (
+                      {(!(isOrderConcludedOrCancelled && !!editingOrder)) && (
                         <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveExistingUrl(url)} className="text-destructive hover:text-destructive">
                           <XCircle className="h-4 w-4 mr-1"/> Remover
                         </Button>
@@ -1644,4 +1646,5 @@ export function ServiceOrderClientPage({ serviceOrderIdFromUrl }: ServiceOrderCl
     </TooltipProvider>
   );
 }
+
 

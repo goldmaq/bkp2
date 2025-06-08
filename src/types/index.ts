@@ -38,6 +38,7 @@ export const maquinaOperationalStatusOptions = ['Disponível', 'Locada', 'Em Man
 
 export type CompanyId = 'goldmaq' | 'goldcomercio' | 'goldjob';
 export const companyIds = ["goldmaq", "goldcomercio", "goldjob"] as const;
+export const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
 
 
 export const companyDisplayOptions: { id: CompanyId; name: string }[] = [
