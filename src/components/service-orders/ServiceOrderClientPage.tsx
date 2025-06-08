@@ -39,7 +39,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { calculateDistance } from "@/ai/flows/calculate-distance-flow";
-import { ai } from "@/ai/genkit";
+// import { ai } from "@/ai/genkit"; // ai instance not directly needed here if calculateDistance handles it
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -419,13 +419,21 @@ export function ServiceOrderClientPage() {
 
   useEffect(() => {
     const attemptCalculateDistance = async () => {
-      if (selectedCustomerId && selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && !isCalculatingDistance && ai && calculateDistance) {
+      const currentDistanceValue = form.getValues("estimatedTravelDistanceKm");
+      if (
+        isModalOpen &&
+        (!editingOrder || (editingOrder && isEditMode)) &&
+        selectedCustomerId &&
+        selectedEquipmentId && selectedEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE &&
+        !isCalculatingDistance &&
+        typeof calculateDistance === 'function' &&
+        (currentDistanceValue === null || currentDistanceValue === undefined) // Only calc if field is empty
+      ) {
         const customer = customers.find(c => c.id === selectedCustomerId);
         const equipment = equipmentList.find(e => e.id === selectedEquipmentId);
 
-        if (!customer || !equipment || !equipment.ownerReference || equipment.ownerReference === OWNER_REF_CUSTOMER) {
-          if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) {
-          }
+        if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
+          // console.log("Distance calc skipped: Customer/Equipment invalid or equipment not company owned.");
           return;
         }
 
@@ -445,17 +453,16 @@ export function ServiceOrderClientPage() {
             console.warn("Could not format origin or destination address strings. Automatic distance calculation skipped.");
             return;
         }
-        
+
         setIsCalculatingDistance(true);
         try {
           const result = await calculateDistance({ originAddress, destinationAddress });
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
-            form.setValue('estimatedTravelDistanceKm', parseFloat((result.distanceKm * 2).toFixed(1)), { shouldValidate: true }); 
-            toast({ title: "Distância Estimada", description: `Distância (ida e volta) calculada: ${(result.distanceKm * 2).toFixed(1)} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).` });
+            const roundTripDistance = parseFloat((result.distanceKm * 2).toFixed(1));
+            form.setValue('estimatedTravelDistanceKm', roundTripDistance, { shouldValidate: true });
+            toast({ title: "Distância Estimada Calculada", description: `Distância de ida e volta: ${roundTripDistance} km (${result.status === 'SIMULATED' ? 'Simulado' : 'Calculado'}).` });
           } else {
-            toast({ title: "Erro ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância.", variant: "destructive" });
-            if (form.getValues("estimatedTravelDistanceKm") === null && !editingOrder) {
-            }
+            toast({ title: "Falha ao Calcular Distância", description: result.errorMessage || "Não foi possível calcular a distância automaticamente.", variant: "default" });
           }
         } catch (e: any) {
           console.error("Error calling calculateDistance flow:", e);
@@ -466,14 +473,14 @@ export function ServiceOrderClientPage() {
       }
     };
 
-    if (isModalOpen && (!editingOrder || (editingOrder && isEditMode))) {
-      attemptCalculateDistance().catch(err => {
-        console.error("Error in attemptCalculateDistance useEffect:", err);
-        setIsCalculatingDistance(false); 
-      });
-    }
-  }, [selectedCustomerId, selectedEquipmentId, customers, equipmentList, companies, form, isModalOpen, editingOrder, isEditMode, isCalculatingDistance, ai, calculateDistance, toast]);
-
+    attemptCalculateDistance().catch(err => {
+      console.error("Error in attemptCalculateDistance useEffect:", err);
+      setIsCalculatingDistance(false);
+    });
+  }, [
+    isModalOpen, editingOrder, isEditMode, selectedCustomerId, selectedEquipmentId, 
+    isCalculatingDistance, calculateDistance, customers, equipmentList, companies, form, toast
+  ]);
 
 
   if (!db || !storage) {
@@ -724,9 +731,9 @@ export function ServiceOrderClientPage() {
         technicalConclusion: order.technicalConclusion || null,
         notes: order.notes || "",
         requesterName: order.requesterName || "",
-        estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined ? Number(order.estimatedTravelDistanceKm) : null,
-        estimatedTollCosts: order.estimatedTollCosts !== undefined ? Number(order.estimatedTollCosts) : null,
-        estimatedTravelCost: order.estimatedTravelCost !== undefined ? Number(order.estimatedTravelCost) : null,
+        estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined && order.estimatedTravelDistanceKm !== null ? Number(order.estimatedTravelDistanceKm) : null,
+        estimatedTollCosts: order.estimatedTollCosts !== undefined && order.estimatedTollCosts !== null ? Number(order.estimatedTollCosts) : null,
+        estimatedTravelCost: order.estimatedTravelCost !== undefined && order.estimatedTravelCost !== null ? Number(order.estimatedTravelCost) : null,
       });
       setShowCustomServiceType(!isServiceTypePredefined);
     } else {
@@ -1315,14 +1322,14 @@ export function ServiceOrderClientPage() {
                         <FormControl>
                           <Input 
                             type="number" 
-                            step="0.1" 
+                            step="any" 
                             placeholder="Ex: 120.5" 
                             {...field} 
                             onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
                             value={field.value === null || field.value === undefined ? '' : String(field.value)}
                           />
                         </FormControl>
-                         <FormDescription>Preenchido automaticamente ou manualmente.</FormDescription>
+                         <FormDescription>Pode ser preenchido automaticamente ou manualmente.</FormDescription>
                         <FormMessage />
                     </FormItem>
                  )} />
@@ -1332,7 +1339,7 @@ export function ServiceOrderClientPage() {
                         <FormControl>
                           <Input 
                             type="number" 
-                            step="0.01" 
+                            step="any" 
                             placeholder="Ex: 25.50" 
                             {...field} 
                             onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} 
@@ -1349,7 +1356,7 @@ export function ServiceOrderClientPage() {
                         <FormControl>
                           <Input 
                             type="number" 
-                            step="0.01" 
+                            step="any" 
                             {...field} 
                             readOnly 
                             placeholder="Calculado automaticamente" 
@@ -1535,3 +1542,4 @@ export function ServiceOrderClientPage() {
     </>
   );
 }
+

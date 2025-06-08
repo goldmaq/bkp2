@@ -173,17 +173,7 @@ if (ai) {
   ); // Correctly terminate the ai.defineFlow call
 } else {
   console.warn("src/ai/flows/calculate-distance-flow.ts: Genkit AI instance (ai) is NOT available. Defining dummy flow.");
-  // If ai is null, define calculateDistanceFlow as a simple async function that returns a simulated response
-  calculateDistanceFlow = async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
-    console.warn("calculateDistanceFlow (dummy): Genkit AI not initialized. Input:", input);
-    return {
-      distanceKm: getSimulatedDistance(),
-      status: 'SIMULATED',
-      errorMessage: 'Genkit AI not initialized at flow definition. Using simulated distance.',
-    };
-  };
 }
-
 // Exported wrapper function
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
   if (typeof calculateDistanceFlow !== 'function') {

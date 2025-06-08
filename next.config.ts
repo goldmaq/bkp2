@@ -32,9 +32,11 @@ const nextConfig: NextConfig = {
         tls: false,                
         net: false,                
         http2: false,              
-        dns: false,
-        // async_hooks and node:async_hooks will be handled by alias
+        dns: false,       
       };
+      // async_hooks and node:async_hooks will be handled by alias AND fallback
+      config.resolve.fallback.async_hooks = false;
+      config.resolve.fallback['node:async_hooks'] = false;
 
       // Explicitly alias problematic modules to an empty module
       config.resolve.alias = {
@@ -45,6 +47,11 @@ const nextConfig: NextConfig = {
       
       // Suppress errors related to expressions in context (often involves dynamic imports)
       config.module.exprContextCritical = false; 
+      
+      config.ignoreWarnings = [
+        { module: /node:async_hooks/ },
+        { module: /async_hooks/ },
+      ];
     }
     return config;
   },
