@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react"; // Added useMemo
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
@@ -205,6 +205,10 @@ export function CustomerClientPage() {
     queryFn: fetchTechnicians,
     enabled: !!db,
   });
+
+  const techniciansOnly = useMemo(() => {
+    return technicians.filter(tech => tech.role === 'Técnico');
+  }, [technicians]);
 
   const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({
     queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
@@ -762,11 +766,14 @@ export function CustomerClientPage() {
                         ) : (
                           <>
                             <SelectItem value={NO_TECHNICIAN_SELECT_ITEM_VALUE}>Nenhum</SelectItem>
-                            {technicians.map((tech) => (
+                            {techniciansOnly.map((tech) => (
                               <SelectItem key={tech.id} value={tech.name}>
                                 {tech.name}
                               </SelectItem>
                             ))}
+                             {techniciansOnly.length === 0 && !isLoadingTechnicians && (
+                                <SelectItem value="no_techs_available" disabled>Nenhum técnico disponível</SelectItem>
+                            )}
                           </>
                         )}
                       </SelectContent>
@@ -785,6 +792,7 @@ export function CustomerClientPage() {
     </>
   );
 }
+    
     
 
     
