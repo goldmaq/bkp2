@@ -16,9 +16,9 @@ import {
   Settings,
   PackageSearch,
   FileText,
-  Wrench, // Ícone para Requisições de Peças (Técnico)
-  ClipboardCheck, // Ícone para Triagem de Peças (Oficina)
-  Archive, // Ícone para Almoxarifado (Estoque)
+  Wrench, 
+  ClipboardCheck, 
+  Archive, 
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -49,7 +49,7 @@ const navItems: NavItem[] = [
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
   { href: "/budgets", icon: FileText, label: "Orçamentos" },
   { href: "/parts-requisitions", icon: Wrench, label: "Requisições Peças" },
-  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem Peças" },
+  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem OS e Peças" }, // MODIFICADO
   { href: "/parts-warehouse", icon: Archive, label: "Almoxarifado Peças" },
   { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" },
   { href: "/vehicles", icon: CarFront, label: "Veículos" },
@@ -139,5 +139,3 @@ export function AppLayout({ children }: { children: ReactNode }) {
     </SidebarProvider>
   );
 }
-
-    

@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type * as z from "zod";
-import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare, Layers, Tag } from "lucide-react";
+import { ClipboardCheck, User, Construction, CalendarDays, Loader2, AlertTriangle, FileText, Wrench, Image as ImageIcon, ThumbsUp, Ban, Eye, MessageSquare, Layers, Tag, FileSignature, DollarSign, Users as UsersIcon } from "lucide-react"; // Adicionado FileSignature, DollarSign, UsersIcon
 import Link from "next/link";
 import Image from "next/image";
 
@@ -13,13 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
-// FormModal might not be needed if using AlertDialog for simple notes
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, doc, query, orderBy, Timestamp, updateDoc, runTransaction } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina } from "@/types";
-import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber } from "@/lib/utils";
+import type { PartsRequisition, ServiceOrder, Technician, Customer, PartsRequisitionItem, PartsRequisitionItemStatusType, PartsRequisitionStatusType, Maquina, Budget } from "@/types"; // Adicionado Budget
+import { cn, formatDateForDisplay, toTitleCase, parseNumericToNullOrNumber, formatCurrency } from "@/lib/utils"; // Adicionado formatCurrency
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -40,6 +38,7 @@ const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
+const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets"; // Adicionado
 
 async function fetchPartsRequisitions(): Promise<PartsRequisition[]> {
   if (!db) throw new Error("Firebase DB is not available");
@@ -102,6 +101,22 @@ async function fetchEquipmentList(): Promise<Maquina[]> {
   });
 }
 
+async function fetchBudgets(): Promise<Budget[]> { // NOVA FUNÇÃO
+  if (!db) throw new Error("Firebase DB is not available");
+  const q = query(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), orderBy("createdDate", "desc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      ...data,
+      createdDate: data.createdDate instanceof Timestamp ? data.createdDate.toDate().toISOString() : data.createdDate,
+      validUntilDate: data.validUntilDate instanceof Timestamp ? data.validUntilDate.toDate().toISOString() : data.validUntilDate,
+      items: Array.isArray(data.items) ? data.items.map((item: any) => ({...item, id: item.id || crypto.randomUUID() })) : [],
+    } as Budget;
+  });
+}
+
 export function PartsTriageClientPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -118,7 +133,7 @@ export function PartsTriageClientPage() {
   const [triageNotes, setTriageNotes] = useState("");
 
 
-  const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitions } = useQuery<PartsRequisition[], Error>({
+  const { data: requisitions = [], isLoading: isLoadingRequisitions, isError: isErrorRequisitions, error: errorRequisitionsDataAll } = useQuery<PartsRequisition[], Error>({
     queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME],
     queryFn: fetchPartsRequisitions,
   });
@@ -143,12 +158,22 @@ export function PartsTriageClientPage() {
     queryFn: fetchEquipmentList,
   });
 
+  const { data: budgets = [], isLoading: isLoadingBudgets, isError: isErrorBudgets, error: errorBudgetsData } = useQuery<Budget[], Error>({ // NOVO QUERY
+    queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME],
+    queryFn: fetchBudgets,
+  });
+
   const requisitionsForTriage = useMemo(() => {
     return requisitions.filter(req =>
-      req.status === "Pendente" && // Only show "Pendente" requisitions for triage
+      req.status === "Pendente" && 
       req.items.some(item => item.status === "Pendente Aprovação")
     );
   }, [requisitions]);
+
+  const approvedBudgetsForOSTreation = useMemo(() => { // NOVO MEMO
+    return budgets.filter(budget => budget.status === "Aprovado");
+    // TODO: Adicionar lógica para não mostrar orçamentos que já geraram OS, se necessário.
+  }, [budgets]);
 
   const updatePartItemStatusMutation = useMutation({
     mutationFn: async (data: {
@@ -234,7 +259,7 @@ export function PartsTriageClientPage() {
     }
   };
 
-  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment;
+  const isLoadingPageData = isLoadingRequisitions || isLoadingServiceOrders || isLoadingTechnicians || isLoadingCustomers || isLoadingEquipment || isLoadingBudgets; // Adicionado isLoadingBudgets
   const isMutating = updatePartItemStatusMutation.isPending;
 
   if (!db) {
@@ -254,157 +279,237 @@ export function PartsTriageClientPage() {
   }
 
   if (isErrorRequisitions || !Array.isArray(requisitions)) {
-    return <div className="text-red-500 p-4">Erro ao carregar requisições para triagem: {errorRequisitions?.message || "Formato de dados inválido."}</div>;
+    return <div className="text-red-500 p-4">Erro ao carregar requisições para triagem: {errorRequisitionsDataAll?.message || "Formato de dados inválido."}</div>;
   }
+  if (isErrorBudgets || !Array.isArray(budgets)) { // NOVO CHECK DE ERRO
+    return <div className="text-red-500 p-4">Erro ao carregar orçamentos: {errorBudgetsData?.message || "Formato de dados inválido."}</div>;
+  }
+
 
   return (
     <TooltipProvider>
-      <PageHeader title="Triagem de Requisições de Peças" />
+      <PageHeader title="Triagem de OS e Peças" /> {/* MODIFICADO */}
 
-      {requisitionsForTriage.length === 0 && !isLoadingRequisitions ? (
-        <DataTablePlaceholder
-          icon={ClipboardCheck}
-          title="Nenhuma Requisição Pendente de Triagem"
-          buttonLabel="Atualizar Lista"
-          onButtonClick={() => queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] })}
-          description="Aguardando novas requisições de peças dos técnicos ou todas já foram triadas."
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {requisitionsForTriage.map((req) => {
-            const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
-            const technician = technicians?.find(t => t.id === req.technicianId);
-            const customer = customers?.find(c => c.id === serviceOrder?.customerId);
-            const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
-            return (
-              <Card key={req.id} className="flex flex-col shadow-lg">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="font-headline text-xl text-primary">Requisição: {req.requisitionNumber}</CardTitle>
-                     <div className="flex items-center gap-2">
-                        {req.status === "Atendida Parcialmente" && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <button type="button" className="p-0 border-0 bg-transparent cursor-help">
-                                     <MessageSquare className="h-5 w-5 text-orange-500" />
-                                    </button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>Atendimento parcial pelo almoxarifado.</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        )}
-                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
-                        "bg-yellow-100 text-yellow-700": req.status === "Pendente",
-                        "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
-                        "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
-                        "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
-                        "bg-red-100 text-red-700": req.status === "Cancelada",
-                        })}>
-                        {req.status}
+      <section className="mb-10">
+        <h2 className="text-2xl font-headline font-semibold mb-4 border-b pb-2">Orçamentos Aprovados para Geração de OS</h2>
+        {approvedBudgetsForOSTreation.length === 0 && !isLoadingBudgets ? (
+          <p className="text-muted-foreground">Nenhum orçamento aprovado aguardando geração de OS.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {approvedBudgetsForOSTreation.map((budget) => {
+              const customer = customers?.find(c => c.id === budget.customerId);
+              const equipment = equipmentList?.find(eq => eq.id === budget.equipmentId);
+              return (
+                <Card key={budget.id} className="flex flex-col shadow-lg">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                        <CardTitle className="font-headline text-xl text-primary">Orçamento: {budget.budgetNumber}</CardTitle>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                            Aprovado
                         </span>
                     </div>
-                  </div>
-                  <CardDescription>
-                    OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || 'N/A'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-grow space-y-3 text-sm">
-                  <p className="flex items-center">
-                    <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Técnico:</span>
-                    {technician?.name || req.technicianId}
-                  </p>
-                  <p className="flex items-center">
-                    <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                    <span className="font-medium text-muted-foreground mr-1">Data:</span>
-                    {formatDateForDisplay(req.createdDate)}
-                  </p>
-                  {isLoadingEquipment ? (
-                    <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
-                  ) : equipment ? (
-                    <>
-                      <p className="flex items-center">
-                        <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
-                        {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
-                      </p>
-                      <p className="flex items-center">
-                        <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
-                        {equipment.chassisNumber || "N/A"}
-                      </p>
-                      {equipment.manufactureYear && (
-                        <p className="flex items-center">
-                          <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                          <span className="font-medium text-muted-foreground mr-1">Ano:</span>
-                          {equipment.manufactureYear}
-                        </p>
-                      )}
-                    </>
-                  ) : serviceOrder?.equipmentId ? (
-                    <p className="flex items-center text-xs text-destructive">
-                      <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
-                    </p>
-                  ) : null}
-                  {req.generalNotes && (
-                    <p className="flex items-start">
-                        <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-muted-foreground mr-1">Obs. Geral da Req.:</span>
-                        <span className="whitespace-pre-wrap break-words">{req.generalNotes}</span>
-                    </p>
-                  )}
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1 mt-2">Itens para Triagem:</h4>
-                    <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                      {req.items.map(item => (
-                        <li key={item.id} className="p-3 border rounded-md bg-card hover:shadow-md transition-shadow">
-                          <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-base">{item.partName} (Qtd: {item.quantity})</span>
-                            <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", {
-                                "bg-yellow-200 text-yellow-800": item.status === "Pendente Aprovação",
-                                "bg-green-200 text-green-800": item.status === "Aprovado" || item.status === "Separado" || item.status === "Entregue",
-                                "bg-red-200 text-red-800": item.status === "Recusado",
-                                "bg-blue-200 text-blue-800": item.status === "Aguardando Compra",
-                            })}>
-                                {item.status}
-                            </span>
-                          </div>
-                          {item.notes && <p className="text-xs text-muted-foreground">Obs. Técnico: {item.notes}</p>}
-                          {item.imageUrl && (
-                            <div className="mt-1.5">
-                                <Link href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block group">
-                                    <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image"/>
-                                    <span className="text-xs text-primary hover:underline block mt-1 group-hover:text-primary/80 transition-colors">Ver Imagem</span>
-                                </Link>
-                            </div>
-                          )}
-                          {item.status === "Pendente Aprovação" && (
-                             <div className="mt-2 flex gap-2">
-                                <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Aprovado");}} disabled={isMutating}>
-                                    <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
-                                </Button>
-                                <Button size="sm" variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Recusado");}} disabled={isMutating}>
-                                   <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
-                                </Button>
-                            </div>
-                          )}
-                           {item.triageNotes && (
-                            <p className="text-xs text-muted-foreground mt-1.5 border-t pt-1.5">
-                                <span className="font-medium">Nota Triagem:</span> {item.triageNotes}
+                    <CardDescription>
+                      Cliente: {toTitleCase(customer?.name) || 'N/A'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-grow space-y-2 text-sm">
+                    {isLoadingEquipment || isLoadingCustomers ? <Loader2 className="animate-spin"/> : (
+                        <>
+                            {equipment && (
+                                <>
+                                <p className="flex items-center">
+                                    <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                                    <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                                    {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                                </p>
+                                <p className="flex items-center">
+                                    <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                                    <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                                    {equipment.chassisNumber || "N/A"}
+                                </p>
+                                </>
+                            )}
+                            <p className="flex items-center">
+                                <DollarSign className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                                <span className="font-medium text-muted-foreground mr-1">Valor Total:</span>
+                                {formatCurrency(budget.totalAmount)}
                             </p>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-                <CardFooter className="border-t pt-4"></CardFooter>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                            <p className="flex items-center">
+                                <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                                <span className="font-medium text-muted-foreground mr-1">Aprovado em:</span>
+                                {budget.validUntilDate ? formatDateForDisplay(budget.validUntilDate) : formatDateForDisplay(budget.createdDate)} {/* Adaptar se tiver data de aprovação */}
+                            </p>
+                            {budget.notes && (
+                                <p className="flex items-start">
+                                    <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                                    <span className="font-medium text-muted-foreground mr-1">Obs. Orçam.:</span>
+                                    <span className="whitespace-pre-wrap break-words">{budget.notes}</span>
+                                </p>
+                            )}
+                        </>
+                    )}
+                  </CardContent>
+                  <CardFooter className="border-t pt-4">
+                     <Link href={`/service-orders?action=create&fromBudgetId=${budget.id}`} passHref legacyBehavior>
+                        <a className={cn(buttonVariants({ variant: "default" }), "w-full bg-primary hover:bg-primary/90")}>
+                            <FileSignature className="mr-2 h-4 w-4"/> Gerar Ordem de Serviço
+                        </a>
+                    </Link>
+                  </CardFooter>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-headline font-semibold mb-4 border-b pb-2">Requisições de Peças Pendentes de Triagem</h2>
+        {requisitionsForTriage.length === 0 && !isLoadingRequisitions ? (
+            <DataTablePlaceholder
+            icon={ClipboardCheck}
+            title="Nenhuma Requisição Pendente de Triagem"
+            buttonLabel="Atualizar Lista"
+            onButtonClick={() => queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] })}
+            description="Aguardando novas requisições de peças dos técnicos ou todas já foram triadas."
+            />
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {requisitionsForTriage.map((req) => {
+                const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
+                const technician = technicians?.find(t => t.id === req.technicianId);
+                const customer = customers?.find(c => c.id === serviceOrder?.customerId);
+                const equipment = equipmentList?.find(eq => eq.id === serviceOrder?.equipmentId);
+                return (
+                <Card key={req.id} className="flex flex-col shadow-lg">
+                    <CardHeader>
+                    <div className="flex justify-between items-start">
+                        <CardTitle className="font-headline text-xl text-primary">Requisição: {req.requisitionNumber}</CardTitle>
+                        <div className="flex items-center gap-2">
+                            {req.status === "Atendida Parcialmente" && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button type="button" className="p-0 border-0 bg-transparent cursor-help">
+                                        <MessageSquare className="h-5 w-5 text-orange-500" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Atendimento parcial pelo almoxarifado.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                            <span className={cn("px-2 py-0.5 rounded-full text-xs font-semibold", {
+                            "bg-yellow-100 text-yellow-700": req.status === "Pendente",
+                            "bg-blue-100 text-blue-700": req.status === "Triagem Realizada",
+                            "bg-orange-100 text-orange-700": req.status === "Atendida Parcialmente",
+                            "bg-green-100 text-green-700": req.status === "Atendida Totalmente",
+                            "bg-red-100 text-red-700": req.status === "Cancelada",
+                            })}>
+                            {req.status}
+                            </span>
+                        </div>
+                    </div>
+                    <CardDescription>
+                        OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || 'N/A'}
+                    </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-grow space-y-3 text-sm">
+                    <p className="flex items-center">
+                        <User className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Técnico:</span>
+                        {technician?.name || req.technicianId}
+                    </p>
+                    <p className="flex items-center">
+                        <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Data:</span>
+                        {formatDateForDisplay(req.createdDate)}
+                    </p>
+                    {isLoadingEquipment ? (
+                        <p className="flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando equipamento...</p>
+                    ) : equipment ? (
+                        <>
+                        <p className="flex items-center">
+                            <Layers className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
+                            {toTitleCase(equipment.brand)} {toTitleCase(equipment.model)}
+                        </p>
+                        <p className="flex items-center">
+                            <Tag className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
+                            {equipment.chassisNumber || "N/A"}
+                        </p>
+                        {equipment.manufactureYear && (
+                            <p className="flex items-center">
+                            <CalendarDays className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Ano:</span>
+                            {equipment.manufactureYear}
+                            </p>
+                        )}
+                        </>
+                    ) : serviceOrder?.equipmentId ? (
+                        <p className="flex items-center text-xs text-destructive">
+                        <AlertTriangle className="mr-2 h-3 w-3" /> Máquina (ID: {serviceOrder.equipmentId}) não encontrada.
+                        </p>
+                    ) : null}
+                    {req.generalNotes && (
+                        <p className="flex items-start">
+                            <FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                            <span className="font-medium text-muted-foreground mr-1">Obs. Geral da Req.:</span>
+                            <span className="whitespace-pre-wrap break-words">{req.generalNotes}</span>
+                        </p>
+                    )}
+                    <div>
+                        <h4 className="text-sm font-semibold mb-1 mt-2">Itens para Triagem:</h4>
+                        <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                        {req.items.map(item => (
+                            <li key={item.id} className="p-3 border rounded-md bg-card hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="font-medium text-base">{item.partName} (Qtd: {item.quantity})</span>
+                                <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", {
+                                    "bg-yellow-200 text-yellow-800": item.status === "Pendente Aprovação",
+                                    "bg-green-200 text-green-800": item.status === "Aprovado" || item.status === "Separado" || item.status === "Entregue",
+                                    "bg-red-200 text-red-800": item.status === "Recusado",
+                                    "bg-blue-200 text-blue-800": item.status === "Aguardando Compra",
+                                })}>
+                                    {item.status}
+                                </span>
+                            </div>
+                            {item.notes && <p className="text-xs text-muted-foreground">Obs. Técnico: {item.notes}</p>}
+                            {item.imageUrl && (
+                                <div className="mt-1.5">
+                                    <Link href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block group">
+                                        <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={60} height={60} className="rounded object-cover aspect-square group-hover:opacity-80 transition-opacity" data-ai-hint="part image"/>
+                                        <span className="text-xs text-primary hover:underline block mt-1 group-hover:text-primary/80 transition-colors">Ver Imagem</span>
+                                    </Link>
+                                </div>
+                            )}
+                            {item.status === "Pendente Aprovação" && (
+                                <div className="mt-2 flex gap-2">
+                                    <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Aprovado");}} disabled={isMutating}>
+                                        <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 flex-1" onClick={(e) => { e.stopPropagation(); handleOpenTriageModal(req.id, req.requisitionNumber, item, "Recusado");}} disabled={isMutating}>
+                                    <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
+                                    </Button>
+                                </div>
+                            )}
+                            {item.triageNotes && (
+                                <p className="text-xs text-muted-foreground mt-1.5 border-t pt-1.5">
+                                    <span className="font-medium">Nota Triagem:</span> {item.triageNotes}
+                                </p>
+                            )}
+                            </li>
+                        ))}
+                        </ul>
+                    </div>
+                    </CardContent>
+                    <CardFooter className="border-t pt-4"></CardFooter>
+                </Card>
+                );
+            })}
+            </div>
+        )}
+      </section>
 
       <AlertDialog open={isItemStatusModalOpen} onOpenChange={setIsItemStatusModalOpen}>
         <AlertDialogContent>
