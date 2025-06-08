@@ -454,7 +454,7 @@ export function PartsWarehouseClientPage() {
                     </p>
                 )}
                 {item.equipmentDetails ? (
-                    <div className="flex items-center"> {/* Changed from p to div */}
+                    <div className="flex items-center">
                       <Construction className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium text-muted-foreground mr-1">Máquina:</span>
                        <Tooltip>
@@ -606,3 +606,4 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
+    
