@@ -10,8 +10,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
-import type { ExecutablePrompt } from 'genkit/prompt';
+import { z, type GenerateResponse } from 'genkit'; // Importa GenerateResponse
 
 const CalculateDistanceInputSchema = z.object({
   originAddress: z.string().describe("The full starting address."),
@@ -46,7 +45,8 @@ const TollEstimationLLMOutputSchema = z.object({
   reasoning: z.string().optional().describe('Brief reasoning for the toll estimation.'),
 });
 
-let tollEstimationPrompt: ExecutablePrompt<z.infer<typeof TollEstimationLLMInputSchema>, z.infer<typeof TollEstimationLLMOutputSchema>> | undefined;
+// Declaração correta do tipo para tollEstimationPrompt
+let tollEstimationPrompt: ((input: z.infer<typeof TollEstimationLLMInputSchema>) => Promise<GenerateResponse<z.infer<typeof TollEstimationLLMOutputSchema>>>) | undefined;
 let calculateDistanceFlow: ((input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>) | undefined;
 
 async function fetchRouteFromGoogleMaps(
@@ -86,7 +86,7 @@ async function fetchRouteFromGoogleMaps(
     if (route.warnings && route.warnings.some((w: string) => w.toLowerCase().includes("pedágio") || w.toLowerCase().includes("toll"))) {
         googleIndicatesTolls = true;
     }
-    if (leg.tolls_info || (leg as any).tolls ) { 
+    if (leg.tolls_info || (leg as any).tolls ) { // (leg as any).tolls é uma verificação adicional para algumas respostas de API
         googleIndicatesTolls = true;
     }
     if (route.summary && (route.summary.toLowerCase().includes("toll") || route.summary.toLowerCase().includes("pedágio"))){
@@ -170,7 +170,7 @@ Exemplo de saída se não houver pedágio provável:
           };
           console.log("[DistanceFlow] Input for tollEstimationPrompt:", JSON.stringify(tollInput, null, 2));
           
-          const llmResponse = await tollEstimationPrompt(tollInput); // Corrected call
+          const llmResponse = await tollEstimationPrompt(tollInput); // Chamada direta ao prompt
 
           console.log("[DistanceFlow] Full LLM response for toll estimation:", JSON.stringify(llmResponse, null, 2));
 
@@ -180,12 +180,12 @@ Exemplo de saída se não houver pedágio provável:
             estimatedTollCostOneWay = null; 
           } else {
             console.warn("[DistanceFlow] AI toll estimation did not return a valid number or null. Response:", llmResponse?.output);
-            estimatedTollCostOneWay = 0; 
+            estimatedTollCostOneWay = 0; // Fallback to 0 if AI fails or returns invalid format
             aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
           }
         } catch (e: any) {
           console.error("[DistanceFlow] Error during AI toll estimation:", e);
-          estimatedTollCostOneWay = 0; 
+          estimatedTollCostOneWay = 0; // Fallback to 0 on error
           aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
         }
       } else {
@@ -242,8 +242,8 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
     console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. This usually means Genkit AI (ai) failed to initialize. Check genkit.ts logs.");
     // Simulate an error similar to what would happen if the flow couldn't run
     return {
-        distanceKm: 0, // Or a random number if you prefer for dummy
-        status: 'ERROR_GOOGLE_API_FAILED', // A generic error status
+        distanceKm: 0, 
+        status: 'ERROR_GOOGLE_API_FAILED', 
         errorMessage: 'Critical error: Distance calculation flow is not available due to AI initialization failure.',
         estimatedTollCostByAI: null,
         googleMapsApiIndicstedTolls: undefined,
