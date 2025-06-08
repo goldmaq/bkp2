@@ -5,16 +5,16 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save } from "lucide-react";
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil } from "lucide-react";
 import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina } from "@/types";
+import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType } from "@/types";
 import { BudgetSchema, BudgetItemSchema, budgetStatusOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
@@ -26,6 +26,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, isValid as isValidDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -44,9 +55,16 @@ const toTitleCase = (str: string | undefined | null): string => {
 };
 
 const formatDateForDisplay = (isoDate?: string | null): string => {
-  if (!isoDate || !isValidDate(parseISO(isoDate))) return "N/A";
-  return format(parseISO(isoDate), "dd/MM/yyyy", { locale: ptBR });
+  if (!isoDate) return "N/A";
+  try {
+    const parsedDate = isoDate instanceof Timestamp ? isoDate.toDate() : parseISO(isoDate);
+    if (!isValidDate(parsedDate)) return "Data Inválida";
+    return format(parsedDate, "dd/MM/yyyy", { locale: ptBR });
+  } catch (e) {
+    return "Erro na Data";
+  }
 };
+
 
 const formatCurrency = (value?: number | null): string => {
   if (value === null || value === undefined) return "R$ 0,00";
@@ -57,7 +75,15 @@ async function fetchBudgets(): Promise<Budget[]> {
   if (!db) throw new Error("Firebase DB is not available");
   const q = query(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), orderBy("createdDate", "desc"));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Budget));
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      ...data,
+      createdDate: data.createdDate instanceof Timestamp ? data.createdDate.toDate().toISOString() : data.createdDate,
+      validUntilDate: data.validUntilDate instanceof Timestamp ? data.validUntilDate.toDate().toISOString() : data.validUntilDate,
+    } as Budget;
+  });
 }
 
 async function fetchServiceOrders(): Promise<ServiceOrder[]> {
@@ -85,9 +111,9 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "ORC-0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPart = budget.budgetNumber.split('-')[1];
-    if (numPart) {
-      const num = parseInt(numPart, 10);
+    const numPartMatch = budget.budgetNumber.match(/ORC-(\d+)/);
+    if (numPartMatch && numPartMatch[1]) {
+      const num = parseInt(numPartMatch[1], 10);
       if (!isNaN(num) && num > maxNum) {
         maxNum = num;
       }
@@ -111,6 +137,9 @@ export function BudgetClientPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isStatusConfirmModalOpen, setIsStatusConfirmModalOpen] = useState(false);
+  const [statusChangeInfo, setStatusChangeInfo] = useState<{ budgetId: string; budgetNumber: string, newStatus: BudgetStatusType } | null>(null);
+
 
   const form = useForm<z.infer<typeof BudgetSchema>>({
     resolver: zodResolver(BudgetSchema),
@@ -124,7 +153,7 @@ export function BudgetClientPage() {
       shippingCost: 0,
       subtotal: 0,
       totalAmount: 0,
-      createdDate: new Date().toISOString(),
+      createdDate: new Date().toISOString().split('T')[0],
       validUntilDate: null,
       notes: "",
     },
@@ -159,7 +188,7 @@ export function BudgetClientPage() {
     queryFn: fetchServiceOrders,
     enabled: !!db,
   });
-  
+
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
@@ -181,11 +210,11 @@ export function BudgetClientPage() {
         form.setValue('customerId', selectedOS.customerId, { shouldValidate: true });
         form.setValue('equipmentId', selectedOS.equipmentId, { shouldValidate: true });
       }
-    } else {
+    } else if (!editingBudget) { // Only clear if not editing (to preserve data when opening existing budget without OS)
       form.setValue('customerId', "", { shouldValidate: true });
       form.setValue('equipmentId', "", { shouldValidate: true });
     }
-  }, [selectedServiceOrderId, serviceOrders, form]);
+  }, [selectedServiceOrderId, serviceOrders, form, editingBudget]);
 
 
   const addBudgetMutation = useMutation({
@@ -193,8 +222,8 @@ export function BudgetClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const dataToSave = {
         ...newBudgetData,
-        createdDate: Timestamp.fromDate(new Date(newBudgetData.createdDate)),
-        validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(new Date(newBudgetData.validUntilDate)) : null,
+        createdDate: Timestamp.fromDate(new Date()), // Always set to current date on creation
+        validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(parseISO(newBudgetData.validUntilDate)) : null,
         items: newBudgetData.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
         totalAmount: newBudgetData.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (newBudgetData.shippingCost || 0),
@@ -217,10 +246,15 @@ export function BudgetClientPage() {
       const { id, ...dataToUpdate } = budgetData;
       if (!id) throw new Error("ID do orçamento é necessário.");
       const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, id);
+      
+      // Fetch original createdDate to preserve it
+      const originalBudgetDoc = await getDoc(budgetRef);
+      const originalCreatedDate = originalBudgetDoc.exists() ? originalBudgetDoc.data().createdDate : Timestamp.fromDate(parseISO(dataToUpdate.createdDate));
+
       const dataToSave = {
         ...dataToUpdate,
-        createdDate: Timestamp.fromDate(new Date(dataToUpdate.createdDate)),
-        validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(new Date(dataToUpdate.validUntilDate)) : null,
+        createdDate: originalCreatedDate, // Preserve original creation date
+        validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(parseISO(dataToUpdate.validUntilDate)) : null,
         items: dataToUpdate.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (dataToUpdate.shippingCost || 0),
@@ -252,6 +286,26 @@ export function BudgetClientPage() {
     },
   });
 
+  const updateBudgetStatusMutation = useMutation({
+    mutationFn: async ({ budgetId, newStatus }: { budgetId: string; newStatus: BudgetStatusType }) => {
+      if (!db) throw new Error("Conexão com Firebase não disponível.");
+      const budgetRef = doc(db, FIRESTORE_BUDGET_COLLECTION_NAME, budgetId);
+      return updateDoc(budgetRef, { status: newStatus });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
+      toast({ title: "Status Atualizado", description: `O orçamento foi atualizado para "${variables.newStatus}".` });
+      setIsStatusConfirmModalOpen(false);
+      setStatusChangeInfo(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao Atualizar Status", description: `Detalhes: ${err.message}`, variant: "destructive" });
+      setIsStatusConfirmModalOpen(false);
+      setStatusChangeInfo(null);
+    },
+  });
+
+
   const openModal = useCallback((budget?: Budget) => {
     if (budget) {
       setEditingBudget(budget);
@@ -261,6 +315,7 @@ export function BudgetClientPage() {
         createdDate: budget.createdDate ? format(parseISO(budget.createdDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0],
         validUntilDate: budget.validUntilDate ? format(parseISO(budget.validUntilDate), 'yyyy-MM-dd') : null,
         items: budget.items.map(item => ({...item, id: item.id || crypto.randomUUID()})),
+        serviceOrderId: budget.serviceOrderId || NO_SERVICE_ORDER_SELECTED,
       });
     } else {
       setEditingBudget(null);
@@ -275,7 +330,7 @@ export function BudgetClientPage() {
         shippingCost: 0,
         subtotal: 0,
         totalAmount: 0,
-        createdDate: new Date().toISOString().split('T')[0],
+        createdDate: new Date().toISOString().split('T')[0], // Set to today, will be read-only
         validUntilDate: null,
         notes: "",
       });
@@ -293,19 +348,20 @@ export function BudgetClientPage() {
   const onSubmit = (values: z.infer<typeof BudgetSchema>) => {
     const budgetData = {
       ...values,
-      createdDate: values.createdDate || new Date().toISOString(), // Garante que a data de criação exista
+      // createdDate is handled by mutations
       items: values.items.map(item => ({...item, totalPrice: (item.quantity * item.unitPrice)})),
       subtotal: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0),
       totalAmount: values.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) + (values.shippingCost || 0),
     };
 
     if (editingBudget && editingBudget.id) {
-      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id } as Budget);
+      updateBudgetMutation.mutate({ ...budgetData, id: editingBudget.id, createdDate: editingBudget.createdDate } as Budget);
     } else {
+      // For new budgets, createdDate from form (today) is passed, addBudgetMutation will use Timestamp.now()
       addBudgetMutation.mutate(budgetData);
     }
   };
-  
+
   const handleModalDeleteConfirm = () => {
     if (editingBudget && editingBudget.id) {
       if (window.confirm(`Tem certeza que deseja excluir o orçamento "${editingBudget.budgetNumber}"?`)) {
@@ -323,7 +379,7 @@ export function BudgetClientPage() {
     const newQuantity = field === 'quantity' ? Number(value) : currentItem.quantity;
     const newUnitPrice = field === 'unitPrice' ? Number(value) : currentItem.unitPrice;
     const newDescription = field === 'description' ? String(value) : currentItem.description;
-    
+
     update(index, {
         ...currentItem,
         description: newDescription,
@@ -332,9 +388,20 @@ export function BudgetClientPage() {
         totalPrice: newQuantity * newUnitPrice,
     });
   };
-  
+
+  const handleChangeStatus = (budgetId: string, budgetNumber: string, newStatus: BudgetStatusType) => {
+    setStatusChangeInfo({ budgetId, budgetNumber, newStatus });
+    setIsStatusConfirmModalOpen(true);
+  };
+
+  const confirmChangeStatus = () => {
+    if (statusChangeInfo) {
+      updateBudgetStatusMutation.mutate(statusChangeInfo);
+    }
+  };
+
   const isLoadingPageData = isLoadingBudgets || isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment;
-  const isMutating = addBudgetMutation.isPending || updateBudgetMutation.isPending || deleteBudgetMutation.isPending;
+  const isMutating = addBudgetMutation.isPending || updateBudgetMutation.isPending || deleteBudgetMutation.isPending || updateBudgetStatusMutation.isPending;
 
   if (!db) {
     return <div className="text-red-500 p-4">Erro: Conexão com Firebase não disponível.</div>;
@@ -345,7 +412,7 @@ export function BudgetClientPage() {
   if (isErrorBudgets) {
     return <div className="text-red-500 p-4">Erro ao carregar orçamentos: {errorBudgets?.message}</div>;
   }
-  
+
   const getCustomerInfo = (customerId: string) => customers.find(c => c.id === customerId);
   const getEquipmentInfo = (equipmentId: string) => equipmentList.find(e => e.id === equipmentId);
   const getServiceOrderInfo = (serviceOrderId: string) => serviceOrders.find(os => os.id === serviceOrderId);
@@ -380,10 +447,16 @@ export function BudgetClientPage() {
             const mailtoHref = customer?.email
               ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento Gold Maq: ${budget.budgetNumber}`)}&body=${encodeURIComponent(`Prezado(a) ${toTitleCase(customer.name)},\n\nSegue o orçamento ${budget.budgetNumber} referente à Ordem de Serviço ${serviceOrder?.orderNumber || 'N/A'}.\n\nValor Total: ${formatCurrency(budget.totalAmount)}\n\nAtenciosamente,\nEquipe Gold Maq`)}`
               : "#";
-            
+
             const whatsappHref = whatsappNumber
               ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá ${toTitleCase(customer?.name)}, segue o orçamento ${budget.budgetNumber} (OS: ${serviceOrder?.orderNumber || 'N/A'}) com valor total de ${formatCurrency(budget.totalAmount)}. Atenciosamente, Equipe Gold Maq.`)}`
               : "#";
+
+            const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
+            const canDeny = budget.status === "Pendente" || budget.status === "Enviado" || budget.status === "Aprovado";
+            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; // Example: can cancel if not already cancelled/denied
+            const canReopen = budget.status === "Aprovado" || budget.status === "Recusado" || budget.status === "Cancelado";
+
 
             return (
               <Card key={budget.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -432,33 +505,52 @@ export function BudgetClientPage() {
                   </CardContent>
                 </div>
                 <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-between items-center gap-2">
-                    <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                            disabled={!customer?.email}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <a href={mailtoHref} target="_blank" rel="noopener noreferrer">
-                            <Mail className="mr-1.5 h-3.5 w-3.5" /> Email
-                            </a>
+                  <div className="flex flex-wrap gap-2">
+                      {canApprove && (
+                          <Button variant="outline" size="xs" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Aprovado'); }} disabled={isMutating}>
+                              <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
+                          </Button>
+                      )}
+                      {canDeny && (budget.status === "Pendente" || budget.status === "Enviado") && (
+                          <Button variant="outline" size="xs" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Recusado'); }} disabled={isMutating}>
+                              <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
+                          </Button>
+                      )}
+                       {canCancel && (budget.status !== "Cancelado") && (
+                          <Button variant="outline" size="xs" className="border-slate-500 text-slate-600 hover:bg-slate-50 hover:text-slate-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Cancelado'); }} disabled={isMutating}>
+                             <X className="mr-1.5 h-3.5 w-3.5"/> Cancelar
+                          </Button>
+                      )}
+                      {canReopen && (
+                        <Button variant="outline" size="xs" className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:text-blue-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Pendente'); }} disabled={isMutating}>
+                            <Pencil className="mr-1.5 h-3.5 w-3.5"/> Reabrir
                         </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                            disabled={!whatsappNumber}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <a href={whatsappHref} target="_blank" rel="noopener noreferrer">
-                            <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
-                            </a>
-                        </Button>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => openModal(budget)} className="text-primary">
-                        <Edit className="mr-1.5 h-3.5 w-3.5"/> Ver/Editar
-                    </Button>
+                      )}
+                  </div>
+                  <div className="flex gap-2 mt-2 sm:mt-0">
+                      <Button
+                          variant="outline"
+                          size="xs"
+                          asChild
+                          disabled={!customer?.email}
+                          onClick={(e) => e.stopPropagation()}
+                      >
+                          <a href={mailtoHref} target="_blank" rel="noopener noreferrer" className="flex items-center">
+                          <Mail className="mr-1.5 h-3.5 w-3.5" /> Email
+                          </a>
+                      </Button>
+                      <Button
+                          variant="outline"
+                          size="xs"
+                          asChild
+                          disabled={!whatsappNumber}
+                          onClick={(e) => e.stopPropagation()}
+                      >
+                          <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="flex items-center">
+                          <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
+                          </a>
+                      </Button>
+                  </div>
                 </CardFooter>
               </Card>
             );
@@ -479,7 +571,7 @@ export function BudgetClientPage() {
         deleteButtonLabel="Excluir Orçamento"
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
-        submitButtonLabel={editingBudget ? (isEditMode ? "Salvar Alterações" : "Editar") : "Criar Orçamento"}
+        submitButtonLabel={editingBudget && !isEditMode ? "Editar" : (editingBudget ? "Salvar Alterações" : "Criar Orçamento")}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="budget-form" className="space-y-6">
@@ -488,7 +580,7 @@ export function BudgetClientPage() {
                 <FormField control={form.control} name="budgetNumber" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Número do Orçamento</FormLabel>
-                    <FormControl><Input {...field} readOnly /></FormControl>
+                    <FormControl><Input {...field} readOnly className="bg-muted/50" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -599,7 +691,7 @@ export function BudgetClientPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="createdDate" render={({ field }) => (
-                  <FormItem><FormLabel>Data de Criação</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Data de Criação</FormLabel><FormControl><Input type="date" {...field} readOnly className="bg-muted/50" /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="validUntilDate" render={({ field }) => (
                   <FormItem><FormLabel>Válido Até (Opcional)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
@@ -612,7 +704,28 @@ export function BudgetClientPage() {
           </form>
         </Form>
       </FormModal>
+
+       <AlertDialog open={isStatusConfirmModalOpen} onOpenChange={setIsStatusConfirmModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Mudança de Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja alterar o status do orçamento "{statusChangeInfo?.budgetNumber}" para "{statusChangeInfo?.newStatus}"?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsStatusConfirmModalOpen(false); setStatusChangeInfo(null);}} disabled={isMutating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmChangeStatus} disabled={isMutating} className={cn(
+                statusChangeInfo?.newStatus === "Aprovado" && buttonVariants({className: "bg-green-600 hover:bg-green-700"}),
+                statusChangeInfo?.newStatus === "Recusado" && buttonVariants({variant: "destructive"}),
+                statusChangeInfo?.newStatus === "Cancelado" && buttonVariants({variant: "destructive"}),
+            )}>
+              {isMutating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
-
