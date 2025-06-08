@@ -280,7 +280,7 @@ async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
 interface ServiceOrderClientPageProps {
   serviceOrderIdFromUrl?: string | null;
   initialDataFromBudget?: Partial<ServiceOrder>;
-  budgetIdToCreateFrom?: string; // Adicionado
+  budgetIdToCreateFrom?: string;
 }
 
 export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
@@ -809,7 +809,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     setIsEditMode(false);
     form.reset();
     setMediaFiles([]);
-     if (typeof window !== "undefined" && (serviceOrderIdFromUrl || initialDataFromBudget)) {
+     if (typeof window !== "undefined" && (serviceOrderIdFromUrl || initialDataFromBudget || budgetIdToCreateFrom)) {
       window.history.replaceState(null, '', '/service-orders');
     }
   };

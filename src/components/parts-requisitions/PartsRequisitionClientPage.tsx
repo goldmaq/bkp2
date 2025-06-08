@@ -103,16 +103,15 @@ async function fetchEquipmentList(): Promise<Maquina[]> {
 
 
 const getNextRequisitionNumber = (currentRequisitions: PartsRequisition[]): string => {
-  if (!currentRequisitions || currentRequisitions.length === 0) return "REQ-0001";
+  if (!currentRequisitions || currentRequisitions.length === 0) return "0001";
   let maxNum = 0;
   currentRequisitions.forEach(req => {
-    const numPartMatch = req.requisitionNumber.match(/REQ-(\d+)/);
-    if (numPartMatch && numPartMatch[1]) {
-      const num = parseInt(numPartMatch[1], 10);
-      if (num > maxNum) maxNum = num;
+    const num = parseInt(req.requisitionNumber, 10); // Remove "REQ-" prefix logic
+    if (!isNaN(num) && num > maxNum) {
+      maxNum = num;
     }
   });
-  return `REQ-${(maxNum + 1).toString().padStart(4, '0')}`;
+  return (maxNum + 1).toString().padStart(4, '0'); // Ensure 4-digit padding
 };
 
 async function uploadPartImageToStorage(file: File, requisitionId: string, itemId: string): Promise<string> {
