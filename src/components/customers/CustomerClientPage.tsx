@@ -22,7 +22,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "../ui/textarea";
-import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils"; // Import centralized utils
+import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay } from "@/lib/utils"; // Import centralized utils
 
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
@@ -87,32 +87,6 @@ interface BrasilApiResponseCnpj {
   erro?: boolean;
   message?: string;
 }
-
-const formatAddressForDisplay = (customer: Customer): string => {
-  const parts: string[] = [];
-  if (customer.street) {
-    let line = toTitleCase(customer.street);
-    if (customer.number) line += `, ${customer.number}`; // Number usually doesn't need title case
-    if (customer.complement) line += ` - ${toTitleCase(customer.complement)}`;
-    parts.push(line);
-  }
-  if (customer.neighborhood) parts.push(toTitleCase(customer.neighborhood));
-
-  let cityStatePart = "";
-  if (customer.city && customer.state) {
-    cityStatePart = `${toTitleCase(customer.city)} - ${customer.state.toUpperCase()}`; // City in Title Case, State in UPPERCASE
-  } else if (customer.city) {
-    cityStatePart = toTitleCase(customer.city);
-  } else if (customer.state) {
-    cityStatePart = customer.state.toUpperCase();
-  }
-  if (cityStatePart) parts.push(cityStatePart);
-
-  const addressString = parts.join(', ').trim();
-  if (!addressString && customer.cep) return `${customer.cep}`; // CEP as is
-  return addressString || "Não fornecido";
-};
-
 
 const generateGoogleMapsUrl = (customer: Customer): string => {
   const addressParts = [
@@ -478,7 +452,7 @@ export function CustomerClientPage() {
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(customer.name)}`
               : "#";
             const displayAddress = formatAddressForDisplay(customer);
-            const googleMapsUrl = generateGoogleMapsUrl({ ...customer, street: displayAddress.split(',')[0] }); // Use formatted street for maps
+            const googleMapsUrl = generateGoogleMapsUrl({ ...customer, street: displayAddress.split(',')[0] }); 
             const preferredTechnicianDetails = technicians.find(t => t.name === customer.preferredTechnician);
 
             return (
@@ -552,7 +526,6 @@ export function CustomerClientPage() {
                     ) : (
                       <span>{displayAddress}</span>
                     )}
-                    {customer.cep && displayAddress !== customer.cep && <span className="block text-xs text-muted-foreground/80">CEP: {customer.cep}</span>}
                   </div>
                 </div>
 
@@ -788,10 +761,3 @@ export function CustomerClientPage() {
     </>
   );
 }
-    
-    
-
-    
-
-    
-

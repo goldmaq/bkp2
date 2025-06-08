@@ -1,9 +1,10 @@
 
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { format, parseISO, isValid as isValidDate } from 'date-fns';
-import { Timestamp } from 'firebase/firestore'; // Corrigida a importação
+import { format, parseISO, isValid as isValidDateFn } from 'date-fns'; // Renamed isValid to isValidDateFn to avoid conflict
+import { Timestamp } from 'firebase/firestore';
 import { ptBR } from 'date-fns/locale';
+import type { Customer, Company } from '@/types'; // Import Customer and Company types
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -97,7 +98,7 @@ export const formatDateForInput = (dateValue: any): string => {
   } else {
     return "";
   }
-  if (!isValidDate(d)) return "";
+  if (!isValidDateFn(d)) return ""; // Use renamed isValidDateFn
   return format(d, 'yyyy-MM-dd');
 };
 
@@ -116,7 +117,7 @@ export const formatDateForDisplay = (dateValue?: string | Timestamp | Date | nul
       return "Data Inválida";
     }
 
-    if (!isValidDate(parsedDate)) return "Data Inválida";
+    if (!isValidDateFn(parsedDate)) return "Data Inválida"; // Use renamed isValidDateFn
     return format(parsedDate, "dd/MM/yyyy", { locale: ptBR });
   } catch (e) {
     console.error("Error formatting date for display:", e, "Original value:", dateValue);
@@ -124,3 +125,47 @@ export const formatDateForDisplay = (dateValue?: string | Timestamp | Date | nul
   }
 };
 
+// Address Formatting Utility
+export const formatAddressForDisplay = (addressSource: Customer | Company | null | undefined): string => {
+  if (!addressSource) return "Não fornecido";
+
+  const parts: string[] = [];
+
+  // Street, Number, Complement
+  if (addressSource.street) {
+    let line = toTitleCase(addressSource.street);
+    if (addressSource.number) line += `, ${addressSource.number}`;
+    if (addressSource.complement) line += ` - ${toTitleCase(addressSource.complement)}`;
+    parts.push(line);
+  }
+
+  // Neighborhood
+  if (addressSource.neighborhood) {
+    parts.push(toTitleCase(addressSource.neighborhood));
+  }
+
+  // City - State
+  let cityStatePart = "";
+  if (addressSource.city && addressSource.state) {
+    cityStatePart = `${toTitleCase(addressSource.city)} - ${addressSource.state.toUpperCase()}`;
+  } else if (addressSource.city) {
+    cityStatePart = toTitleCase(addressSource.city);
+  } else if (addressSource.state) {
+    cityStatePart = addressSource.state.toUpperCase();
+  }
+  if (cityStatePart) {
+    parts.push(cityStatePart);
+  }
+
+  // CEP - Add it last if available
+  if (addressSource.cep) {
+    parts.push(`CEP: ${addressSource.cep}`);
+  }
+  
+  const addressString = parts.join(', ').trim();
+  
+  // Fallback to CEP if nothing else is available and parts is empty
+  if (!addressString && addressSource.cep) return `CEP: ${addressSource.cep}`;
+  
+  return addressString || "Endereço não fornecido";
+};

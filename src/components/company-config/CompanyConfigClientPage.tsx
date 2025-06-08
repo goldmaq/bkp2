@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { formatAddressForDisplay } from "@/lib/utils"; // Import the utility function
 
 const FIRESTORE_COLLECTION_NAME = "empresas";
 
@@ -72,24 +73,6 @@ interface ViaCepResponse {
   uf: string;
   erro?: boolean;
 }
-
-const formatAddressForDisplay = (company: Company): string => {
-  const parts: string[] = [];
-  if (company.street) {
-    let line = company.street;
-    if (company.number) line += `, ${company.number}`;
-    if (company.complement) line += ` - ${company.complement}`;
-    parts.push(line);
-  }
-  if (company.neighborhood) parts.push(company.neighborhood);
-  if (company.city && company.state) parts.push(`${company.city} - ${company.state}`);
-  else if (company.city) parts.push(company.city);
-  else if (company.state) parts.push(company.state);
-  
-  const addressString = parts.join(', ').trim();
-  if (!addressString && company.cep) return `${company.cep}`; // CEP only if no other address part
-  return addressString || "Não fornecido";
-};
 
 async function fetchCompanyConfigs(): Promise<Company[]> {
   if (!db) {
@@ -324,7 +307,6 @@ export function CompanyConfigClientPage() {
                     <div>
                       <span className="font-medium text-muted-foreground mr-1">Endereço:</span>
                       <span>{displayAddress}</span>
-                      {company.cep && displayAddress !== company.cep && <span className="block text-xs text-muted-foreground/80">CEP: {company.cep}</span>}
                     </div>
                   </div>
                   
@@ -459,9 +441,3 @@ export function CompanyConfigClientPage() {
     </>
   );
 }
-    
-    
-
-
-
-    
