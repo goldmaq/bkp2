@@ -621,10 +621,15 @@ export function BudgetClientPage() {
     if (editingBudget) {
       console.log("[handleModalDeleteConfirm] editingBudget.id exists:", !!editingBudget.id);
       console.log("[handleModalDeleteConfirm] editingBudget.id:", editingBudget.id);
+      console.log("[handleModalDeleteConfirm] editingBudget.budgetNumber:", editingBudget.budgetNumber);
     }
     console.log("[handleModalDeleteConfirm] editingBudget object:", editingBudget);
+
     if (editingBudget && editingBudget.id) {
-      if (window.confirm(`Tem certeza que deseja excluir o orçamento "${editingBudget.budgetNumber}"?`)) {
+      console.log("Before window.confirm");
+      const confirmation = window.confirm(`Tem certeza que deseja excluir o orçamento "${editingBudget.budgetNumber || 'sem número'}"?`);
+      console.log("After window.confirm, result:", confirmation);
+      if (confirmation) {
         deleteBudgetMutation.mutate(editingBudget.id);
       }
     }
@@ -1141,5 +1146,3 @@ export function BudgetClientPage() {
     </>
   );
 }
-
-    
