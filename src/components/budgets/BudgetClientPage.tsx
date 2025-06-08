@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label"; // Added Label
+import { toTitleCase, formatDateForDisplay, getWhatsAppNumber } from "@/lib/utils"; // Import centralized utils
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
@@ -45,27 +46,6 @@ const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_SERVICE_ORDER_SELECTED_";
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_BUDGET_";
-
-const toTitleCase = (str: string | undefined | null): string => {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-const formatDateForDisplay = (isoDate?: string | null): string => {
-  if (!isoDate) return "N/A";
-  try {
-    const parsedDate = isoDate instanceof Timestamp ? isoDate.toDate() : parseISO(isoDate);
-    if (!isValidDate(parsedDate)) return "Data Inválida";
-    return format(parsedDate, "dd/MM/yyyy", { locale: ptBR });
-  } catch (e) {
-    return "Erro na Data";
-  }
-};
-
 
 const formatCurrency = (value?: number | null): string => {
   if (value === null || value === undefined) return "R$ 0,00";
@@ -121,14 +101,6 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
     }
   });
   return `ORC-${(maxNum + 1).toString().padStart(4, '0')}`;
-};
-
-const getWhatsAppNumber = (phone?: string): string => {
-  if (!phone) return "";
-  let cleaned = phone.replace(/\D/g, '');
-  if (cleaned.startsWith('55') && (cleaned.length === 12 || cleaned.length === 13)) return cleaned;
-  if (!cleaned.startsWith('55') && (cleaned.length === 10 || cleaned.length === 11)) return `55${cleaned}`;
-  return cleaned;
 };
 
 export function BudgetClientPage() {
@@ -400,9 +372,9 @@ export function BudgetClientPage() {
     }
   };
 
-  const getCustomerInfo = useCallback((customerId: string) => customers.find(c => c.id === customerId), [customers]);
-  const getEquipmentInfo = useCallback((equipmentId: string) => equipmentList.find(e => e.id === equipmentId), [equipmentList]);
-  const getServiceOrderInfo = useCallback((serviceOrderId: string) => serviceOrders.find(os => os.id === serviceOrderId), [serviceOrders]);
+  const getCustomerInfo = useCallback((customerId: string) => (customers || []).find(c => c.id === customerId), [customers]);
+  const getEquipmentInfo = useCallback((equipmentId: string) => (equipmentList || []).find(e => e.id === equipmentId), [equipmentList]);
+  const getServiceOrderInfo = useCallback((serviceOrderId: string) => (serviceOrders || []).find(os => os.id === serviceOrderId), [serviceOrders]);
 
   const filteredBudgets = useMemo(() => {
     let tempBudgets = budgets;

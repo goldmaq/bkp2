@@ -26,6 +26,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
+import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; // Import centralized utils
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -51,32 +52,11 @@ const operationalStatusIcons: Record<typeof maquinaOperationalStatusOptions[numb
   Sucata: <Trash2 className="h-4 w-4 text-red-500" />,
 };
 
-const parseNumericToNullOrNumber = (value: any): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const num = Number(value);
-  return isNaN(num) ? null : num;
-};
-
 const predefinedBrandOptionsList = [
   "Toyota", "Hyster", "Yale", "Still", "Linde", "Clark", "Mitsubishi", "Nissan",
   "Komatsu", "Crown", "Raymond", "Doosan", "Hyundai", "Caterpillar",
   "Jungheinrich", "Hangcha", "Heli", "EP", "Outra"
 ];
-
-const getFileNameFromUrl = (url: string): string => {
-  try {
-    const decodedUrl = decodeURIComponent(url);
-    const pathAndQuery = decodedUrl.split('?')[0];
-    const segments = pathAndQuery.split('/');
-    const fileNameWithPossiblePrefix = segments.pop() || "arquivo";
-    const fileNameCleaned = fileNameWithPossiblePrefix.split('?')[0];
-    const finalFileName = fileNameCleaned.substring(fileNameCleaned.indexOf('_') + 1);
-    return finalFileName || "arquivo";
-  } catch (e) {
-    console.error("Error parsing filename from URL:", e);
-    return "arquivo";
-  }
-};
 
 async function uploadFile(
   file: File,
@@ -779,7 +759,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
                   <p className="flex items-center text-sm"><ArrowDownToLine className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">H1 - Torre Fechada:</span> {maq.towerClosedHeightMm} mm</p>
                 )}
                  {maq.hourMeter !== null && maq.hourMeter !== undefined && <p className="flex items-center text-sm"><Timer className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Horímetro:</span> {maq.hourMeter}h</p>}
-                 {maq.monthlyRentalValue !== null && maq.monthlyRentalValue !== undefined && <p className="flex items-center text-sm"><Coins className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Aluguel Mensal:</span> R$ {maq.monthlyRentalValue.toFixed(2)}</p>}
+                 {maq.monthlyRentalValue !== null && maq.monthlyRentalValue !== undefined && <p className="flex items-center text-sm"><Coins className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Aluguel Mensal:</span> R$ {Number(maq.monthlyRentalValue).toFixed(2)}</p>}
 
                   <div className="pt-1">
                     {isLoadingAuxiliaryEquipment ? (

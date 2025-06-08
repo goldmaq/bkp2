@@ -19,7 +19,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
-import { db, storage } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase"; // Added storage
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, type DocumentData, getDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -38,8 +38,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
-import { calculateDistance } from "@/ai/flows/calculate-distance-flow";
+import { calculateDistance, type CalculateDistanceInput, type CalculateDistanceOutput } from "@/ai/flows/calculate-distance-flow"; // Import types from flow
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toTitleCase, getFileNameFromUrl, formatDateForInput, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils"; // Import centralized utils
 
 
 const MAX_FILES_ALLOWED = 5;
@@ -69,83 +70,6 @@ const LOADING_EQUIPMENT_SELECT_ITEM_VALUE = "_LOADING_EQUIPMENT_";
 const NO_TECHNICIAN_SELECTED_VALUE = "_NO_TECHNICIAN_SELECTED_";
 const LOADING_TECHNICIANS_SELECT_ITEM_VALUE = "_LOADING_TECHNICIANS_";
 
-// Helper function to convert string to Title Case
-const toTitleCase = (str: string | undefined | null): string => {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-const getFileNameFromUrl = (url: string): string => {
-  try {
-    const decodedUrl = decodeURIComponent(url);
-    const pathAndQuery = decodedUrl.split('?')[0];
-    const segments = pathAndQuery.split('/');
-    const fileNameWithPossiblePrefix = segments.pop() || "arquivo";
-    const fileNameCleaned = fileNameWithPossiblePrefix.split('?')[0];
-    const finalFileName = fileNameCleaned.substring(fileNameCleaned.indexOf('_') + 1) || fileNameCleaned;
-    return finalFileName || "arquivo";
-  } catch (e) {
-    console.error("Error parsing filename from URL:", e);
-    return "arquivo";
-  }
-};
-
-async function uploadServiceOrderFile(
-  file: File,
-  orderId: string
-): Promise<string> {
-  if (!storage) {
-    console.error("uploadServiceOrderFile: Firebase Storage is not available.");
-    throw new Error("Firebase Storage is not available");
-  }
-  const filePath = `service_order_media/${orderId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  const fileStorageRef = storageRef(storage, filePath);
-  await uploadBytes(fileStorageRef, file);
-  return getDownloadURL(fileStorageRef);
-}
-
-async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
-  if (fileUrl) {
-    if (!storage) {
-      console.warn("deleteServiceOrderFileFromStorage: Firebase Storage is not available. Skipping deletion.");
-      return;
-    }
-    try {
-      const gcsPath = new URL(fileUrl).pathname.split('/o/')[1].split('?')[0];
-      const decodedPath = decodeURIComponent(gcsPath);
-      const fileStorageRef = storageRef(storage, decodedPath);
-      await deleteObject(fileStorageRef);
-    } catch (e) {
-      console.warn(`[DELETE SO FILE] Failed to delete file from storage: ${fileUrl}`, e);
-    }
-  }
-}
-
-
-const formatDateForInput = (date: any): string => {
-  if (!date) return "";
-  let d: Date;
-  if (date instanceof Timestamp) {
-    d = date.toDate();
-  } else if (typeof date === 'string') {
-    d = parseISO(date);
-  } else if (date instanceof Date) {
-    d = date;
-  } else {
-    return "";
-  }
-  if (!isValid(d)) return "";
-  const year = d.getFullYear();
-  const month = d.getMonth();
-  const day = d.getDate();
-  const localDate = new Date(year, month, day);
-  return localDate.toISOString().split('T')[0];
-};
-
 const convertToTimestamp = (dateString?: string | null): Timestamp | null => {
   if (!dateString) return null;
   const date = parseISO(dateString);
@@ -171,6 +95,7 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       phase: (serviceOrderPhaseOptions.includes(data.phase) ? data.phase : "Aguardando Avaliação Técnica") as ServiceOrderPhaseType,
       technicianId: data.technicianId || null,
       serviceType: data.serviceType || "Não especificado",
+      customServiceType: data.customServiceType, // Keep this if it's in Firestore
       vehicleId: data.vehicleId || null,
       startDate: data.startDate ? formatDateForInput(data.startDate) : undefined,
       endDate: data.endDate ? formatDateForInput(data.endDate) : undefined,
@@ -289,30 +214,6 @@ const getDeadlineStatusInfo = (
   return { status: 'none', alertClass: "" };
 };
 
-const getWhatsAppNumber = (phone?: string): string => {
-  if (!phone) return "";
-  let cleaned = phone.replace(/\D/g, '');
-
-  if (cleaned.startsWith('55') && (cleaned.length === 12 || cleaned.length === 13)) {
-    return cleaned;
-  }
-  if (!cleaned.startsWith('55') && (cleaned.length === 10 || cleaned.length === 11)) {
-    return `55${cleaned}`;
-  }
-  return cleaned;
-};
-
-const formatPhoneNumberForDisplay = (phone?: string): string => {
-  if (!phone) return "N/A";
-  const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length === 11) {
-    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-  } else if (cleaned.length === 10) {
-    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
-  }
-  return phone;
-};
-
 const formatAddressToString = (addressSource: Customer | Company | null | undefined): string => {
     if (!addressSource) return "";
     const parts = [
@@ -326,6 +227,38 @@ const formatAddressToString = (addressSource: Customer | Company | null | undefi
     ].filter(Boolean).join(', ');
     return parts;
 };
+
+// Upload and Delete file functions (specific to service orders)
+async function uploadServiceOrderFile(
+  file: File,
+  orderId: string
+): Promise<string> {
+  if (!storage) {
+    console.error("uploadServiceOrderFile: Firebase Storage is not available.");
+    throw new Error("Firebase Storage is not available");
+  }
+  const filePath = `service_order_media/${orderId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const fileStorageRef = storageRef(storage, filePath);
+  await uploadBytes(fileStorageRef, file);
+  return getDownloadURL(fileStorageRef);
+}
+
+async function deleteServiceOrderFileFromStorage(fileUrl?: string | null) {
+  if (fileUrl) {
+    if (!storage) {
+      console.warn("deleteServiceOrderFileFromStorage: Firebase Storage is not available. Skipping deletion.");
+      return;
+    }
+    try {
+      const gcsPath = new URL(fileUrl).pathname.split('/o/')[1].split('?')[0];
+      const decodedPath = decodeURIComponent(gcsPath);
+      const fileStorageRef = storageRef(storage, decodedPath);
+      await deleteObject(fileStorageRef);
+    } catch (e) {
+      console.warn(`[DELETE SO FILE] Failed to delete file from storage: ${fileUrl}`, e);
+    }
+  }
+}
 
 
 export function ServiceOrderClientPage() {
@@ -451,7 +384,7 @@ export function ServiceOrderClientPage() {
 
   useEffect(() => {
     if (formVehicleId && typeof formEstimatedTravelDistanceKm === 'number') {
-      const vehicle = vehicles.find(v => v.id === formVehicleId);
+      const vehicle = (vehicles || []).find(v => v.id === formVehicleId);
       if (vehicle && typeof vehicle.costPerKilometer === 'number') {
         const fuelCost = formEstimatedTravelDistanceKm * vehicle.costPerKilometer;
         const totalTolls = typeof formEstimatedTollCosts === 'number' ? formEstimatedTollCosts : 0;
@@ -480,15 +413,15 @@ export function ServiceOrderClientPage() {
         !isCalculatingDistance &&
         typeof calculateDistance === 'function'
       ) {
-        const customer = customers.find(c => c.id === selectedCustomerId);
-        const equipment = equipmentList.find(e => e.id === selectedEquipmentId);
+        const customer = (customers || []).find(c => c.id === selectedCustomerId);
+        const equipment = (equipmentList || []).find(e => e.id === selectedEquipmentId);
 
         if (!customer || !equipment || !equipment.ownerReference || companyIds.indexOf(equipment.ownerReference as CompanyId) === -1) {
           return;
         }
 
         const companyOwnerId = equipment.ownerReference as CompanyId;
-        const originCompany = companies.find(comp => comp.id === companyOwnerId);
+        const originCompany = (companies || []).find(comp => comp.id === companyOwnerId);
 
         if (!originCompany || !originCompany.street || !originCompany.city || !originCompany.state || !originCompany.cep ||
             !customer.street || !customer.city || !customer.state || !customer.cep) {
@@ -510,7 +443,7 @@ export function ServiceOrderClientPage() {
 
         setIsCalculatingDistance(true);
         try {
-          const result = await calculateDistance({ originAddress, destinationAddress });
+          const result: CalculateDistanceOutput = await calculateDistance({ originAddress, destinationAddress });
 
           let toastMessage = "";
           if (result.status === 'SIMULATED' || result.status === 'SUCCESS') {
@@ -552,7 +485,7 @@ export function ServiceOrderClientPage() {
   ]);
 
 
-  if (!db || !storage) {
+  if (!db || !storage) { // Ensure storage is checked
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -582,9 +515,9 @@ export function ServiceOrderClientPage() {
   useEffect(() => {
     if (!editingOrder) {
         if (selectedCustomerId) {
-            const customer = customers.find(c => c.id === selectedCustomerId);
+            const customer = (customers || []).find(c => c.id === selectedCustomerId);
             if (customer?.preferredTechnician) {
-                const preferredTech = technicians.find(t => t.name === customer.preferredTechnician);
+                const preferredTech = (technicians || []).find(t => t.name === customer.preferredTechnician);
                 form.setValue('technicianId', preferredTech ? preferredTech.id : null, { shouldValidate: true });
             } else {
                 form.setValue('technicianId', null, { shouldValidate: true });
@@ -1078,10 +1011,10 @@ export function ServiceOrderClientPage() {
 
             let equipmentOwnerDisplay = null;
             if (equipmentDetails.ownerReference && equipmentDetails.ownerReference !== OWNER_REF_CUSTOMER) {
-                const company = companyDisplayOptions.find(c => c.id === equipmentDetails.ownerReference);
+                const company = (companies || []).find(c => c.id === equipmentDetails.ownerReference);
                 equipmentOwnerDisplay = company ? company.name : "Empresa Desconhecida";
             } else if (equipmentDetails.ownerReference === OWNER_REF_CUSTOMER) {
-                 const ownerCustomer = customers.find(c => c.id === equipmentDetails.customerId);
+                 const ownerCustomer = (customers || []).find(c => c.id === equipmentDetails.customerId);
                  equipmentOwnerDisplay = ownerCustomer ? `Cliente (${toTitleCase(ownerCustomer.name)})` : "Cliente (Não especificado)";
             }
 

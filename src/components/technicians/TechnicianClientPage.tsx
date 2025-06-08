@@ -20,52 +20,9 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils"; // Import centralized utils
 
 const FIRESTORE_COLLECTION_NAME = "tecnicos"; // This collection name can remain "tecnicos"
-
-const getWhatsAppNumber = (phone?: string): string => {
-  if (!phone) return "";
-  let cleaned = phone.replace(/\D/g, ''); 
-
-  if (cleaned.startsWith('55') && (cleaned.length === 12 || cleaned.length === 13)) {
-    return cleaned;
-  }
-  if (!cleaned.startsWith('55') && (cleaned.length === 10 || cleaned.length === 11)) {
-    return `55${cleaned}`;
-  }
-  return cleaned;
-};
-
-const formatPhoneNumberForInputDisplay = (value: string): string => {
-  if (!value) return "";
-  const cleaned = value.replace(/\D/g, "");
-  const len = cleaned.length;
-
-  if (len === 0) return "";
-  
-  let ddd = cleaned.substring(0, 2);
-  let numberPart = cleaned.substring(2);
-
-  if (len <= 2) return `(${cleaned}`; 
-  if (len <= 6) return `(${ddd}) ${numberPart}`; 
-  
-  if (numberPart.length <= 5) { 
-    return `(${ddd}) ${numberPart}`;
-  }
-  
-  if (numberPart.length <= 9) { 
-    const firstPartLength = numberPart.length === 9 ? 5 : 4;
-    const firstDigits = numberPart.substring(0, firstPartLength);
-    const secondDigits = numberPart.substring(firstPartLength);
-    if (secondDigits) {
-      return `(${ddd}) ${firstDigits}-${secondDigits}`;
-    }
-    return `(${ddd}) ${firstDigits}`;
-  }
-  const firstDigits = numberPart.substring(0, 5);
-  const secondDigits = numberPart.substring(5, 9);
-  return `(${ddd}) ${firstDigits}-${secondDigits}`;
-};
 
 async function fetchTechnicians(): Promise<Technician[]> { // Function name can remain fetchTechnicians
   if (!db) {
@@ -353,12 +310,7 @@ export function TechnicianClientPage() {
                       {...field}
                       value={field.value ?? ""}
                       onChange={(e) => {
-                        const rawValue = e.target.value.replace(/\D/g, "");
-                        if (rawValue.length <= 11) {
-                          field.onChange(formatPhoneNumberForInputDisplay(e.target.value));
-                        } else {
-                          field.onChange(formatPhoneNumberForInputDisplay(rawValue.substring(0, 11)));
-                        }
+                         field.onChange(formatPhoneNumberForInputDisplay(e.target.value));
                       }}
                       maxLength={15}
                     />

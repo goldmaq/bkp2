@@ -21,7 +21,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase"; // Added storage
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -142,13 +142,13 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   }, [auxEquipmentIdFromUrl, auxEquipmentList, isLoadingAux, openModal, isModalOpen]);
 
 
-  if (!db) {
+  if (!db || !storage) { // Check for storage as well if page might interact with it
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
         <PageHeader title="Erro de Conexão com Firebase" />
         <p className="text-lg text-center text-muted-foreground">
-          Não foi possível conectar ao banco de dados.
+          Não foi possível conectar ao banco de dados ou ao serviço de armazenamento.
           <br />
           Verifique a configuração do Firebase e sua conexão com a internet.
         </p>

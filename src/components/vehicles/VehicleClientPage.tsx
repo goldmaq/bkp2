@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateForInput, formatDateForDisplay } from "@/lib/utils"; // Import centralized utils
 
 const statusOptions: Vehicle['status'][] = ['Disponível', 'Em Uso', 'Manutenção'];
 const statusIcons = {
@@ -64,13 +65,6 @@ async function fetchVehicles(): Promise<Vehicle[]> {
     } as Vehicle;
   });
 }
-
-const formatDateForInput = (date: Date | string): string => {
-  if (typeof date === 'string') {
-    return format(parseISO(date), 'yyyy-MM-dd');
-  }
-  return format(date, 'yyyy-MM-dd');
-};
 
 export function VehicleClientPage() {
   const queryClient = useQueryClient();
@@ -581,7 +575,7 @@ export function VehicleClientPage() {
                       <TableBody>
                         {sortedFuelingHistory.map((record) => (
                           <TableRow key={record.id}>
-                            <TableCell>{format(parseISO(record.date), 'dd/MM/yyyy', { locale: ptBR })}</TableCell>
+                            <TableCell>{formatDateForDisplay(record.date)}</TableCell>
                             <TableCell className="text-right">{record.liters.toFixed(2)} L</TableCell>
                             <TableCell className="text-right">R$ {record.pricePerLiter.toFixed(2)}</TableCell>
                             <TableCell className="text-right">R$ {record.totalCost.toFixed(2)}</TableCell>

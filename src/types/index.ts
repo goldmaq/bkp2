@@ -409,17 +409,17 @@ export const BudgetSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+// Removed CalculateDistanceInput and CalculateDistanceOutput as they are now imported from the flow file.
+// // Type for the input of the calculate distance flow
+// export interface CalculateDistanceInput {
+//   originAddress: string;
+//   destinationAddress: string;
+// }
 
-// Type for the input of the calculate distance flow
-export interface CalculateDistanceInput {
-  originAddress: string;
-  destinationAddress: string;
-}
-
-// Type for the output of the calculate distance flow
-export interface CalculateDistanceOutput {
-  distanceKm: number;
-  status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED' | 'ERROR_LLM_TOLL_ESTIMATION';
-  errorMessage?: string;
-  estimatedTollCostByAI?: number | null; // Estimativa de pedágio (apenas ida)
-}
+// // Type for the output of the calculate distance flow
+// export interface CalculateDistanceOutput {
+//   distanceKm: number;
+//   status: 'SUCCESS' | 'ERROR_NO_ADDRESS' | 'ERROR_API_FAILED' | 'SIMULATED' | 'ERROR_GEOCODING_FAILED' | 'ERROR_LLM_TOLL_ESTIMATION';
+//   errorMessage?: string;
+//   estimatedTollCostByAI?: number | null; // Estimativa de pedágio (apenas ida)
+// }
