@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send } from "lucide-react"; // Added Search, Send
+import { PlusCircle, FileText, Users, Construction, Mail, MessageSquare, DollarSign, Trash2, Loader2, AlertTriangle, CalendarDays, ShoppingCart, Percent, Edit, Save, ThumbsUp, Ban, Pencil, X, Search, Send } from "lucide-react";
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -21,8 +21,9 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
-import { format, parseISO, isValid as isValidDateFn, addDays } from 'date-fns'; // Added addDays
+import { format, parseISO, isValid as isValidDateFn, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import {
@@ -34,7 +35,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger for direct use if needed
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { toTitleCase, formatDateForDisplay, getWhatsAppNumber, formatPhoneNumberForInputDisplay } from "@/lib/utils";
@@ -112,7 +113,7 @@ const generateDetailedWhatsAppMessage = (
   let message = "Olá!\n\n";
   message += `Segue o Orçamento Nº *${budget.budgetNumber}* da Gold Maq Empilhadeiras:\n\n`;
 
-  if (serviceOrder) {
+  if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
     message += `Referente à OS: *${serviceOrder.orderNumber}*\n`;
   }
   message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\n`;
@@ -134,11 +135,11 @@ const generateDetailedWhatsAppMessage = (
   message += `Validade da Proposta: *${validityDisplay}*\n\n`;
 
   message += "Itens/Serviços:\n";
-  if (serviceOrder) {
+  if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
     message += `Baseado na OS ${serviceOrder.orderNumber}:\n`;
   }
   budget.items.forEach(item => {
-    message += `- ${item.description}: ${formatCurrency(item.quantity * item.unitPrice)}\n`;
+    message += `- ${item.description}: ${formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}\n`;
   });
 
   message += "\nAgradecemos a preferência!";
@@ -181,7 +182,7 @@ export function BudgetClientPage() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({ // Removed `update` as it's no longer needed with direct field binding
+  const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "items",
   });
@@ -244,7 +245,7 @@ export function BudgetClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const dataToSave = {
         ...newBudgetData,
-        createdDate: Timestamp.fromDate(new Date()),
+        createdDate: serverTimestamp(), // Use serverTimestamp for creation
         validUntilDate: newBudgetData.validUntilDate ? Timestamp.fromDate(parseISO(newBudgetData.validUntilDate)) : null,
         items: newBudgetData.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
@@ -274,13 +275,13 @@ export function BudgetClientPage() {
 
       const dataToSave = {
         ...dataToUpdate,
-        createdDate: originalCreatedDate,
+        createdDate: originalCreatedDate, // Preserve original creation date
         validUntilDate: dataToUpdate.validUntilDate ? Timestamp.fromDate(parseISO(dataToUpdate.validUntilDate)) : null,
         items: dataToUpdate.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
         totalAmount: dataToUpdate.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(dataToUpdate.shippingCost) || 0),
       };
-      return updateDoc(budgetRef, dataToSave);
+      return updateDoc(budgetRef, dataToSave as { [x: string]: any });
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
@@ -407,7 +408,11 @@ export function BudgetClientPage() {
 
   const getCustomerInfo = useCallback((customerId: string) => (customers || []).find(c => c.id === customerId), [customers]);
   const getEquipmentInfo = useCallback((equipmentId: string) => (equipmentList || []).find(e => e.id === equipmentId), [equipmentList]);
-  const getServiceOrderInfo = useCallback((serviceOrderId: string) => (serviceOrders || []).find(os => os.id === serviceOrderId), [serviceOrders]);
+  const getServiceOrderInfo = useCallback((serviceOrderId?: string | null) => {
+    if (!serviceOrderId || serviceOrderId === NO_SERVICE_ORDER_SELECTED) return undefined;
+    return (serviceOrders || []).find(os => os.id === serviceOrderId);
+  }, [serviceOrders]);
+
 
   const filteredBudgets = useMemo(() => {
     let tempBudgets = budgets;
@@ -426,7 +431,7 @@ export function BudgetClientPage() {
         return (
           budget.budgetNumber.toLowerCase().includes(lowerSearchTerm) ||
           (customer?.name.toLowerCase().includes(lowerSearchTerm)) ||
-          (serviceOrder?.orderNumber.toLowerCase().includes(lowerSearchTerm)) ||
+          (serviceOrder?.orderNumber?.toLowerCase().includes(lowerSearchTerm)) ||
           (equipment?.brand.toLowerCase().includes(lowerSearchTerm)) ||
           (equipment?.model.toLowerCase().includes(lowerSearchTerm)) ||
           (equipment?.chassisNumber.toLowerCase().includes(lowerSearchTerm))
@@ -550,8 +555,8 @@ export function BudgetClientPage() {
               : "#";
 
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
-            const canDeny = budget.status === "Pendente" || budget.status === "Enviado" || budget.status === "Aprovado";
-            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado";
+            const canDeny = budget.status === "Pendente" || budget.status === "Enviado";
+            const canCancel = budget.status !== "Cancelado" && budget.status !== "Recusado"; // Can cancel if not already cancelled or refused
             const canReopen = budget.status === "Aprovado" || budget.status === "Recusado" || budget.status === "Cancelado";
 
             return (
@@ -568,7 +573,7 @@ export function BudgetClientPage() {
                             {budget.status}
                         </span>
                     </div>
-                    <CardDescription>OS Vinculada: {serviceOrder?.orderNumber || budget.serviceOrderId}</CardDescription>
+                    <CardDescription>OS Vinculada: {serviceOrder?.orderNumber || "Nenhuma"}</CardDescription>
                   </CardHeader>
                   <CardContent className="flex-grow space-y-2 text-sm">
                     <p className="flex items-center">
@@ -607,12 +612,12 @@ export function BudgetClientPage() {
                               <ThumbsUp className="mr-1.5 h-3.5 w-3.5"/> Aprovar
                           </Button>
                       )}
-                      {canDeny && (budget.status === "Pendente" || budget.status === "Enviado") && (
+                      {canDeny && (
                           <Button variant="outline" size="sm" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Recusado'); }} disabled={isMutating}>
                               <Ban className="mr-1.5 h-3.5 w-3.5"/> Recusar
                           </Button>
                       )}
-                       {canCancel && (budget.status !== "Cancelado") && (
+                       {canCancel && (
                           <Button variant="outline" size="sm" className="border-slate-500 text-slate-600 hover:bg-slate-50 hover:text-slate-700" onClick={(e) => { e.stopPropagation(); handleChangeStatus(budget.id, budget.budgetNumber, 'Cancelado'); }} disabled={isMutating}>
                              <X className="mr-1.5 h-3.5 w-3.5"/> Cancelar
                           </Button>
@@ -784,7 +789,7 @@ export function BudgetClientPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="createdDate" render={({ field }) => (
-                  <FormItem><FormLabel>Data de Criação</FormLabel><FormControl><Input type="date" {...field} readOnly className="bg-muted/50" /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Data de Criação</FormLabel><FormControl><Input type="date" {...field} readOnly={!editingBudget} className={!editingBudget ? "bg-muted/50" : ""} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="validUntilDate" render={({ field }) => (
                   <FormItem><FormLabel>Válido Até (Opcional)</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
