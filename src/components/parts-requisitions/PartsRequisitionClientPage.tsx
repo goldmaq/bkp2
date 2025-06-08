@@ -7,7 +7,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import type * as z from "zod";
 import { PlusCircle, Wrench, ClipboardList, User, Construction, CalendarDays, ImagePlus, Trash2, Loader2, FileText, XCircle, PackageSearch, AlertTriangle, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+import Image from "next/image"; // Import next/image
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,7 @@ import { cn, formatDateForDisplay, getFileNameFromUrl } from "@/lib/utils";
 const FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME = "partsRequisitions";
 const FIRESTORE_SERVICE_ORDER_COLLECTION_NAME = "ordensDeServico";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
-const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
+const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes"; // Added for displaying customer name
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_OS_SELECTED_";
 const NO_TECHNICIAN_SELECTED = "_NO_TECHNICIAN_SELECTED_";
@@ -66,7 +66,7 @@ async function fetchTechnicians(): Promise<Technician[]> {
   return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Technician));
 }
 
-async function fetchCustomers(): Promise<Customer[]> {
+async function fetchCustomers(): Promise<Customer[]> { // Function to fetch customers
     if (!db) {
       console.error("fetchCustomers: Firebase DB is not available.");
       throw new Error("Firebase DB is not available");
@@ -104,7 +104,6 @@ async function deletePartImageFromStorage(imageUrl?: string | null) {
     return;
   }
   try {
-    // Correctly extract the path from the Firebase Storage URL
     const imageRef = storageRef(storage, imageUrl);
     await deleteObject(imageRef);
   } catch (error: any) {
@@ -112,7 +111,6 @@ async function deletePartImageFromStorage(imageUrl?: string | null) {
       console.warn("Image not found in storage, skipping deletion:", imageUrl);
     } else {
       console.error("Error deleting image from storage:", error);
-      // Potentially re-throw or handle more gracefully if needed
     }
   }
 }
@@ -160,7 +158,7 @@ export function PartsRequisitionClientPage() {
     queryFn: fetchTechnicians,
   });
 
-  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[], Error>({ // Fetch customers
     queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME],
     queryFn: fetchCustomers,
   });
@@ -173,7 +171,7 @@ export function PartsRequisitionClientPage() {
       setIsEditMode(false);
       form.reset({
         ...requisition,
-        id: requisition.id, // Ensure ID is part of form if needed for Zod, or handle separately
+        id: requisition.id,
         requisitionNumber: requisition.requisitionNumber,
         serviceOrderId: requisition.serviceOrderId || NO_SERVICE_ORDER_SELECTED,
         technicianId: requisition.technicianId || NO_TECHNICIAN_SELECTED,
@@ -190,7 +188,7 @@ export function PartsRequisitionClientPage() {
       setEditingRequisition(null);
       setIsEditMode(true);
       form.reset({
-        id: undefined, // Explicitly undefined for new
+        id: undefined, 
         requisitionNumber: getNextRequisitionNumber(requisitions),
         serviceOrderId: NO_SERVICE_ORDER_SELECTED,
         technicianId: NO_TECHNICIAN_SELECTED,
@@ -220,7 +218,6 @@ export function PartsRequisitionClientPage() {
       };
       reader.readAsDataURL(file);
     } else {
-      // If file is null (cleared), try to revert to existing imageUrl if in edit mode.
       const currentItemInForm = form.getValues('items').find(i => i.id === itemId);
       if (currentItemInForm?.imageUrl) {
          setImagePreviews(prev => ({ ...prev, [itemId]: currentItemInForm.imageUrl }));
@@ -231,20 +228,16 @@ export function PartsRequisitionClientPage() {
   };
   
   const handleRemoveItemImage = async (itemId: string, itemIndex: number) => {
-    setPartImageFiles(prev => ({ ...prev, [itemId]: null })); // Clear any staged new file
-    setImagePreviews(prev => ({ ...prev, [itemId]: null })); // Clear preview
+    setPartImageFiles(prev => ({ ...prev, [itemId]: null }));
+    setImagePreviews(prev => ({ ...prev, [itemId]: null })); 
 
     const currentItem = form.getValues(`items.${itemIndex}`);
     const existingImageUrl = currentItem?.imageUrl;
-
-    // Update form state to remove imageUrl
+    
     if (currentItem) {
         update(itemIndex, { ...currentItem, imageUrl: null });
     }
 
-    // If this is an existing item being edited and it had an imageUrl,
-    // it will be deleted from storage when the main form is submitted and the updateRequisitionMutation runs.
-    // No immediate deletion from storage here, to allow "undo" by re-uploading before saving.
     if (editingRequisition && existingImageUrl) {
         toast({ title: "Imagem Marcada para Remoção", description: "A imagem será removida ao salvar a requisição."});
     }
@@ -263,9 +256,7 @@ export function PartsRequisitionClientPage() {
 
   const removeItem = async (index: number, itemId: string) => {
     const itemToRemove = fields[index];
-    // For newly added items not yet saved, or items where image was just staged:
     if (partImageFiles[itemId]) {
-        // Just remove from local state, no storage interaction yet
         const newImageFiles = { ...partImageFiles };
         delete newImageFiles[itemId];
         setPartImageFiles(newImageFiles);
@@ -273,48 +264,38 @@ export function PartsRequisitionClientPage() {
         delete newImagePreviews[itemId];
         setImagePreviews(newImagePreviews);
     } else if (itemToRemove?.imageUrl && editingRequisition) {
-        // If it's an existing item with a saved imageUrl,
-        // it will be handled during the update mutation (by not including its URL).
-        // The actual deletion from storage happens there.
         toast({ title: "Item Marcado para Remoção", description: "O item e sua imagem (se houver) serão removidos ao salvar." });
     }
     remove(index);
   };
 
-
   const addRequisitionMutation = useMutation({
     mutationFn: async (newRequisitionData: z.infer<typeof PartsRequisitionSchema>) => {
       if (!db) throw new Error("Firebase DB is not available.");
       
-      const requisitionId = crypto.randomUUID(); // Generate client-side UUID for the new requisition
+      const requisitionId = crypto.randomUUID(); 
 
       const itemsWithImageUrls = await Promise.all(
         newRequisitionData.items.map(async (item) => {
-          let imageUrl = item.imageUrl || null; // Should be null for new items unless handled differently
+          let imageUrl = item.imageUrl || null; 
           const imageFile = item.id ? partImageFiles[item.id] : null;
           if (imageFile && item.id) {
-            // For new requisitions, if imageUrl was somehow set, this would delete it.
-            // But it should be null.
             if (imageUrl) await deletePartImageFromStorage(imageUrl);
             imageUrl = await uploadPartImageToStorage(imageFile, requisitionId, item.id);
           }
           return { ...item, imageUrl };
         })
       );
-
-      // Prepare data for Firestore, ensuring not to include the client-side 'id' if your schema for Firestore doesn't expect it.
-      // However, since we use setDoc, the ID is the first arg.
       const { id: formId, ...dataFromForm } = newRequisitionData; 
 
       const dataToSave = {
-        ...dataFromForm, // contains requisitionNumber, serviceOrderId, technicianId, status, generalNotes from form
-        createdDate: serverTimestamp(), // Firestore server-side timestamp
-        items: itemsWithImageUrls, // Items with processed image URLs
-        // Do not include 'id' here if Firestore auto-generates or if it's part of the doc path
+        ...dataFromForm,
+        createdDate: serverTimestamp(),
+        items: itemsWithImageUrls,
       };
       
       await setDoc(doc(db, FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME, requisitionId), dataToSave);
-      return { ...dataToSave, id: requisitionId }; // Return with the ID used for setDoc
+      return { ...dataToSave, id: requisitionId };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME] });
@@ -329,7 +310,7 @@ export function PartsRequisitionClientPage() {
   const updateRequisitionMutation = useMutation({
     mutationFn: async (requisitionData: PartsRequisition) => {
       if (!db) throw new Error("Firebase DB is not available.");
-      const { id, items, createdDate, ...dataToUpdate } = requisitionData; // Exclude createdDate from direct update
+      const { id, items, createdDate, ...dataToUpdate } = requisitionData; 
       if (!id) throw new Error("ID da requisição é necessário.");
 
       const originalRequisition = requisitions.find(r => r.id === id);
@@ -341,20 +322,18 @@ export function PartsRequisitionClientPage() {
           const imageFile = item.id ? partImageFiles[item.id] : null;
           const originalItem = originalRequisition.items.find(orig => orig.id === item.id);
 
-          if (imageFile && item.id) { // New image uploaded for this item
-            if (originalItem?.imageUrl) { // If there was an old image, delete it
+          if (imageFile && item.id) { 
+            if (originalItem?.imageUrl) { 
               await deletePartImageFromStorage(originalItem.imageUrl);
             }
             imageUrl = await uploadPartImageToStorage(imageFile, id, item.id);
-          } else if (!imageUrl && originalItem?.imageUrl && item.id) { // Image was removed (imageUrl is null but original had one)
+          } else if (!imageUrl && originalItem?.imageUrl && item.id) { 
             await deletePartImageFromStorage(originalItem.imageUrl);
           }
-          // If imageUrl exists and no new file, it means keep the existing one.
           return { ...item, imageUrl };
         })
       );
       
-      // Delete images for items that were removed from the list entirely
       const currentItemIds = items.map(item => item.id);
       for (const originalItem of originalRequisition.items) {
           if (originalItem.id && !currentItemIds.includes(originalItem.id) && originalItem.imageUrl) {
@@ -363,7 +342,6 @@ export function PartsRequisitionClientPage() {
       }
 
       const reqRef = doc(db, FIRESTORE_PARTS_REQUISITION_COLLECTION_NAME, id);
-      // Do not update createdDate, keep the original one
       await updateDoc(reqRef, { ...dataToUpdate, items: itemsWithImageUrls });
       return { ...requisitionData, items: itemsWithImageUrls, createdDate: originalRequisition.createdDate };
     },
@@ -383,7 +361,7 @@ export function PartsRequisitionClientPage() {
       const reqToDelete = requisitions.find(r => r.id === requisitionId);
       if (reqToDelete?.items) {
         for (const item of reqToDelete.items) {
-          if (item.imageUrl && item.id) { // Ensure item.id exists
+          if (item.imageUrl && item.id) { 
             await deletePartImageFromStorage(item.imageUrl);
           }
         }
@@ -400,17 +378,16 @@ export function PartsRequisitionClientPage() {
     },
   });
 
-
   const onSubmit = async (values: z.infer<typeof PartsRequisitionSchema>) => {
     if (editingRequisition && editingRequisition.id) {
       const updatedRequisition: PartsRequisition = {
-        ...editingRequisition, // Spread original to keep createdDate and other potentially non-form fields
-        ...values, // Spread validated form values (overwrites common fields)
-        id: editingRequisition.id, // Ensure ID is correctly passed
+        ...editingRequisition, 
+        ...values, 
+        id: editingRequisition.id, 
       };
       updateRequisitionMutation.mutate(updatedRequisition);
     } else {
-      addRequisitionMutation.mutate(values); // 'id' will be generated by the mutation
+      addRequisitionMutation.mutate(values); 
     }
   };
 
@@ -468,7 +445,7 @@ export function PartsRequisitionClientPage() {
           {requisitions.map((req) => {
             const serviceOrder = serviceOrders?.find(os => os.id === req.serviceOrderId);
             const technician = technicians?.find(t => t.id === req.technicianId);
-            const customer = customers?.find(c => c.id === serviceOrder?.customerId);
+            const customer = customers?.find(c => c.id === serviceOrder?.customerId); // Find customer
             return (
               <Card key={req.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer" onClick={() => openModal(req)}>
                 <CardHeader>
@@ -485,7 +462,7 @@ export function PartsRequisitionClientPage() {
                     </span>
                   </div>
                   <CardDescription>
-                    OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || "N/A"}
+                    OS: {serviceOrder?.orderNumber || req.serviceOrderId} | Cliente: {customer?.name || 'N/A'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-3 text-sm">
@@ -525,7 +502,7 @@ export function PartsRequisitionClientPage() {
                           {item.notes && <p className="text-muted-foreground mt-0.5">Obs: {item.notes}</p>}
                           {item.imageUrl && (
                             <div className="mt-1.5">
-                                <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={40} height={40} className="rounded object-cover aspect-square" data-ai-hint="product part"/>
+                                <Image src={item.imageUrl} alt={`Imagem de ${item.partName}`} width={40} height={40} className="rounded object-cover aspect-square" data-ai-hint="part image"/>
                             </div>
                           )}
                         </li>
@@ -640,7 +617,7 @@ export function PartsRequisitionClientPage() {
                         />
                         {item.id && imagePreviews[item.id] && (
                             <div className="relative group">
-                                <Image src={imagePreviews[item.id]!} alt="Preview" width={32} height={32} className="rounded object-cover aspect-square" data-ai-hint="part preview"/>
+                                <Image src={imagePreviews[item.id]!} alt="Preview" width={32} height={32} className="rounded object-cover aspect-square" data-ai-hint="part image"/>
                                 <Button
                                     type="button"
                                     variant="ghost"
@@ -653,7 +630,7 @@ export function PartsRequisitionClientPage() {
                             </div>
                         )}
                       </div>
-                       {item.imageUrl && !partImageFiles[item.id!] && !imagePreviews[item.id!] && ( // Show link to existing image if no new preview
+                       {item.imageUrl && !partImageFiles[item.id!] && !imagePreviews[item.id!] && ( 
                           <Link href={item.imageUrl} target="_blank" className="text-xs text-primary hover:underline mt-1 block">Ver imagem atual: {getFileNameFromUrl(item.imageUrl)}</Link>
                         )}
                     </div>
@@ -692,5 +669,6 @@ export function PartsRequisitionClientPage() {
     </>
   );
 }
+
 
     
