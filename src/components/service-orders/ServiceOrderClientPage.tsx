@@ -23,6 +23,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp, quer
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isBefore, isToday, addDays, parseISO, isValid, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -229,23 +230,20 @@ const getDeadlineStatusInfo = (
     return { status: 'none', alertClass: "" };
   }
 
-  const endDate = parseISO(endDateString); // endDateString is already 'yyyy-MM-dd'
+  const endDate = parseISO(endDateString); 
   if (!isValid(endDate)) {
     return { status: 'none', alertClass: "" };
   }
 
   const today = new Date();
-  today.setHours(0,0,0,0); // Normalize today to the start of the day
+  today.setHours(0,0,0,0); 
 
-  // Normalize endDate to ensure it's compared correctly (ignoring time parts from parseISO if any)
   const endDateNormalized = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
   endDateNormalized.setHours(0,0,0,0);
+  
+  // console.log(`DEBUG: Order - EndDateString: ${endDateString}, ParsedEndDate: ${endDate.toISOString()}, EndDateNormalized: ${endDateNormalized.toISOString()}, Today: ${today.toISOString()}`);
 
-
-  // For debugging purposes
-  // console.log(`DEBUG: endDateString: ${endDateString}, parsedEndDate: ${endDate.toISOString()}, endDateNormalized: ${endDateNormalized.toISOString()}, today: ${today.toISOString()}`);
-
-  if (isBefore(endDateNormalized, today)) {
+  if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) { 
     // console.log("DEBUG: Status Overdue");
     return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-red-100 border-red-500 text-red-700" };
   }
@@ -253,8 +251,8 @@ const getDeadlineStatusInfo = (
     // console.log("DEBUG: Status Due Today");
     return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-yellow-100 border-yellow-500 text-yellow-700" };
   }
-  const twoDaysFromNow = addDays(today, 2); // OSs due in the next 2 days (inclusive of today, which is already handled)
-  if (isBefore(endDateNormalized, twoDaysFromNow)) {
+  const twoDaysFromNow = addDays(today, 2); 
+  if (isBefore(endDateNormalized, twoDaysFromNow) || isToday(endDateNormalized)) { 
     // console.log("DEBUG: Status Due Soon");
      return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5" />, alertClass: "bg-yellow-100 border-yellow-500 text-yellow-700" };
   }
@@ -732,14 +730,16 @@ export function ServiceOrderClientPage() {
           {serviceOrders.map((order) => {
             const deadlineInfo = getDeadlineStatusInfo(order.endDate, order.phase);
             // console.log(`Order ${order.orderNumber} - EndDate: ${order.endDate}, Phase: ${order.phase}, DeadlineInfo:`, deadlineInfo);
-            const cardClasses = cn("flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer");
+            const cardClasses = cn(
+              "flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer",
+            );
 
             return (
             <Card key={order.id} className={cardClasses} onClick={() => openModal(order)} >
               {deadlineInfo.status !== 'none' && deadlineInfo.message && (
-                <div className={cn(
+                 <div className={cn(
                   "p-2 text-sm font-medium rounded-t-md flex items-center justify-center",
-                  deadlineInfo.alertClass // Directly use the alertClass string from getDeadlineStatusInfo
+                  deadlineInfo.alertClass
                 )}>
                   {deadlineInfo.icon}
                   <span className="ml-2">{deadlineInfo.message}</span>
@@ -767,7 +767,7 @@ export function ServiceOrderClientPage() {
                 {order.vehicleId && <p className="flex items-center"><VehicleIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Veículo:</span> {isLoadingVehicles ? 'Carregando...' : getVehicleIdentifier(order.vehicleId)}</p>}
                 <p className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Tipo Serviço:</span> {order.serviceType}</p>
                 {order.startDate && isValid(parseISO(order.startDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Início:</span> {format(parseISO(order.startDate), 'dd/MM/yyyy')}</p>}
-                {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy')}</p>}
+                {order.endDate && isValid(parseISO(order.endDate)) && <p className="flex items-center"><Calendar className="mr-2 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Prev.:</span> {format(parseISO(order.endDate), 'dd/MM/yyyy', { locale: ptBR })}</p>}
                 <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Problema Relatado:</span> <span className="whitespace-pre-wrap break-words">{order.description}</span></p>
                 {order.technicalConclusion && <p className="flex items-start"><Check className="mr-2 mt-0.5 h-4 w-4 text-green-500 flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Conclusão Técnica:</span> <span className="whitespace-pre-wrap break-words">{order.technicalConclusion}</span></p>}
                 {order.notes && <p className="flex items-start"><FileText className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" /> <span className="font-medium text-muted-foreground mr-1">Obs.:</span> <span className="whitespace-pre-wrap break-words">{order.notes}</span></p>}
