@@ -11,7 +11,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import type { ExecutablePrompt } from 'genkit/prompt'; // Import for ExecutablePrompt type
+import type { ExecutablePrompt } from 'genkit/prompt';
 
 const CalculateDistanceInputSchema = z.object({
   originAddress: z.string().describe("The full starting address."),
@@ -46,7 +46,8 @@ const TollEstimationLLMOutputSchema = z.object({
   reasoning: z.string().optional().describe('Brief reasoning for the toll estimation.'),
 });
 
-let tollEstimationPrompt: ExecutablePrompt<z.infer<typeof TollEstimationLLMInputSchema>, z.infer<typeof TollEstimationLLMOutputSchema>, any>;
+let tollEstimationPrompt: ExecutablePrompt<z.infer<typeof TollEstimationLLMInputSchema>, z.infer<typeof TollEstimationLLMOutputSchema>> | undefined;
+let calculateDistanceFlow: ((input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>) | undefined;
 
 async function fetchRouteFromGoogleMaps(
   origin: string,
@@ -85,7 +86,7 @@ async function fetchRouteFromGoogleMaps(
     if (route.warnings && route.warnings.some((w: string) => w.toLowerCase().includes("pedágio") || w.toLowerCase().includes("toll"))) {
         googleIndicatesTolls = true;
     }
-    if (leg.tolls_info || (leg as any).tolls ) { // Considera a propriedade 'tolls' que pode existir
+    if (leg.tolls_info || (leg as any).tolls ) { 
         googleIndicatesTolls = true;
     }
     if (route.summary && (route.summary.toLowerCase().includes("toll") || route.summary.toLowerCase().includes("pedágio"))){
@@ -99,8 +100,6 @@ async function fetchRouteFromGoogleMaps(
     return { error: `Failed to fetch route from Google Maps: ${error.message}`, status: 'ERROR_GOOGLE_API_FAILED' };
   }
 }
-
-let calculateDistanceFlow: (input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>;
 
 if (ai) {
   console.log("[DistanceFlow] Genkit AI instance (ai) IS available. Defining real flow with Google Maps and AI Toll Estimation.");
@@ -157,11 +156,11 @@ Exemplo de saída se não houver pedágio provável:
 
       const { distanceKm, googleIndicatesTolls } = routeResult;
       let estimatedTollCostOneWay: number | null = null;
-      let aiEstimationStatus: CalculateDistanceOutput['status'] = 'SUCCESS'; // Assume success unless AI fails
+      let aiEstimationStatus: CalculateDistanceOutput['status'] = 'SUCCESS';
 
       console.log(`[DistanceFlow] Google Maps API indicated tolls: ${googleIndicatesTolls}`);
 
-      if (googleIndicatesTolls && tollEstimationPrompt) { // Ensure tollEstimationPrompt is defined
+      if (googleIndicatesTolls && tollEstimationPrompt) {
         try {
           const tollInput = {
             origin: input.originAddress,
@@ -171,31 +170,29 @@ Exemplo de saída se não houver pedágio provável:
           };
           console.log("[DistanceFlow] Input for tollEstimationPrompt:", JSON.stringify(tollInput, null, 2));
           
-          const llmGenerateResponse = await ai.generate({
-            prompt: tollEstimationPrompt, // Pass the prompt object
-            input: tollInput, // Pass input data to the prompt
-            model: 'googleai/gemini-pro', 
-            config: { output: { schema: TollEstimationLLMOutputSchema }}
-          });
+          const llmResponse = await tollEstimationPrompt(tollInput); // Corrected call
 
-          console.log("[DistanceFlow] Full LLM response for toll estimation:", JSON.stringify(llmGenerateResponse, null, 2));
+          console.log("[DistanceFlow] Full LLM response for toll estimation:", JSON.stringify(llmResponse, null, 2));
 
-          if (llmGenerateResponse && llmGenerateResponse.output && typeof llmGenerateResponse.output.estimatedTollOneWay === 'number') {
-            estimatedTollCostOneWay = llmGenerateResponse.output.estimatedTollOneWay;
-          } else if (llmGenerateResponse && llmGenerateResponse.output && llmGenerateResponse.output.estimatedTollOneWay === null) {
-            estimatedTollCostOneWay = null; // Explicitly set to null if AI says no tolls
+          if (llmResponse && llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
+            estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
+          } else if (llmResponse && llmResponse.output && llmResponse.output.estimatedTollOneWay === null) {
+            estimatedTollCostOneWay = null; 
           } else {
-            console.warn("[DistanceFlow] AI toll estimation did not return a valid number or null. Response:", llmGenerateResponse?.output);
-            estimatedTollCostOneWay = 0; // Fallback
+            console.warn("[DistanceFlow] AI toll estimation did not return a valid number or null. Response:", llmResponse?.output);
+            estimatedTollCostOneWay = 0; 
             aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
           }
         } catch (e: any) {
           console.error("[DistanceFlow] Error during AI toll estimation:", e);
-          estimatedTollCostOneWay = 0; // Fallback
+          estimatedTollCostOneWay = 0; 
           aiEstimationStatus = 'ERROR_AI_TOLL_ESTIMATION_FAILED';
         }
       } else {
          console.log("[DistanceFlow] Google Maps did not indicate tolls or tollEstimationPrompt not defined. Skipping AI toll estimation.");
+         if (googleIndicatesTolls && !tollEstimationPrompt) {
+           console.warn("[DistanceFlow] Tolls indicated by Maps, but tollEstimationPrompt is undefined. This can happen if Genkit AI failed to initialize.");
+         }
       }
 
       console.log(`[DistanceFlow] Final estimatedTollCostOneWay before returning: ${estimatedTollCostOneWay}`);
@@ -242,11 +239,12 @@ Exemplo de saída se não houver pedágio provável:
  */
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
   if (typeof calculateDistanceFlow !== 'function') {
-    console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. Critical initialization issue.");
+    console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. This usually means Genkit AI (ai) failed to initialize. Check genkit.ts logs.");
+    // Simulate an error similar to what would happen if the flow couldn't run
     return {
-        distanceKm: Math.floor(Math.random() * 450) + 50,
-        status: 'ERROR_GOOGLE_API_FAILED',
-        errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized. Using simulated distance.',
+        distanceKm: 0, // Or a random number if you prefer for dummy
+        status: 'ERROR_GOOGLE_API_FAILED', // A generic error status
+        errorMessage: 'Critical error: Distance calculation flow is not available due to AI initialization failure.',
         estimatedTollCostByAI: null,
         googleMapsApiIndicstedTolls: undefined,
     };
@@ -256,9 +254,9 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   } catch (error: any) {
     console.error("[DistanceFlow] Error executing calculateDistanceFlow:", error);
     return {
-      distanceKm: Math.floor(Math.random() * 450) + 50,
+      distanceKm: 0,
       status: 'ERROR_GOOGLE_API_FAILED',
-      errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
+      errorMessage: `Error executing flow: ${error.message}.`,
       estimatedTollCostByAI: null,
       googleMapsApiIndicstedTolls: undefined,
     };
