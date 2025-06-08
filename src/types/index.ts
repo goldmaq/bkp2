@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 
+// Placeholder constants to be used for schema validation checks
+// These must match the values used for placeholder SelectItems in the client page
+const NO_SERVICE_ORDER_SELECTED_VALUE_FOR_SCHEMA_CHECK = "_NO_OS_SELECTED_";
+const NO_TECHNICIAN_SELECTED_VALUE_FOR_SCHEMA_CHECK = "_NO_TECHNICIAN_SELECTED_";
+
+
 export interface Customer {
   id: string;
   name: string;
@@ -226,7 +232,7 @@ export type PartsRequisitionItemStatusType = typeof partsRequisitionItemStatusOp
 
 export interface PartsRequisitionItem {
   id: string; // UUID
-  requisitionId: string;
+  // requisitionId: string; // No longer needed here, implicit link
   partName: string;
   quantity: number;
   notes?: string | null;
@@ -238,14 +244,14 @@ export interface PartsRequisitionItem {
 }
 
 export interface PartsRequisition {
-  id: string; // UUID
+  id: string; // UUID, generated client-side for setDoc
   requisitionNumber: string; // Ex: REQ-0001
   serviceOrderId: string;
   technicianId: string; // ID do técnico que solicitou
   technicianName?: string; // Nome do técnico (para exibição)
   createdDate: string; // ISO string (Timestamp no Firestore)
   status: PartsRequisitionStatusType;
-  items: PartsRequisitionItem[]; // Array de itens solicitados (armazenado como subcoleção ou array)
+  items: PartsRequisitionItem[]; // Array de itens solicitados
   generalNotes?: string | null; // Observações gerais da requisição
 }
 
@@ -440,7 +446,7 @@ export const BudgetSchema = z.object({
 // --- Requisição de Peças Schemas ---
 export const PartsRequisitionItemSchema = z.object({
   id: z.string().uuid("ID do item deve ser um UUID válido."),
-  requisitionId: z.string().min(1, "ID da Requisição é obrigatório."),
+  // requisitionId: z.string().min(1, "ID da Requisição é obrigatório."), // Removido, pois será implícito
   partName: requiredString("Nome da peça"),
   quantity: z.coerce.number().int().min(1, "Quantidade deve ser pelo menos 1."),
   notes: z.string().optional().nullable(),
@@ -452,12 +458,18 @@ export const PartsRequisitionItemSchema = z.object({
 });
 
 export const PartsRequisitionSchema = z.object({
-  id: z.string().uuid("ID da requisição deve ser um UUID válido."),
+  id: z.string().uuid("ID da requisição deve ser um UUID válido.").optional(), // Opcional na criação, pois será gerado
   requisitionNumber: requiredString("Número da Requisição"),
-  serviceOrderId: requiredString("Ordem de Serviço vinculada"),
-  technicianId: requiredString("ID do Técnico"),
-  technicianName: z.string().optional(),
-  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida."),
+  serviceOrderId: requiredString("Ordem de Serviço vinculada")
+    .refine(val => val !== NO_SERVICE_ORDER_SELECTED_VALUE_FOR_SCHEMA_CHECK, {
+      message: "Selecione uma Ordem de Serviço válida.",
+    }),
+  technicianId: requiredString("Técnico solicitante")
+    .refine(val => val !== NO_TECHNICIAN_SELECTED_VALUE_FOR_SCHEMA_CHECK, {
+      message: "Selecione um Técnico válido.",
+    }),
+  technicianName: z.string().optional(), // Pode ser preenchido programaticamente
+  createdDate: z.string().refine(val => isValidDate(parseISO(val)), "Data de criação inválida.").optional(), // Será serverTimestamp
   status: z.enum(partsRequisitionStatusOptions, { required_error: "Status da requisição é obrigatório."}),
   items: z.array(PartsRequisitionItemSchema).min(1, "A requisição deve ter pelo menos uma peça."),
   generalNotes: z.string().optional().nullable(),
