@@ -529,5 +529,3 @@ export function PartsWarehouseClientPage() {
     </>
   );
 }
-
-    
