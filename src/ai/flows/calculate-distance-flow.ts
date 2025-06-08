@@ -2,10 +2,8 @@
 'use server';
 /**
  * @fileOverview A Genkit flow to calculate driving distance between two addresses
- * and optionally estimate toll costs using an LLM.
- * It attempts to use Nominatim for geocoding and Haversine for distance,
- * falling back to random simulation if API calls fail.
- * Toll cost estimation is a very rough approximation by an LLM.
+ * using the Google Maps Directions API and estimate toll costs using an LLM
+ * if tolls are indicated by the Directions API.
  *
  * - calculateDistance - A function that handles distance and toll cost estimation.
  * - CalculateDistanceInput - The input type for the calculateDistance function.
@@ -13,37 +11,34 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit'; // Flow type is not needed if we simplify the variable type
+import { z } from 'genkit';
 
-// Define Zod schemas based on the interfaces from types/index.ts
 const CalculateDistanceInputSchema = z.object({
   originAddress: z.string().describe("The full starting address."),
   destinationAddress: z.string().describe("The full destination address."),
 });
 export type CalculateDistanceInput = z.infer<typeof CalculateDistanceInputSchema>;
 
-
 const CalculateDistanceOutputSchema = z.object({
-  distanceKm: z.number().describe("The calculated distance in kilometers."),
-  status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_API_FAILED', 'SIMULATED', 'ERROR_GEOCODING_FAILED', 'ERROR_LLM_TOLL_ESTIMATION']).describe("Status of the calculation."),
+  distanceKm: z.number().describe("The calculated distance in kilometers (one-way)."),
+  status: z.enum(['SUCCESS', 'ERROR_NO_ADDRESS', 'ERROR_GOOGLE_API_FAILED', 'ERROR_GOOGLE_API_KEY_MISSING', 'ERROR_NO_ROUTE_FOUND', 'ERROR_LLM_TOLL_ESTIMATION']).describe("Status of the calculation."),
   errorMessage: z.string().optional().describe("Error message if the status is an error."),
-  estimatedTollCostByAI: z.number().optional().nullable().describe("Rough estimate of one-way toll cost in BRL by AI, if available. May not be accurate."),
+  estimatedTollCostByAI: z.number().optional().nullable().describe("Rough estimate of one-way toll cost in BRL by AI, if tolls are likely. May not be accurate."),
+  googleMapsApiIndicstedTolls: z.boolean().optional().describe("Indicates if Google Maps API suggested the route has tolls.")
 });
 export type CalculateDistanceOutput = z.infer<typeof CalculateDistanceOutputSchema>;
 
-// Input schema for the toll estimation LLM prompt
 const TollEstimationLLMInputSchema = z.object({
   originAddress: z.string(),
   destinationAddress: z.string(),
   distanceKm: z.number(),
 });
 
-// Output schema for the toll estimation LLM prompt
 const TollEstimationLLMOutputSchema = z.object({
   estimatedTollOneWay: z.number().describe("Custo estimado do pedágio APENAS PARA O TRECHO DE IDA, em Reais (BRL). Se não for possível estimar ou não houver pedágios, retorne 0."),
 });
 
-let tollEstimationPrompt: any; // Define it later if ai is available
+let tollEstimationPrompt: any;
 
 if (ai) {
   tollEstimationPrompt = ai.definePrompt({
@@ -55,102 +50,78 @@ Para uma viagem de carro no Brasil entre o endereço de origem:
 "{originAddress}"
 e o endereço de destino:
 "{destinationAddress}"
-que tem uma distância rodoviária aproximada de {distanceKm} km (apenas ida), qual seria uma estimativa numérica MUITO APROXIMADA do custo total com pedágios APENAS PARA O TRECHO DE IDA, em Reais (BRL)?
+que tem uma distância rodoviária de {distanceKm} km (apenas ida), qual seria uma estimativa numérica MUITO APROXIMADA do custo total com pedágios APENAS PARA O TRECHO DE IDA, em Reais (BRL)?
 
 Responda apenas com o número estimado. Se não for possível fazer uma estimativa razoável ou se provavelmente não houver pedágios, retorne 0.
 Não inclua unidades ou qualquer texto adicional na sua resposta, apenas o valor numérico.
 Exemplo de resposta: 25.50
 Exemplo de resposta se não houver pedágio ou estimativa: 0`,
     config: {
-      temperature: 0.2, // Lower temperature for more factual/less creative response
+      temperature: 0.2,
     }
   });
 }
 
+async function fetchRouteFromGoogleMaps(
+  origin: string,
+  destination: string
+): Promise<{ distanceKm: number; durationText: string; googleIndicatesTolls: boolean } | { error: string; status: CalculateDistanceOutput['status'] }> {
+  console.log(`[DistanceFlow/GoogleMaps] Fetching route. Origin: "${origin}", Destination: "${destination}"`);
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    console.error("[DistanceFlow/GoogleMaps] Google Maps API Key is missing from environment variables.");
+    return { error: "Google Maps API Key is not configured.", status: 'ERROR_GOOGLE_API_KEY_MISSING' };
+  }
 
-// Helper function to fetch with timeout
-async function fetchWithTimeout(resource: RequestInfo | URL, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
-  const { timeout = 5000 } = options; // Default timeout 5 seconds
+  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&key=${apiKey}&language=pt-BR&units=metric`;
 
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-
-  const response = await fetch(resource, {
-    ...options,
-    signal: controller.signal
-  });
-  clearTimeout(id);
-  return response;
-}
-
-// Helper function to geocode an address using Nominatim
-async function geocodeAddress(address: string): Promise<{ latitude: number; longitude: number } | null> {
-  const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
-  console.log(`[DistanceFlow] Geocoding address: "${address}" with URL: ${nominatimUrl}`);
   try {
-    const response = await fetchWithTimeout(nominatimUrl, {
-      headers: {
-        'User-Agent': 'GoldMaqControlApp/1.0 (Firebase Studio Project; +gold-maq-control)',
-      },
-      timeout: 5000,
-    });
-
-    if (!response.ok) {
-      console.error(`[DistanceFlow] Nominatim API error for "${address}": ${response.status} ${response.statusText}`);
-      return null;
-    }
+    const response = await fetch(url);
     const data = await response.json();
-    if (data && data.length > 0) {
-      const { lat, lon } = data[0];
-      console.log(`[DistanceFlow] Geocoded "${address}" to: lat=${lat}, lon=${lon}`);
-      return { latitude: parseFloat(lat), longitude: parseFloat(lon) };
+
+    if (data.status !== 'OK' || !data.routes || data.routes.length === 0) {
+      console.warn(`[DistanceFlow/GoogleMaps] API error or no route found. Status: ${data.status}, Message: ${data.error_message || 'No routes found'}`);
+      return { error: data.error_message || `No route found between ${origin} and ${destination}. Google Status: ${data.status}`, status: 'ERROR_NO_ROUTE_FOUND' };
     }
-    console.warn(`[DistanceFlow] No geocoding results for address: "${address}"`);
-    return null;
+
+    const route = data.routes[0];
+    const leg = route.legs[0];
+
+    if (!leg.distance || !leg.duration) {
+        console.warn("[DistanceFlow/GoogleMaps] API response missing distance or duration.", leg);
+        return { error: "Incomplete route information from Google Maps API.", status: 'ERROR_GOOGLE_API_FAILED'};
+    }
+
+    const distanceKm = parseFloat((leg.distance.value / 1000).toFixed(1)); // Distance in km, one decimal place
+    const durationText = leg.duration.text;
+
+    // Check for toll information. This can vary by region and response structure.
+    // A common indicator is the presence of a 'tolls' field or if 'warnings' mention tolls.
+    let googleIndicatesTolls = false;
+    if (route.warnings && route.warnings.some((w: string) => w.toLowerCase().includes("pedágio") || w.toLowerCase().includes("toll"))) {
+        googleIndicatesTolls = true;
+    }
+    if (leg.tolls_info || (leg as any).tolls ) { // 'tolls' is not standard but sometimes appears
+        googleIndicatesTolls = true;
+    }
+    // More robust check: if the route summary contains "toll" or "pedágio"
+    if (route.summary && (route.summary.toLowerCase().includes("toll") || route.summary.toLowerCase().includes("pedágio"))){
+        googleIndicatesTolls = true;
+    }
+
+
+    console.log(`[DistanceFlow/GoogleMaps] Route found: Distance ${distanceKm} km, Duration ${durationText}, Google Indicates Tolls: ${googleIndicatesTolls}`);
+    return { distanceKm, durationText, googleIndicatesTolls };
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.error(`[DistanceFlow] Error geocoding address "${address}": Request timed out.`);
-    } else {
-      console.error(`[DistanceFlow] Error geocoding address "${address}":`, error);
-    }
-    return null;
+    console.error("[DistanceFlow/GoogleMaps] Error fetching route:", error);
+    return { error: `Failed to fetch route from Google Maps: ${error.message}`, status: 'ERROR_GOOGLE_API_FAILED' };
   }
 }
 
-// Helper function to calculate Haversine distance
-function haversineDistance(
-  coords1: { latitude: number; longitude: number },
-  coords2: { latitude: number; longitude: number }
-): number {
-  function toRad(x: number): number {
-    return x * Math.PI / 180;
-  }
-
-  const R = 6371; // Earth's radius in kilometers
-
-  const dLat = toRad(coords2.latitude - coords1.latitude);
-  const dLon = toRad(coords2.longitude - coords1.longitude);
-  const lat1Rad = toRad(coords1.latitude);
-  const lat2Rad = toRad(coords2.latitude);
-
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1Rad) * Math.cos(lat2Rad) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
-  return distance;
-}
-
-// Placeholder for getSimulatedDistance
-function getSimulatedDistance(): number {
-  return Math.floor(Math.random() * 450) + 50;
-}
-
-// Declare calculateDistanceFlow with its type as a simple function
 let calculateDistanceFlow: (input: CalculateDistanceInput) => Promise<CalculateDistanceOutput>;
 
 if (ai && tollEstimationPrompt) {
-  console.log("[DistanceFlow] Genkit AI instance (ai) IS available. Defining real flow with toll estimation.");
+  console.log("[DistanceFlow] Genkit AI instance (ai) IS available. Defining real flow with Google Maps and toll estimation.");
   calculateDistanceFlow = ai.defineFlow(
     {
       name: 'calculateDistanceFlow',
@@ -158,11 +129,7 @@ if (ai && tollEstimationPrompt) {
       outputSchema: CalculateDistanceOutputSchema,
     },
     async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
-      console.log("[DistanceFlow] Received input:", input);
-      console.log(`[DistanceFlow] Origin Address for Flow: "${input.originAddress}"`);
-      console.log(`[DistanceFlow] Destination Address for Flow: "${input.destinationAddress}"`);
-      let estimatedTollCostOneWay: number | null = null;
-
+      console.log("[DistanceFlow] Received input for Google Maps flow:", input);
       if (!input.originAddress || !input.destinationAddress) {
         return {
           distanceKm: 0,
@@ -171,106 +138,84 @@ if (ai && tollEstimationPrompt) {
         };
       }
 
-      const originCoords = await geocodeAddress(input.originAddress);
-      if (!originCoords) {
-        console.warn("[DistanceFlow] Failed to geocode origin address. Falling back to simulation.");
+      const routeResult = await fetchRouteFromGoogleMaps(input.originAddress, input.destinationAddress);
+
+      if ('error' in routeResult) {
         return {
-          distanceKm: getSimulatedDistance(),
-          status: 'ERROR_GEOCODING_FAILED',
-          errorMessage: "Failed to geocode origin address. Using simulated distance.",
+          distanceKm: 0,
+          status: routeResult.status,
+          errorMessage: routeResult.error,
         };
       }
 
-      const destinationCoords = await geocodeAddress(input.destinationAddress);
-      if (!destinationCoords) {
-        console.warn("[DistanceFlow] Failed to geocode destination address. Falling back to simulation.");
-        return {
-          distanceKm: getSimulatedDistance(),
-          status: 'ERROR_GEOCODING_FAILED',
-          errorMessage: "Failed to geocode destination address. Using simulated distance.",
-        };
-      }
+      const { distanceKm, googleIndicatesTolls } = routeResult;
+      let estimatedTollCostOneWay: number | null = null;
 
-      try {
-        const directDistanceKm = haversineDistance(originCoords, destinationCoords);
-        console.log(`[DistanceFlow] Haversine (direct) distance: ${directDistanceKm.toFixed(2)} km`);
-        
-        const estimatedDrivingDistanceKm = directDistanceKm * 1.3; // Adjusted factor from 1.4 to 1.3
-        console.log(`[DistanceFlow] Estimated driving distance (Haversine * 1.3): ${estimatedDrivingDistanceKm.toFixed(2)} km`);
-        
-        const finalDistanceKm = parseFloat(estimatedDrivingDistanceKm.toFixed(1));
-        console.log(`[DistanceFlow] Final distance to be returned by flow (one-way): ${finalDistanceKm} km`);
-
-
-        // Try to estimate toll costs using LLM
+      if (googleIndicatesTolls) {
+        console.log("[DistanceFlow] Google Maps indicated tolls. Attempting LLM toll estimation.");
         try {
           const llmResponse = await tollEstimationPrompt({
             originAddress: input.originAddress,
             destinationAddress: input.destinationAddress,
-            distanceKm: finalDistanceKm,
+            distanceKm: distanceKm, // Use one-way distance for LLM prompt
           });
           if (llmResponse.output && typeof llmResponse.output.estimatedTollOneWay === 'number') {
             estimatedTollCostOneWay = llmResponse.output.estimatedTollOneWay;
             console.log(`[DistanceFlow] LLM estimated one-way toll cost: ${estimatedTollCostOneWay}`);
           } else {
-             console.warn("[DistanceFlow] LLM did not return a valid 'estimatedTollOneWay' number.");
+             console.warn("[DistanceFlow] LLM did not return a valid 'estimatedTollOneWay' number for toll estimation.");
           }
         } catch (llmError: any) {
           console.error("[DistanceFlow] Error during LLM toll estimation:", llmError);
-          // Non-fatal error for toll estimation, proceed without it
+          // Non-fatal error for toll estimation, proceed without it but log it.
+           return {
+            distanceKm: distanceKm, // Still return the distance
+            status: 'ERROR_LLM_TOLL_ESTIMATION',
+            errorMessage: `Successfully fetched distance from Google Maps, but LLM toll estimation failed: ${llmError.message}`,
+            estimatedTollCostByAI: null,
+            googleMapsApiIndicstedTolls: googleIndicatesTolls,
+          };
         }
-
-        return {
-          distanceKm: finalDistanceKm,
-          status: 'SUCCESS',
-          estimatedTollCostByAI: estimatedTollCostOneWay,
-        };
-      } catch (error: any) {
-        console.error("[DistanceFlow] Error during Haversine calculation or API interaction:", error);
-        return {
-          distanceKm: getSimulatedDistance(),
-          status: 'SIMULATED',
-          errorMessage: `Error during distance calculation: ${error.message}. Using simulated distance.`,
-        };
+      } else {
+        console.log("[DistanceFlow] Google Maps did NOT indicate tolls. Skipping LLM toll estimation, setting toll cost to 0.");
+        estimatedTollCostOneWay = 0;
       }
+
+      return {
+        distanceKm: distanceKm, // This is one-way distance
+        status: 'SUCCESS',
+        estimatedTollCostByAI: estimatedTollCostOneWay, // This is one-way toll
+        googleMapsApiIndicstedTolls: googleIndicatesTolls,
+      };
     }
   );
 } else {
-  console.warn("[DistanceFlow] Genkit AI instance (ai) or tollEstimationPrompt is NOT available. Defining dummy flow (no toll estimation).");
+  console.warn("[DistanceFlow] Genkit AI instance (ai) or tollEstimationPrompt is NOT available. Defining dummy flow.");
   calculateDistanceFlow = async (input: CalculateDistanceInput): Promise<CalculateDistanceOutput> => {
-    console.warn("[DistanceFlow] Running DUMMY flow.");
+    console.warn("[DistanceFlow] Running DUMMY flow because Genkit AI or toll prompt is unavailable.");
     if (!input.originAddress || !input.destinationAddress) {
       return { distanceKm: 0, status: 'ERROR_NO_ADDRESS', errorMessage: "Origin or destination address is missing in dummy flow." };
     }
-    // Simulate a basic calculation or error for dummy
-    const simulatedDistance = getSimulatedDistance();
-    const shouldSimulateError = Math.random() < 0.1; // 10% chance of simulated error
-    if (shouldSimulateError) {
-      return {
-        distanceKm: simulatedDistance,
-        status: 'SIMULATED', // Or 'ERROR_API_FAILED' if you want to simulate that
-        errorMessage: 'Dummy flow simulated an API error.',
-        estimatedTollCostByAI: null,
-      };
-    }
+    const simulatedDistance = Math.floor(Math.random() * 450) + 50;
     return {
       distanceKm: simulatedDistance,
-      status: 'SIMULATED',
-      errorMessage: 'Using simulated distance from dummy flow as Genkit is not initialized.',
-      estimatedTollCostByAI: null,
+      status: 'ERROR_GOOGLE_API_KEY_MISSING', // Simulate a common error if dummy is used
+      errorMessage: 'Dummy flow: Simulating API key missing, as Genkit/Google Maps is not fully initialized.',
+      estimatedTollCostByAI: Math.random() > 0.5 ? Math.floor(Math.random() * 50) : 0,
+      googleMapsApiIndicstedTolls: Math.random() > 0.5,
     };
   };
 }
 
-// Exported wrapper function
 export async function calculateDistance(input: CalculateDistanceInput): Promise<CalculateDistanceOutput> {
   if (typeof calculateDistanceFlow !== 'function') {
-    console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. This indicates a severe initialization issue.");
+    console.error("[DistanceFlow] calculateDistanceFlow is not defined or not a function. Critical initialization issue.");
     return {
-        distanceKm: getSimulatedDistance(),
-        status: 'SIMULATED',
-        errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized.',
+        distanceKm: Math.floor(Math.random() * 450) + 50, // Fallback simulated distance
+        status: 'ERROR_GOOGLE_API_FAILED', // Generic failure status
+        errorMessage: 'Critical error: calculateDistanceFlow function is undefined or not properly initialized. Using simulated distance.',
         estimatedTollCostByAI: null,
+        googleMapsApiIndicstedTolls: undefined,
     };
   }
   try {
@@ -278,10 +223,11 @@ export async function calculateDistance(input: CalculateDistanceInput): Promise<
   } catch (error: any) {
     console.error("[DistanceFlow] Error executing calculateDistanceFlow:", error);
     return {
-      distanceKm: getSimulatedDistance(),
-      status: 'SIMULATED',
+      distanceKm: Math.floor(Math.random() * 450) + 50, // Fallback simulated distance
+      status: 'ERROR_GOOGLE_API_FAILED',
       errorMessage: `Error executing flow: ${error.message}. Using simulated distance.`,
       estimatedTollCostByAI: null,
+      googleMapsApiIndicstedTolls: undefined,
     };
   }
 }
