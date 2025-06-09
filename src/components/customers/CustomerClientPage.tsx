@@ -83,7 +83,7 @@ interface BrasilApiResponseCnpj {
   uf?: string;
   cep?: string;
   ddd_telefone_1?: string;
-  email?: string;
+  email?: string | null; // Can be string or null
   descricao_situacao_cadastral?: string;
   erro?: boolean;
   message?: string;
@@ -278,8 +278,7 @@ export function CustomerClientPage() {
     try {
       const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanedCnpj}`);
       const data: BrasilApiResponseCnpj = await response.json();
-      console.log("Resposta da API CNPJ:", data); // Para depuração do e-mail
-
+      
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
         toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
@@ -295,7 +294,7 @@ export function CustomerClientPage() {
         form.setValue("state", data.uf || "");
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
         
-        form.setValue("email", data.email || form.getValues("email") || "");
+        form.setValue("email", data.email ?? ""); // Se data.email for null, define como ""
 
         let primaryPhone = data.ddd_telefone_1 || "";
         if (!primaryPhone && (data as any).ddd_telefone_2) {
@@ -764,6 +763,3 @@ export function CustomerClientPage() {
     </>
   );
 }
-
-
-    
