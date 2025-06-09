@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react"; // Added useRe
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form"; // Added useWatch
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon, type LucideIcon } from "lucide-react";
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon, type LucideIcon, MapPin } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +24,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy,
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
-import { cn, toTitleCase } from "@/lib/utils";
+import { cn, toTitleCase, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils";
 import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -774,6 +774,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
             const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
             const OwnerIconComponent = getOwnerIcon(maq.ownerReference);
             const linkedAuxDetails = getLinkedAuxiliaryEquipmentDetails(maq.linkedAuxiliaryEquipmentIds);
+            const customerAddressDisplay = customer ? formatAddressForDisplay(customer) : null;
+            const customerGoogleMapsUrl = customer ? generateGoogleMapsUrl(customer) : "#";
+
             return (
             <Card
               key={maq.id}
@@ -814,17 +817,41 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                   </span>
                 </p>
                 {customer ? (
-                  <p className="flex items-center text-sm">
-                    <Users className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
-                    <Link
-                      href={`/customers?openCustomerId=${maq.customerId}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="ml-1 text-primary hover:underline truncate"
-                      title={`Ver detalhes de ${toTitleCase(customer.name)}`}
-                    >
-                      {toTitleCase(customer.name)}{customer.fantasyName ? ` (${toTitleCase(customer.fantasyName)})` : ''}
-                    </Link>
-                  </p>
+                  <>
+                    <p className="flex items-center text-sm">
+                      <Users className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Cliente:</span>
+                      <Link
+                        href={`/customers?openCustomerId=${maq.customerId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-1 text-primary hover:underline truncate"
+                        title={`Ver detalhes de ${toTitleCase(customer.name)}`}
+                      >
+                        {toTitleCase(customer.name)}{customer.fantasyName ? ` (${toTitleCase(customer.fantasyName)})` : ''}
+                      </Link>
+                    </p>
+                    {customerAddressDisplay && (
+                      <p className="flex items-start text-sm">
+                        <MapPin className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-muted-foreground mr-1">End. Cliente:</span>
+                          {customerGoogleMapsUrl !== "#" ? (
+                            <a
+                              href={customerGoogleMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline text-primary"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Abrir no Google Maps"
+                            >
+                              {customerAddressDisplay}
+                            </a>
+                          ) : (
+                            <span>{customerAddressDisplay}</span>
+                          )}
+                        </div>
+                      </p>
+                    )}
+                  </>
                 ) : maq.customerId ? (
                      <p className="flex items-center text-sm"><Users className="mr-2 h-4 w-4 text-muted-foreground" /> <span className="font-medium text-muted-foreground mr-1">Cliente:</span> ID {maq.customerId} (Carregando...)</p>
                 ): null}
@@ -1261,4 +1288,3 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     </>
   );
 }
-
