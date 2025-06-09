@@ -220,14 +220,14 @@ const getDeadlineStatusInfo = (
   endDateNormalized.setHours(0,0,0,0);
 
   if (isBefore(endDateNormalized, today) && !isToday(endDateNormalized)) {
-    return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5 text-destructive" />, alertClass: "bg-destructive/20 border-destructive/50 text-destructive" };
+    return { status: 'overdue', message: 'Atrasada!', icon: <AlertTriangle className="h-5 w-5 text-destructive" />, alertClass: "bg-destructive/20 border-destructive/50" };
   }
   if (isToday(endDateNormalized)) {
-    return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
+    return { status: 'due_today', message: 'Vence Hoje!', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50" };
   }
   const twoDaysFromNow = addDays(today, 2);
   if (isBefore(endDateNormalized, twoDaysFromNow)) {
-     return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50 text-accent" };
+     return { status: 'due_soon', message: 'Vence em Breve', icon: <AlertTriangle className="h-5 w-5 text-accent" />, alertClass: "bg-accent/20 border-accent/50" };
   }
   return { status: 'none', alertClass: "" };
 };
@@ -1677,3 +1677,4 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     </TooltipProvider>
   );
 }
+
