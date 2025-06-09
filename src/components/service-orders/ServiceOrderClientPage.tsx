@@ -201,10 +201,10 @@ const getNextOrderNumber = (currentOrders: ServiceOrder[]): string => {
 type DeadlineStatus = 'overdue' | 'due_today' | 'due_soon' | 'none';
 
 const getDeadlineStatusInfo = (
-  endDateString?: string,
+  endDateString?: string | null,
   phase?: ServiceOrderPhaseType
 ): { status: DeadlineStatus; message?: string; icon?: JSX.Element; alertClass?: string } => {
-  if (!endDateString || phase === 'Concluída' || phase === 'Cancelada') {
+  if (typeof endDateString !== 'string' || endDateString.trim() === "" || phase === 'Concluída' || phase === 'Cancelada') {
     return { status: 'none', alertClass: "" };
   }
 
