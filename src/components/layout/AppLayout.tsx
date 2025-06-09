@@ -35,7 +35,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { BackToTopButton } from "@/components/shared/BackToTopButton";
-import { ThemeToggle } from "@/components/shared/ThemeToggle"; // Importar ThemeToggle
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 interface NavItem {
   href: string;
@@ -134,14 +134,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
               {currentPathname === "/" ? "Painel Principal" : pageTitle}
             </div>
             <div>
-              <ThemeToggle /> {/* Adicionar ThemeToggle aqui */}
+              <ThemeToggle />
             </div>
           </header>
           <main className="flex-1 p-6 overflow-auto bg-background">
             {children}
+            <div className="text-center text-xs text-muted-foreground mt-8 py-4">
+              Versão {appVersion}
+            </div>
           </main>
           <footer className="p-4 text-right text-xs text-muted-foreground border-t">
-            <p>Versão {appVersion}</p>
+            {/* A informação da versão foi movida para o final do <main> */}
           </footer>
           <BackToTopButton />
         </SidebarInset>
