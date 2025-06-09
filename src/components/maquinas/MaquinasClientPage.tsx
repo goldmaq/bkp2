@@ -830,7 +830,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                       </Link>
                     </p>
                     {customerAddressDisplay && (
-                      <p className="flex items-start text-sm">
+                      <div className="flex items-start text-sm">
                         <MapPin className="mr-2 mt-0.5 h-4 w-4 text-primary flex-shrink-0" />
                         <div>
                           <span className="font-medium text-muted-foreground mr-1">End. Cliente:</span>
@@ -849,7 +849,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                             <span>{customerAddressDisplay}</span>
                           )}
                         </div>
-                      </p>
+                      </div>
                     )}
                   </>
                 ) : maq.customerId ? (
@@ -1288,3 +1288,4 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     </>
   );
 }
+
