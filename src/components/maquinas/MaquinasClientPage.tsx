@@ -26,6 +26,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, toTitleCase, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils";
 import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -876,23 +877,22 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                           <PackageSearch className="mr-1.5 h-3.5 w-3.5 text-primary" />
                           <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
                         </h4>
-                        <ul className="list-none pl-1 space-y-0.5">
-                          {linkedAuxDetails.slice(0, 3).map(aux => (
-                            <li key={aux.id} className="text-xs text-muted-foreground">
-                              <Link
-                                href={`/auxiliary-equipment?openAuxEquipmentId=${aux.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="hover:underline hover:text-primary transition-colors"
-                                title={`Ver detalhes de ${aux.name}`}
-                              >
-                                {aux.name}
-                              </Link>
-                            </li>
-                          ))}
-                          {linkedAuxDetails.length > 3 && (
-                            <li className="text-xs text-muted-foreground">...e mais {linkedAuxDetails.length - 3}.</li>
-                          )}
-                        </ul>
+                        <ScrollArea className="max-h-24 pr-2">
+                          <ul className="list-none pl-1 space-y-0.5">
+                            {linkedAuxDetails.map(aux => (
+                              <li key={aux.id} className="text-xs text-muted-foreground">
+                                <Link
+                                  href={`/auxiliary-equipment?openAuxEquipmentId=${aux.id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="hover:underline hover:text-primary transition-colors"
+                                  title={`Ver detalhes de ${aux.name}`}
+                                >
+                                  {aux.name}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </ScrollArea>
                       </div>
                     ) : (
                       <p className="flex items-center text-xs text-muted-foreground mt-1">
