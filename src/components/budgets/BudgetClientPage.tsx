@@ -214,7 +214,7 @@ const generateEmailBody = (
   } else if (budget.createdDate && isValidDateFn(parseISO(budget.createdDate))) {
      const creationDate = parseISO(budget.createdDate);
      const validityEndDate = addDays(creationDate, 7);
-     validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias úteis)`;
+     validityDisplay = formatDateForDisplay(validityEndDate);
   }
   body += `Validade da Proposta: ${validityDisplay}%0A`;
 
@@ -825,13 +825,16 @@ export function BudgetClientPage() {
   return (
     <>
       <PageHeader
-        title="Orçamentos"
+        title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Criar Orçamento
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Criação e gerenciamento de propostas comerciais (orçamentos) para os clientes. Detalhe itens, calcule custos, defina validades, envie e acompanhe o status. Orçamentos aprovados podem gerar Ordens de Serviço.
+      </p>
 
       <div className="mb-6 flex flex-col md:flex-row gap-4">
         <div className="relative flex-grow">
