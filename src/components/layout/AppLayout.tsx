@@ -47,7 +47,7 @@ const navItems: NavItem[] = [
   { href: "/", icon: LayoutDashboard, label: "Painel" },
   { href: "/customers", icon: Users, label: "Clientes" },
   { href: "/maquinas", icon: Construction, label: "Máquinas" },
-  { href: "/auxiliary-equipment", icon: PackageSearch, label: "Equip. Auxiliares" },
+  { href: "/auxiliary-equipment", icon: PackageSearch, label: "Equipamentos Auxiliares" },
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
   { href: "/budgets", icon: FileText, label: "Orçamentos" },
   { href: "/parts-requisitions", icon: Wrench, label: "Requisições Peças" },
@@ -133,7 +133,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center">
                <SidebarTrigger className="md:hidden"/>
             </div>
-            <div className="font-heading text-2xl font-semibold text-foreground"> {/* Alterado de text-lg para text-2xl */}
+            <div className="font-heading text-3xl font-semibold text-foreground"> {/* Alterado de text-2xl para text-3xl */}
               {currentPathname === "/" ? "Painel Principal" : pageTitle}
             </div>
             <div>
