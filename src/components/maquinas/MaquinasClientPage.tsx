@@ -2,9 +2,9 @@
 "use client";
 
 import React, { useMemo } from 'react'; 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react"; // Added useRef
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form"; // Added useWatch
 import type * as z from "zod";
 import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter } from "lucide-react"; 
 import Link from "next/link";
@@ -24,7 +24,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy,
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
-import { cn, toTitleCase } from "@/lib/utils"; // Importa toTitleCase
+import { cn, toTitleCase } from "@/lib/utils"; 
 import type { LucideIcon } from "lucide-react";
 import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; 
 
@@ -204,6 +204,27 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     },
   });
 
+  const watchedCustomerId = useWatch({ control: form.control, name: 'customerId' });
+  const prevCustomerIdRef = useRef<string | null | undefined>(null);
+
+  useEffect(() => {
+    if (isEditMode) {
+      const currentStatus = form.getValues('operationalStatus');
+      if (watchedCustomerId && watchedCustomerId !== NO_CUSTOMER_SELECT_ITEM_VALUE && prevCustomerIdRef.current !== watchedCustomerId) {
+        if (currentStatus === "Disponível" || !prevCustomerIdRef.current || prevCustomerIdRef.current === NO_CUSTOMER_SELECT_ITEM_VALUE) {
+           form.setValue('operationalStatus', 'Locada', { shouldValidate: true, shouldDirty: true });
+        }
+      } else if ((!watchedCustomerId || watchedCustomerId === NO_CUSTOMER_SELECT_ITEM_VALUE) && prevCustomerIdRef.current && prevCustomerIdRef.current !== NO_CUSTOMER_SELECT_ITEM_VALUE) {
+         if (currentStatus === "Locada") {
+           form.setValue('operationalStatus', 'Disponível', { shouldValidate: true, shouldDirty: true });
+         }
+      }
+    }
+    prevCustomerIdRef.current = watchedCustomerId;
+  }, [watchedCustomerId, isEditMode, form]);
+
+
+
   const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({
     queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
     queryFn: fetchMaquinas,
@@ -225,7 +246,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const getOwnerDisplayString = useCallback((ownerRef?: OwnerReferenceType | null, customerId?: string | null, customersList?: Customer[]): string => {
     if (ownerRef === OWNER_REF_CUSTOMER) {
       const customer = customersList?.find(c => c.id === customerId);
-      return customer ? `${customer.name}` : 'Cliente (Não Vinculado)';
+      return customer ? `${toTitleCase(customer.name)}` : 'Cliente (Não Vinculado)';
     }
     if (companyIds.includes(ownerRef as CompanyId)) {
       const company = companyDisplayOptions.find(c => c.id === ownerRef);
@@ -246,11 +267,14 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       const lowercasedSearchTerm = searchTerm.toLowerCase();
       filtered = filtered.filter((maq) => {
         const ownerDisplay = getOwnerDisplayString(maq.ownerReference, maq.customerId, customers);
+        const customer = customers.find(c => c.id === maq.customerId);
         return (
           maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
-          ownerDisplay.toLowerCase().includes(lowercasedSearchTerm)
+          ownerDisplay.toLowerCase().includes(lowercasedSearchTerm) ||
+          (customer?.name.toLowerCase().includes(lowercasedSearchTerm)) ||
+          (customer?.fantasyName && customer.fantasyName.toLowerCase().includes(lowercasedSearchTerm))
         );
       });
     }
@@ -263,7 +287,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     setErrorCodesFile(null);
     if (maquina) {
       setEditingMaquina(maquina);
-      setIsEditMode(false);
+      setIsEditMode(false); // View mode first
       const isBrandPredefined = predefinedBrandOptionsList.includes(maquina.brand) && maquina.brand !== "Outra";
       const isEquipmentTypePredefined = maquinaTypeOptions.includes(maquina.equipmentType as any);
 
@@ -291,9 +315,10 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         linkedAuxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
       });
       setShowCustomFields({ brand: !isBrandPredefined, equipmentType: !isEquipmentTypePredefined });
+      prevCustomerIdRef.current = maquina.customerId; 
     } else {
       setEditingMaquina(null);
-      setIsEditMode(true);
+      setIsEditMode(true); // Edit mode for new
       form.reset({
         brand: "", model: "", chassisNumber: "", equipmentType: "Empilhadeira Contrabalançada GLP",
         operationalStatus: "Disponível", customerId: null,
@@ -307,6 +332,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         linkedAuxiliaryEquipmentIds: [],
       });
       setShowCustomFields({ brand: false, equipmentType: false });
+      prevCustomerIdRef.current = null;
     }
     setIsModalOpen(true);
   }, [form]);
@@ -585,6 +611,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     setIsEditMode(false);
     form.reset();
     setShowCustomFields({ brand: false, equipmentType: false });
+    prevCustomerIdRef.current = undefined; // Reset prevCustomerIdRef
   };
 
   const onSubmit = async (values: z.infer<typeof MaquinaSchema>) => {
@@ -695,7 +722,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         <div className="relative flex-grow">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            placeholder="Buscar por marca, modelo, frota ou chassi..."
+            placeholder="Buscar por marca, modelo, chassi, cliente, fantasia ou proprietário..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
@@ -782,7 +809,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                       href={`/customers?openCustomerId=${maq.customerId}`}
                       onClick={(e) => e.stopPropagation()}
                       className="ml-1 text-primary hover:underline truncate"
-                      title={`Ver detalhes de ${customer.name}`}
+                      title={`Ver detalhes de ${toTitleCase(customer.name)}`}
                     >
                       {toTitleCase(customer.name)}{customer.fantasyName ? ` (${toTitleCase(customer.fantasyName)})` : ''}
                     </Link>
