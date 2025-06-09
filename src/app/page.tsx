@@ -6,12 +6,12 @@ import Link from "next/link";
 import { 
   Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal, 
   ArrowRight, PackageSearch, FileText, BarChart3, AlertTriangle, CheckCircle,
-  DollarSign, Package, ListChecks, Wrench as WrenchIcon
+  DollarSign, Package, ListChecks, Wrench as WrenchIcon, TrendingUp, TrendingDown, Banknote
 } from "lucide-react";
 import { KPICard } from '@/components/dashboard/KPICard';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { Maquina, Budget, ServiceOrder, Vehicle } from '@/types'; // Added Vehicle
+import type { Maquina, Budget, ServiceOrder } from '@/types'; // Vehicle type removed
 import { maquinaOperationalStatusOptions, budgetStatusOptions, serviceOrderPhaseOptions } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -29,17 +29,51 @@ const quickLinks = [
   { title: "Dados das Empresas", href: "/company-config", icon: SlidersHorizontal, description: "Definir detalhes das empresas do grupo" },
 ];
 
-async function getMaquinaKPIs() {
-  if (!db) return { total: 0, disponivel: 0, locada: 0, manutencao: 0, sucata: 0 };
+interface MaquinaRentalKPIs {
+  totalRentalValue: number;
+  highestRentalMachine?: { name: string; value: number; id: string };
+  lowestRentalMachine?: { name: string; value: number; id: string };
+}
+
+async function getMaquinaKPIs(): Promise<{
+  total: number;
+  disponivel: number;
+  locada: number;
+  manutencao: number;
+  sucata: number;
+} & MaquinaRentalKPIs> {
+  if (!db) return { total: 0, disponivel: 0, locada: 0, manutencao: 0, sucata: 0, totalRentalValue: 0 };
   const maquinasSnapshot = await getDocs(collection(db, 'equipamentos'));
-  const maquinas = maquinasSnapshot.docs.map(doc => doc.data() as Maquina);
+  const maquinas = maquinasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Maquina));
   
+  let totalRentalValue = 0;
+  let highestRentalMachine: { name: string; value: number; id: string } | undefined = undefined;
+  let lowestRentalMachine: { name: string; value: number; id: string } | undefined = undefined;
+
+  maquinas.forEach(m => {
+    if (typeof m.monthlyRentalValue === 'number' && m.monthlyRentalValue > 0) {
+      totalRentalValue += m.monthlyRentalValue;
+
+      const machineName = `${m.brand} ${m.model} (${m.chassisNumber})`;
+
+      if (!highestRentalMachine || m.monthlyRentalValue > highestRentalMachine.value) {
+        highestRentalMachine = { name: machineName, value: m.monthlyRentalValue, id: m.id };
+      }
+      if (!lowestRentalMachine || m.monthlyRentalValue < lowestRentalMachine.value) {
+        lowestRentalMachine = { name: machineName, value: m.monthlyRentalValue, id: m.id };
+      }
+    }
+  });
+
   return {
     total: maquinas.length,
     disponivel: maquinas.filter(m => m.operationalStatus === 'Disponível').length,
     locada: maquinas.filter(m => m.operationalStatus === 'Locada').length,
     manutencao: maquinas.filter(m => m.operationalStatus === 'Em Manutenção').length,
     sucata: maquinas.filter(m => m.operationalStatus === 'Sucata').length,
+    totalRentalValue,
+    highestRentalMachine,
+    lowestRentalMachine,
   };
 }
 
@@ -73,25 +107,11 @@ async function getServiceOrderKPIs() {
   };
 }
 
-async function getVehicleKPIs() {
-  if (!db) return { totalFipeValue: 0, vehicleCount: 0 };
-  const vehiclesSnapshot = await getDocs(collection(db, 'veiculos'));
-  const vehicles = vehiclesSnapshot.docs.map(doc => doc.data() as Vehicle);
-
-  const totalFipeValue = vehicles.reduce((sum, v) => sum + (v.fipeValue || 0), 0);
-  
-  return {
-    totalFipeValue: totalFipeValue,
-    vehicleCount: vehicles.length,
-  };
-}
-
 
 export default async function DashboardPage() {
   const maquinaKPIs = await getMaquinaKPIs();
   const budgetKPIs = await getBudgetKPIs();
   const serviceOrderKPIs = await getServiceOrderKPIs();
-  const vehicleKPIs = await getVehicleKPIs();
 
   return (
     <AppLayout>
@@ -126,6 +146,33 @@ export default async function DashboardPage() {
               iconColor="text-yellow-500"
               href="/maquinas?status=Em Manutenção"
             />
+            <KPICard
+                title="Soma Mensal Aluguéis Máquinas"
+                value={formatCurrency(maquinaKPIs.totalRentalValue)}
+                icon={Banknote}
+                iconColor="text-green-600"
+                href="/maquinas"
+            />
+            {maquinaKPIs.highestRentalMachine && (
+                <KPICard
+                    title="Maior Aluguel Mensal"
+                    value={formatCurrency(maquinaKPIs.highestRentalMachine.value)}
+                    icon={TrendingUp}
+                    iconColor="text-emerald-500"
+                    additionalInfo={<span className="text-xs">{maquinaKPIs.highestRentalMachine.name}</span>}
+                    href={`/maquinas?openMaquinaId=${maquinaKPIs.highestRentalMachine.id}`}
+                />
+            )}
+            {maquinaKPIs.lowestRentalMachine && (
+                <KPICard
+                    title="Menor Aluguel Mensal"
+                    value={formatCurrency(maquinaKPIs.lowestRentalMachine.value)}
+                    icon={TrendingDown}
+                    iconColor="text-amber-600"
+                    additionalInfo={<span className="text-xs">{maquinaKPIs.lowestRentalMachine.name}</span>}
+                    href={`/maquinas?openMaquinaId=${maquinaKPIs.lowestRentalMachine.id}`}
+                />
+            )}
              <KPICard 
               title="Orçamentos Pendentes" 
               value={budgetKPIs.pendingCount} 
@@ -148,14 +195,6 @@ export default async function DashboardPage() {
               icon={ClipboardList} 
               iconColor="text-orange-500"
               href="/service-orders?status=Abertas"
-            />
-            <KPICard
-              title="Valor Total da Frota (FIPE)"
-              value={formatCurrency(vehicleKPIs.totalFipeValue)}
-              icon={CarFront}
-              iconColor="text-indigo-500"
-              additionalInfo={<span className="text-sm">{vehicleKPIs.vehicleCount} veículos</span>}
-              href="/vehicles"
             />
           </div>
         </section>
