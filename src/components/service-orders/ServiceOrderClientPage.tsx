@@ -1136,11 +1136,17 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
       const orderToOpen = serviceOrdersRaw.find(o => o.id === serviceOrderIdFromUrl);
       if (orderToOpen) {
         openModal(orderToOpen);
+         if (typeof window !== "undefined") { // Clear URL after opening
+          window.history.replaceState(null, '', '/service-orders');
+        }
       }
     } else if (initialDataFromBudget && !isModalOpen && !serviceOrderIdFromUrl) {
       openModal();
+       if (typeof window !== "undefined") { // Clear URL after opening for creation from budget
+        window.history.replaceState(null, '', '/service-orders');
+      }
     }
-  }, [serviceOrderIdFromUrl, initialDataFromBudget, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen]);
+  }, [serviceOrderIdFromUrl, initialDataFromBudget, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen, budgetIdToCreateFrom]);
 
 
   const isLoadingPageData = isLoadingServiceOrders || isLoadingCustomers || isLoadingEquipment || isLoadingTechnicians || isLoadingVehicles || isLoadingGoldmaqCompany;
@@ -1650,3 +1656,5 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     </TooltipProvider>
   );
 }
+
+    
