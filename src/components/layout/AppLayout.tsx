@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { BackToTopButton } from "@/components/shared/BackToTopButton"; // Importa o novo botão
 
 interface NavItem {
   href: string;
@@ -56,7 +57,7 @@ const navItems: NavItem[] = [
   { href: "/company-config", icon: SlidersHorizontal, label: "Dados das Empresas" },
 ];
 
-const appVersion = "5.0.0"; // Definição da versão aqui
+const appVersion = "5.0.0"; 
 
 function MainSidebar() {
   const pathname = usePathname();
@@ -139,6 +140,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <footer className="p-4 text-right text-xs text-muted-foreground border-t">
             <p>Versão {appVersion}</p>
           </footer>
+          <BackToTopButton /> {/* Adiciona o botão aqui */}
         </SidebarInset>
       </div>
     </SidebarProvider>

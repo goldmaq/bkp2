@@ -24,7 +24,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy,
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, toTitleCase } from "@/lib/utils"; // Importa toTitleCase
 import type { LucideIcon } from "lucide-react";
 import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; 
 
@@ -145,17 +145,15 @@ async function fetchAllAuxiliaryEquipments(): Promise<AuxiliaryEquipment[]> {
 
 async function checkChassisNumberExists(chassisNumber: string, currentMaquinaId?: string): Promise<boolean> {
   if (!db || !chassisNumber) return false;
-  // Consider consistent casing for query if needed, e.g., chassisNumber.toUpperCase()
   const q = query(collection(db, FIRESTORE_EQUIPMENT_COLLECTION_NAME), where("chassisNumber", "==", chassisNumber));
   const querySnapshot = await getDocs(q);
   if (querySnapshot.empty) {
     return false;
   }
-  // If updating, check if the found chassis number belongs to a different machine
   if (currentMaquinaId) {
     return querySnapshot.docs.some(doc => doc.id !== currentMaquinaId);
   }
-  return true; // Found for a new machine
+  return true; 
 }
 
 
@@ -786,7 +784,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                       className="ml-1 text-primary hover:underline truncate"
                       title={`Ver detalhes de ${customer.name}`}
                     >
-                      {customer.name}
+                      {toTitleCase(customer.name)}{customer.fantasyName ? ` (${toTitleCase(customer.fantasyName)})` : ''}
                     </Link>
                   </p>
                 ) : maq.customerId ? (
@@ -998,7 +996,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                             <SelectItem value={NO_CUSTOMER_SELECT_ITEM_VALUE}>Nenhum</SelectItem>
                             {customers.map((cust) => (
                               <SelectItem key={cust.id} value={cust.id}>
-                                {cust.name} ({cust.cnpj})
+                                {toTitleCase(cust.name)}{cust.fantasyName ? ` (${toTitleCase(cust.fantasyName)})` : ''}
                               </SelectItem>
                             ))}
                           </>
@@ -1218,4 +1216,3 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     </>
   );
 }
-
