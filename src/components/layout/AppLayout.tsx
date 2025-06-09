@@ -49,12 +49,14 @@ const navItems: NavItem[] = [
   { href: "/service-orders", icon: ClipboardList, label: "Ordens de Serviço" },
   { href: "/budgets", icon: FileText, label: "Orçamentos" },
   { href: "/parts-requisitions", icon: Wrench, label: "Requisições Peças" },
-  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem de Ordens e Peças" }, // MODIFICADO
+  { href: "/parts-triage", icon: ClipboardCheck, label: "Triagem de Ordens e Peças" },
   { href: "/parts-warehouse", icon: Archive, label: "Almoxarifado Peças" },
   { href: "/technicians", icon: HardHat, label: "Técnicos / Colaboradores" },
   { href: "/vehicles", icon: CarFront, label: "Veículos" },
   { href: "/company-config", icon: SlidersHorizontal, label: "Dados das Empresas" },
 ];
+
+const appVersion = "5.0.0"; // Definição da versão aqui
 
 function MainSidebar() {
   const pathname = usePathname();
@@ -134,6 +136,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <main className="flex-1 p-6 overflow-auto bg-background">
             {children}
           </main>
+          <footer className="p-4 text-right text-xs text-muted-foreground border-t">
+            <p>Versão {appVersion}</p>
+          </footer>
         </SidebarInset>
       </div>
     </SidebarProvider>
