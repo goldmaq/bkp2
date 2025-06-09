@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react"; // Added useRe
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form"; // Added useWatch
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon } from "lucide-react";
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,6 @@ import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "fi
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, toTitleCase } from "@/lib/utils";
-import type { LucideIcon } from "react-icons";
 import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -1262,3 +1261,4 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     </>
   );
 }
+
