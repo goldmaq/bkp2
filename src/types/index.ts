@@ -1,6 +1,6 @@
 
 import { z } from 'zod';
-import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
+import { format, formatISO, parseISO, isValid as isValidDate } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { ptBR } from 'date-fns/locale';
 
@@ -280,7 +280,7 @@ const requiredString = (field: string) => z.string().min(1, `${field} é obrigat
 
 // Helper para formatar data para yyyy-MM-dd ANTES da validação/transformação de Zod
 // Zod espera string para inputs de data, e então podemos transformar/validar.
-const formatDateForInput = (dateValue: any): string | null => {
+const formatDateForInputHelper = (dateValue: any): string | null => { // Renamed to avoid conflict with existing formatDateForInput if any
   if (!dateValue) return null;
   let d: Date;
   if (dateValue instanceof Timestamp) {
@@ -418,7 +418,7 @@ export const VehicleSchema = z.object({
     .nullable()
     .optional()
     .refine(val => !val || isValidDate(parseISO(val)), { message: "Data inválida." })
-    .transform(val => val ? formatDateForInput(val) : null), // Garante yyyy-MM-dd
+    .transform(val => val ? formatDateForInputHelper(val) : null), // Garante yyyy-MM-dd
   maintenanceNotes: z.string().optional().nullable(),
 }).refine(data => {
   if (data.nextMaintenanceType === 'km' && (data.nextMaintenanceKm === null || data.nextMaintenanceKm === undefined)) {
@@ -554,3 +554,21 @@ export const ServiceOrderSchema = z.object({
   message: "Por favor, especifique o tipo de serviço customizado.",
   path: ["customServiceType"],
 });
+
+// Renomeei a função helper para evitar conflito com a importação, caso exista.
+// E a função original `formatDateForInput` foi movida para `lib/utils.ts`
+// const formatDateForInput = (dateValue: any): string | null => {
+//   if (!dateValue) return null;
+//   let d: Date;
+//   if (dateValue instanceof Timestamp) {
+//     d = dateValue.toDate();
+//   } else if (typeof dateValue === 'string') {
+//     d = parseISO(dateValue);
+//   } else if (dateValue instanceof Date) {
+//     d = dateValue;
+//   } else {
+//     return null;
+//   }
+//   if (!isValidDate(d)) return null;
+//   return format(d, 'yyyy-MM-dd');
+// };
