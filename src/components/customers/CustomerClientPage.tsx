@@ -447,7 +447,7 @@ export function CustomerClientPage() {
   return (
     <>
       <PageHeader
-        title="Clientes"
+        title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteCustomerMutation.isPending}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Cliente
