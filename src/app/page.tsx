@@ -16,6 +16,8 @@ import type { Maquina, Budget, ServiceOrder } from '@/types';
 import { maquinaOperationalStatusOptions, budgetStatusOptions, serviceOrderPhaseOptions } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic'; // Adicionado para forçar revalidação
+
 interface MaquinaRentalKPIs {
   totalRentalValue: number;
   highestRentalMachine?: { name: string; value: number; id: string };
