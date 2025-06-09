@@ -161,9 +161,10 @@ async function checkChassisNumberExists(chassisNumber: string, currentMaquinaId?
 
 interface MaquinasClientPageProps {
   maquinaIdFromUrl?: string | null;
+  initialStatusFilter?: string | null;
 }
 
-export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps) {
+export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: MaquinasClientPageProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -175,7 +176,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<typeof maquinaOperationalStatusOptions[number] | typeof ALL_STATUSES_FILTER_VALUE>(ALL_STATUSES_FILTER_VALUE);
+  
+  const [statusFilter, setStatusFilter] = useState<typeof maquinaOperationalStatusOptions[number] | typeof ALL_STATUSES_FILTER_VALUE>(
+    (initialStatusFilter && maquinaOperationalStatusOptions.includes(initialStatusFilter as any))
+      ? initialStatusFilter as typeof maquinaOperationalStatusOptions[number]
+      : ALL_STATUSES_FILTER_VALUE
+  );
 
 
   const [showCustomFields, setShowCustomFields] = useState({
@@ -314,11 +320,24 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       if (maquinaToEdit) {
         openModal(maquinaToEdit);
         if (typeof window !== "undefined") {
-           window.history.replaceState(null, '', '/maquinas');
+           const currentUrl = new URL(window.location.href);
+           currentUrl.searchParams.delete('openMaquinaId');
+           window.history.replaceState({}, '', currentUrl.toString());
         }
       }
     }
   }, [maquinaIdFromUrl, maquinaList, isLoadingMaquinas, openModal, isModalOpen]);
+  
+  useEffect(() => {
+    if (initialStatusFilter && maquinaOperationalStatusOptions.includes(initialStatusFilter as any)) {
+      setStatusFilter(initialStatusFilter as typeof maquinaOperationalStatusOptions[number]);
+      if (typeof window !== "undefined") {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.delete('status');
+        window.history.replaceState({}, '', currentUrl.toString());
+      }
+    }
+  }, [initialStatusFilter]);
 
   if (!db || !storage) {
     return (
@@ -367,7 +386,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       ...parsedData,
       brand: parsedData.brand === '_CUSTOM_' ? customBrand || "Não especificado" : parsedData.brand,
       model: parsedData.model,
-      chassisNumber: parsedData.chassisNumber, // Keep as is from form
+      chassisNumber: parsedData.chassisNumber, 
       equipmentType: parsedData.equipmentType === '_CUSTOM_' ? customEquipmentType || "Não especificado" : parsedData.equipmentType,
       customerId: formCustomerId,
       ownerReference: finalOwnerReference,
