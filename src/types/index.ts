@@ -402,7 +402,7 @@ export const CompanySchema = z.object({
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória"),
   cep: requiredString("CEP").regex(/^\d{5}-?\d{3}$/, "CEP inválido. Use XXXXX-XXX."),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
-  email: z.string().email("Email inválido").optional().nullable(),
+  email: z.string().email("Email inválido").optional(), // Changed from .optional().nullable()
   bankName: z.string().optional(),
   bankAgency: z.string().optional(),
   bankAccount: z.string().optional(),

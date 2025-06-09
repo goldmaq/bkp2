@@ -39,7 +39,7 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     bankName: "Banco Alpha", 
     bankAgency: "0001", 
     bankAccount: "12345-6", 
-    bankPixKey: "cnpj@goldmaq.com.br" 
+    bankPixKey: "04325000000112" 
   },
   goldcomercio: { 
     name: "Gold Comércio", 
@@ -54,7 +54,8 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     email: "comercial@goldcomercio.com.br",
     bankName: "Banco Beta", 
     bankAgency: "0002", 
-    bankAccount: "65432-1" 
+    bankAccount: "65432-1",
+    bankPixKey: undefined,
   },
   goldjob: { 
     name: "Gold Empilhadeiras", 
@@ -66,7 +67,11 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     state: "SP", 
     cep: "13211-740",
     phone: "11555554444",
-    email: "orcamento@goldempilhadeiras.com.br"
+    email: "orcamento@goldempilhadeiras.com.br",
+    bankName: undefined,
+    bankAgency: undefined,
+    bankAccount: undefined,
+    bankPixKey: undefined,
   },
 };
 
@@ -104,10 +109,10 @@ async function fetchCompanyConfigs(): Promise<Company[]> {
         cep: data.cep || initialCompanyDataFromCode[id].cep,
         phone: data.phone || initialCompanyDataFromCode[id].phone,
         email: data.email || initialCompanyDataFromCode[id].email,
-        bankName: data.bankName,
-        bankAgency: data.bankAgency,
-        bankAccount: data.bankAccount,
-        bankPixKey: data.bankPixKey,
+        bankName: data.bankName || initialCompanyDataFromCode[id].bankName,
+        bankAgency: data.bankAgency || initialCompanyDataFromCode[id].bankAgency,
+        bankAccount: data.bankAccount || initialCompanyDataFromCode[id].bankAccount,
+        bankPixKey: data.bankPixKey || initialCompanyDataFromCode[id].bankPixKey,
       } as Company);
     } else {
       const initialData = initialCompanyDataFromCode[id];
@@ -168,18 +173,19 @@ export function CompanyConfigClientPage() {
         console.error("updateCompanyMutation: Firebase DB is not available.");
         throw new Error("Firebase DB is not available for updating company.");
       }
-      const { id, ...rawDataToUpdate } = companyData;
-      
-      const dataToUpdate = Object.fromEntries(
-        Object.entries(rawDataToUpdate).filter(([_, value]) => value !== undefined)
-      );
+      const { id, ...dataToUpdate } = companyData; // Destructure id out
+
       if (!id) throw new Error("ID da empresa é necessário para atualização.");
+      
+      // Firestore updateDoc does not accept 'id' in the data payload
       const companyRef = doc(db, FIRESTORE_COLLECTION_NAME, id);
       const docSnap = await getDoc(companyRef);
       if (docSnap.exists()) {
+        // Pass only dataToUpdate to updateDoc
         return updateDoc(companyRef, dataToUpdate);
       } else {
         console.log(`CompanyConfig: Document for ${id} not found. Creating it now.`);
+        // Pass only dataToUpdate to setDoc
         return setDoc(companyRef, dataToUpdate); 
       }
     },
@@ -219,11 +225,25 @@ export function CompanyConfigClientPage() {
 
   const onSubmit = async (values: z.infer<typeof CompanySchema>) => {
     if (!editingCompany || !editingCompany.id) return;
-    const dataToSave = {
-        ...values,
+    const dataToSave: Company = {
+        id: editingCompany.id, // Ensure id is part of the object passed to mutation
+        name: values.name,
+        cnpj: values.cnpj,
+        street: values.street,
+        number: values.number || undefined,
+        complement: values.complement || undefined,
+        neighborhood: values.neighborhood,
+        city: values.city,
+        state: values.state,
+        cep: values.cep,
         phone: values.phone ? values.phone.replace(/\D/g, '') : undefined,
+        email: values.email || undefined,
+        bankName: values.bankName || undefined,
+        bankAgency: values.bankAgency || undefined,
+        bankAccount: values.bankAccount || undefined,
+        bankPixKey: values.bankPixKey || undefined,
     };
-    updateCompanyMutation.mutate({ ...dataToSave, id: editingCompany.id });
+    updateCompanyMutation.mutate(dataToSave);
   };
   
   const handleSearchCep = async () => {
