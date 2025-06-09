@@ -819,7 +819,7 @@ export function BudgetClientPage() {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2">Carregando dados...</p></div>;
   }
   if (isErrorBudgets) {
-    return <div className="text-red-500 p-4">Erro ao carregar orçamentos: {errorBudgets?.message}</div>;
+    return <div className="text-red-500 p-4">Erro ao carregar orçamentos: ${errorBudgets?.message}</div>;
   }
 
   return (
@@ -1096,9 +1096,9 @@ export function BudgetClientPage() {
               <div>
                 <h3 className="text-md font-semibold mb-2 mt-4 border-b pb-1 font-headline">Itens do Orçamento</h3>
                 {fields.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-2 items-end border-b py-3">
+                  <div key={item.id} className="grid grid-cols-12 gap-x-3 gap-y-2 items-end border-b py-3">
                     <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                      <FormItem className="col-span-12 sm:col-span-5">
+                      <FormItem className="col-span-12 sm:col-span-4"> {/* Changed from sm:col-span-5 */}
                         {index === 0 && <FormLabel>Descrição</FormLabel>}
                         <FormControl>
                           <Input placeholder="Peça ou Serviço" {...field} />
@@ -1124,11 +1124,11 @@ export function BudgetClientPage() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <div className="col-span-4 sm:col-span-2 flex items-center">
+                    <div className="col-span-4 sm:col-span-3 flex items-center"> {/* Changed from sm:col-span-2 */}
                         {index === 0 && <FormLabel className="invisible sm:visible">Total</FormLabel>}
-                        <p className="text-sm pt-1 sm:pt-0 w-full text-right sm:text-left font-medium">{formatCurrency((Number(itemsWatch[index]?.quantity) || 0) * (Number(itemsWatch[index]?.unitPrice) || 0))}</p>
+                        <p className="text-sm pt-1 sm:pt-0 w-full text-right sm:text-left font-medium pr-1">{formatCurrency((Number(itemsWatch[index]?.quantity) || 0) * (Number(itemsWatch[index]?.unitPrice) || 0))}</p>
                     </div>
-                    <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-center">
+                    <div className="col-span-12 sm:col-span-1 flex items-center justify-end sm:justify-center">
                       {fields.length > 1 && (
                         <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)} className="text-destructive hover:text-destructive">
                           <Trash2 className="h-4 w-4" />
