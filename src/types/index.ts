@@ -123,6 +123,7 @@ export interface ServiceOrder {
   estimatedTravelDistanceKm?: number | null;
   estimatedTollCosts?: number | null;
   estimatedTravelCost?: number | null;
+  machineStatusBeforeOs?: typeof maquinaOperationalStatusOptions[number] | null; // Added field
 }
 
 export const roleOptionsList = [
@@ -547,6 +548,7 @@ export const ServiceOrderSchema = z.object({
   estimatedTravelDistanceKm: z.coerce.number().min(0, "Distância deve ser positiva ou zero").optional().nullable(),
   estimatedTollCosts: z.coerce.number().min(0, "Custo de pedágio deve ser positivo ou zero").optional().nullable(),
   estimatedTravelCost: z.coerce.number().min(0, "Custo de viagem deve ser positivo ou zero").optional().nullable(),
+  machineStatusBeforeOs: z.enum(maquinaOperationalStatusOptions).nullable().optional(), // Added field
 }).refine(data => {
   if (data.serviceType === '_CUSTOM_' && (!data.customServiceType || data.customServiceType.trim() === "")) {
     return false;

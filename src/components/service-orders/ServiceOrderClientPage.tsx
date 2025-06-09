@@ -109,6 +109,7 @@ async function fetchServiceOrders(): Promise<ServiceOrder[]> {
       estimatedTravelDistanceKm: data.estimatedTravelDistanceKm !== undefined ? Number(data.estimatedTravelDistanceKm) : null,
       estimatedTollCosts: data.estimatedTollCosts !== undefined ? Number(data.estimatedTollCosts) : null,
       estimatedTravelCost: data.estimatedTravelCost !== undefined ? Number(data.estimatedTravelCost) : null,
+      machineStatusBeforeOs: data.machineStatusBeforeOs || null,
     };
     return serviceOrder;
   });
@@ -528,12 +529,12 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     if (selectedCustomerId) {
       return equipmentList.filter(eq =>
         eq.customerId === selectedCustomerId ||
-        (eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção"))
+        (eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção")) // Original logic for customer context
       );
     }
-    return equipmentList.filter(eq =>
-      eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && (eq.operationalStatus === "Disponível" || eq.operationalStatus === "Em Manutenção")
-    );
+    return equipmentList.filter(eq => // Modified logic for no customer context
+ eq.ownerReference && companyIds.includes(eq.ownerReference as CompanyId) && eq.operationalStatus === "Disponível"
+ && !eq.customerId ); // Ensure no customerId is linked
   }, [equipmentList, selectedCustomerId, isLoadingEquipment]);
 
   useEffect(() => {
@@ -552,9 +553,9 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     }
 
     if (selectedCustomerId && !initialDataFromBudget) {
-      if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
+      if (formEquipmentId && formEquipmentId !== NO_EQUIPMENT_SELECTED_VALUE && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
-      }
+    }
     } else if (!initialDataFromBudget) {
        if (formEquipmentId && !filteredEquipmentList.find(eq => eq.id === formEquipmentId)) {
         form.setValue('equipmentId', NO_EQUIPMENT_SELECTED_VALUE, { shouldValidate: true });
@@ -566,7 +567,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
   const prepareDataForFirestore = (
     formData: z.infer<typeof ServiceOrderSchema>,
     processedMediaUrls?: (string | null)[] | null
-
+    , machineStatusBeforeOs?: typeof maquinaOperationalStatusOptions[number] | null
   ): Omit<ServiceOrder, 'id' | 'customServiceType' | 'startDate' | 'endDate' | 'mediaUrls'> & { startDate: Timestamp | null; endDate: Timestamp | null; mediaUrls: string[] | null } => {
     const { customServiceType, mediaUrls: formMediaUrlsIgnored, ...restOfData } = formData;
 
@@ -595,12 +596,13 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
       estimatedTravelDistanceKm: restOfData.estimatedTravelDistanceKm !== undefined && restOfData.estimatedTravelDistanceKm !== null ? Number(restOfData.estimatedTravelDistanceKm) : null,
       estimatedTollCosts: restOfData.estimatedTollCosts !== undefined && restOfData.estimatedTollCosts !== null ? Number(restOfData.estimatedTollCosts) : null,
       estimatedTravelCost: restOfData.estimatedTravelCost !== undefined && restOfData.estimatedTravelCost !== null ? Number(restOfData.estimatedTravelCost) : null,
+      machineStatusBeforeOs: machineStatusBeforeOs !== undefined ? machineStatusBeforeOs : null,
     };
   };
 
 
   const addServiceOrderMutation = useMutation({
-    mutationFn: async (data: { formData: z.infer<typeof ServiceOrderSchema>; filesToUpload: File[]; budgetIdToMark?: string }) => {
+    mutationFn: async (data: { formData: z.infer<typeof ServiceOrderSchema>; filesToUpload: File[]; budgetIdToMark?: string; }) => {
       if (!db) throw new Error("Firebase DB is not available for adding service order.");
       setIsUploadingFile(true);
       const newOrderId = doc(collection(db, FIRESTORE_COLLECTION_NAME)).id;
@@ -612,7 +614,18 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
           uploadedUrls.push(url);
         }
       }
-      const orderDataForFirestore = prepareDataForFirestore(data.formData, uploadedUrls);
+
+      // Fetch equipment status before saving OS
+      const equipmentSnapshot = await getDoc(doc(db, FIRESTORE_EQUIPMENT_COLLECTION_NAME, data.formData.equipmentId));
+      const currentMachineStatus = equipmentSnapshot.exists() ? equipmentSnapshot.data()?.operationalStatus as typeof maquinaOperationalStatusOptions[number] : null;
+
+      const orderDataForFirestore = prepareDataForFirestore(data.formData, uploadedUrls, currentMachineStatus);
+
+      // Update equipment status if not 'Sucata'
+      if (data.formData.equipmentId && currentMachineStatus !== 'Sucata') {
+        await updateDoc(doc(db, FIRESTORE_EQUIPMENT_COLLECTION_NAME, data.formData.equipmentId), { operationalStatus: 'Em Manutenção' });
+        queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
+      }
       await setDoc(doc(db, FIRESTORE_COLLECTION_NAME, newOrderId), orderDataForFirestore);
 
       if (data.budgetIdToMark) {
@@ -670,6 +683,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Atualizada", description: `Ordem ${data.orderNumber} atualizada.` });
       closeModal();
     },
@@ -692,6 +706,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+       queryClient.invalidateQueries({ queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Excluída" });
       closeModal();
     },
@@ -719,6 +734,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
         estimatedTravelDistanceKm: order.estimatedTravelDistanceKm !== undefined ? order.estimatedTravelDistanceKm : null,
         estimatedTollCosts: order.estimatedTollCosts !== undefined ? order.estimatedTollCosts : null,
         estimatedTravelCost: order.estimatedTravelCost !== undefined ? order.estimatedTravelCost : null,
+        machineStatusBeforeOs: order.machineStatusBeforeOs !== undefined ? order.machineStatusBeforeOs : null,
       });
       setShowCustomServiceType(!!(order.serviceType && !serviceTypeOptionsList.includes(order.serviceType as any)));
     } else {
@@ -740,7 +756,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
         endDate: "",
         mediaUrls: [],
         technicalConclusion: null,
-        estimatedTravelDistanceKm: null, estimatedTollCosts: null, estimatedTravelCost: null,
+        estimatedTravelDistanceKm: null, estimatedTollCosts: null, estimatedTravelCost: null, machineStatusBeforeOs: null,
       };
       form.reset(defaultValuesForNewOS);
       setShowCustomServiceType(false);
@@ -765,12 +781,24 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
   const handleConfirmConclusion = async () => {
     if (!editingOrder || !editingOrder.id) return;
     const orderRef = doc(db!, FIRESTORE_COLLECTION_NAME, editingOrder.id);
+
+    let newMachineStatus = 'Disponível';
+    if (editingOrder.machineStatusBeforeOs) {
+        newMachineStatus = editingOrder.machineStatusBeforeOs;
+    }
+
     try {
       await updateDoc(orderRef, {
         phase: 'Concluída',
         technicalConclusion: technicalConclusionText.trim() || "Serviço concluído conforme solicitado.",
         endDate: Timestamp.fromDate(new Date()),
       });
+
+      // Update equipment status based on status before OS, fallback to 'Disponível'
+      if (editingOrder.equipmentId) {
+        await updateDoc(doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, editingOrder.equipmentId), { operationalStatus: newMachineStatus });
+         console.log(`Updated machine ${editingOrder.equipmentId} status to ${newMachineStatus} after OS ${editingOrder.orderNumber} conclusion.`);
+      }
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Concluída", description: `OS ${editingOrder.orderNumber} marcada como concluída.` });
       setIsConclusionModalOpen(false);
@@ -789,11 +817,21 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
   const handleConfirmCancel = async () => {
     if (!editingOrder || !editingOrder.id) return;
     const orderRef = doc(db!, FIRESTORE_COLLECTION_NAME, editingOrder.id);
+
+    let newMachineStatus = 'Disponível';
+    if (editingOrder.machineStatusBeforeOs) {
+        newMachineStatus = editingOrder.machineStatusBeforeOs;
+    }
+
     try {
       await updateDoc(orderRef, {
         phase: 'Cancelada',
-        endDate: Timestamp.fromDate(new Date()),
+        endDate: Timestamp.fromDate(new Date()), // Or leave null? Based on schema, setting endDate on cancel
       });
+       // Update equipment status based on status before OS, fallback to 'Disponível'
+       if (editingOrder.equipmentId) {
+        await updateDoc(doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, editingOrder.equipmentId), { operationalStatus: newMachineStatus });
+      }
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       toast({ title: "Ordem de Serviço Cancelada", description: `OS ${editingOrder.orderNumber} marcada como cancelada.` });
       setIsCancelConfirmModalOpen(false);
@@ -1441,8 +1479,8 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
               </div>
               <FormField control={form.control} name="equipmentId" render={({ field }) => (
                 <FormItem><FormLabel>Máquina</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCustomerId || !!editingOrder || !!initialDataFromBudget?.equipmentId}>
-                    <FormControl><SelectTrigger><SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (selectedCustomerId ? "Selecione a máquina" : "Selecione um cliente primeiro")} /></SelectTrigger></FormControl>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={!!editingOrder || !!initialDataFromBudget?.equipmentId}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={isLoadingEquipment ? "Carregando..." : (selectedCustomerId ? "Selecione a máquina" : "Selecione uma máquina")} /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value={NO_EQUIPMENT_SELECTED_VALUE} disabled>
                         {selectedCustomerId ? "Selecione uma máquina" : "Selecione um cliente"}
