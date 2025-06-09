@@ -59,7 +59,14 @@ async function fetchMaquinas(): Promise<Maquina[]> {
   }
   const q = query(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME), orderBy("brand", "asc"));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Maquina));
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return { 
+      id: docSnap.id, 
+      ...data,
+      fleetNumber: data.fleetNumber || null, // Ensure fleetNumber is handled
+    } as Maquina;
+  });
 }
 
 interface ViaCepResponse {
@@ -595,7 +602,7 @@ export function CustomerClientPage() {
                         <Construction className="mr-1.5 h-3.5 w-3.5 text-primary" />
                         <span className="font-medium text-muted-foreground mr-1">Máquinas Vinculadas:</span>
                       </h4>
-                      <ScrollArea className="max-h-32 pr-2"> {/* Max height for scrollable area */}
+                      <ScrollArea className="max-h-32 pr-2">
                         <ul className="list-none pl-1 space-y-0.5">
                           {linkedMaquinas.map(maq => (
                             <li key={maq.id} className="text-xs text-muted-foreground">
@@ -605,7 +612,10 @@ export function CustomerClientPage() {
                                 className="hover:underline hover:text-primary transition-colors"
                                 title={`Ver detalhes de ${maq.brand} ${maq.model}`}
                               >
-                                {maq.brand} {maq.model} <span className="text-gray-400">(Chassi: {maq.chassisNumber})</span>
+                                {maq.brand} {maq.model} 
+                                <span className="text-gray-400">
+                                  (Chassi: {maq.chassisNumber}{maq.fleetNumber ? `, Frota: ${maq.fleetNumber}` : ''})
+                                </span>
                               </Link>
                             </li>
                           ))}
