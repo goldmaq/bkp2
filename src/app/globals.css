@@ -2,9 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Poppins', sans-serif;
-}
+/* Removed global body font-family, will be handled by Tailwind config and layout.tsx */
 
 @layer base {
   :root {
@@ -92,5 +90,7 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    /* Default text size (16px), increased to 17px for md screens and up */
+    @apply text-base md:text-[17px]; 
   }
 }

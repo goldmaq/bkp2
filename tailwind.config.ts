@@ -73,7 +73,7 @@ export default {
         },
       },
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
+        body: ['Poppins', 'sans-serif'], // Changed from Inter to Poppins
         heading: ['Poppins', 'sans-serif'],
       },
       borderRadius: {
