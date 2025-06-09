@@ -450,13 +450,16 @@ export function VehicleClientPage() {
   return (
     <>
       <PageHeader
-        title="Gerenciamento de Veículos"
+        title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteVehicleMutation.isPending}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Veículo
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Gerenciamento da frota de veículos da empresa utilizados para serviços externos. Permite cadastrar veículos, registrar abastecimentos, histórico de manutenções e controlar informações como quilometragem, consumo e custos.
+      </p>
 
       {isMockDataActive && (
          <Card className="mb-6 bg-accent/10 border-accent/30 shadow-sm">

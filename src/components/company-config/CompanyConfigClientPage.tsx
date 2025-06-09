@@ -306,7 +306,10 @@ export function CompanyConfigClientPage() {
 
   return (
     <>
-      <PageHeader title="Configurações das Empresas" />
+      <PageHeader title="" />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Configuração dos dados cadastrais (CNPJ, endereço, contato) e bancários das diferentes empresas que compõem o grupo (Gold Maq, Gold Comércio, Gold Empilhadeiras). Essas informações são utilizadas em documentos como orçamentos e recibos.
+      </p>
 
       {companies.length === 0 && !isLoading ? (
          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">

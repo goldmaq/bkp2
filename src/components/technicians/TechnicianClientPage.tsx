@@ -185,13 +185,16 @@ export function TechnicianClientPage() {
   return (
     <>
       <PageHeader 
-        title="Técnicos / Colaboradores" // Updated title
+        title="" 
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteTechnicianMutation.isPending}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Colaborador
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Cadastro e gerenciamento dos dados dos técnicos e outros colaboradores da empresa. Permite registrar nome, cargo, especialização (para técnicos) e informações de contato.
+      </p>
 
       {technicians.length === 0 && !isLoading ? (
         <DataTablePlaceholder
