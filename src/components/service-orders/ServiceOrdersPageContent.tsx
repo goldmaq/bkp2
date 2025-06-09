@@ -10,7 +10,7 @@ import type { Budget, Customer, Maquina } from "@/types";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { Loader2 } from "lucide-react";
-import { formatCurrency, toTitleCase } from "@/lib/utils";
+import { toTitleCase } from "@/lib/utils"; // formatCurrency removed as it's no longer needed here
 
 
 const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets";
@@ -87,10 +87,10 @@ export const ServiceOrdersPageContent: FC = () => {
   let initialDataForOS;
   if (action === 'create' && budgetToPrefill && customerForBudget && equipmentForBudget) {
       const budgetItemsDescription = budgetToPrefill.items
-        .map(item => `- ${item.description} (Qtd: ${item.quantity}, Valor Unit.: ${formatCurrency(item.unitPrice)}, Subtotal: ${formatCurrency(item.quantity * item.unitPrice)})`)
-        .join('\\n');
+        .map(item => `- ${item.description} (Qtd: ${item.quantity})`) // Removido valores monetários
+        .join('\n'); // Usar \n diretamente para Textarea
 
-      const description = `Serviço referente ao Orçamento Nº ${budgetToPrefill.budgetNumber}.\\n\\nCliente: ${toTitleCase(customerForBudget.name)}\\nMáquina: ${toTitleCase(equipmentForBudget.brand)} ${toTitleCase(equipmentForBudget.model)} (Chassi: ${equipmentForBudget.chassisNumber || 'N/A'})\\n\\nItens do Orçamento:\\n${budgetItemsDescription}\\n\\nValor Total do Orçamento: ${formatCurrency(budgetToPrefill.totalAmount)}`;
+      const description = `Serviço referente ao Orçamento Nº ${budgetToPrefill.budgetNumber}.\n\nCliente: ${toTitleCase(customerForBudget.name)}\nMáquina: ${toTitleCase(equipmentForBudget.brand)} ${toTitleCase(equipmentForBudget.model)} (Chassi: ${equipmentForBudget.chassisNumber || 'N/A'})\n\nItens do Orçamento Aprovado:\n${budgetItemsDescription}`; // Removido valor total
 
     initialDataForOS = {
       customerId: budgetToPrefill.customerId,
