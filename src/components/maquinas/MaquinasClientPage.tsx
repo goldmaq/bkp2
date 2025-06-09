@@ -1,13 +1,13 @@
-
 "use client";
 
 import React, { useMemo } from 'react';
-import { useState, useEffect, useCallback, useRef } from "react"; // Added useRef
+import { useState, useEffect, useCallback, useRef } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch } from "react-hook-form"; // Added useWatch
+import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon, type LucideIcon, MapPin } from "lucide-react";
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon, type LucideIcon, MapPin, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
+import NextImage from "next/image"; // Renamed to avoid conflict with Lucide's Image
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc, writeBatch, where } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // Renamed to avoid conflict with React ref
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, toTitleCase, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils";
@@ -43,6 +43,7 @@ const NO_CUSTOMER_SELECT_ITEM_VALUE = "_NO_CUSTOMER_SELECTED_";
 const LOADING_CUSTOMERS_SELECT_ITEM_VALUE = "_LOADING_CUSTOMERS_";
 const NO_OWNER_REFERENCE_VALUE = "_NOT_SPECIFIED_";
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_";
+const MAX_IMAGE_FILES = 5;
 
 
 const operationalStatusIcons: Record<typeof maquinaOperationalStatusOptions[number], React.JSX.Element> = {
@@ -58,37 +59,46 @@ const predefinedBrandOptionsList = [
   "Jungheinrich", "Hangcha", "Heli", "EP", "Outra"
 ];
 
-async function uploadFile(
+async function uploadMaquinaImageFile(
   file: File,
   maquinaId: string,
-  fileTypePrefix: 'partsCatalog' | 'errorCodes'
+  fileNameSuffix: string // e.g., Date.now() or index
 ): Promise<string> {
   if (!storage) {
     throw new Error("Firebase Storage connection not available.");
   }
-  const filePath = `equipment_files/${maquinaId}/${fileTypePrefix}_${file.name}`;
-  const fileStorageRef = storageRef(storage!, filePath);
+  // Sanitize file name to avoid issues with special characters
+  const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `equipment_images/${maquinaId}/${fileNameSuffix}-${sanitizedFileName}`;
+  const fileStorageRef = storageRefFB(storage!, filePath);
   await uploadBytes(fileStorageRef, file);
   return getDownloadURL(fileStorageRef);
 }
 
-async function deleteFileFromStorage(fileUrl?: string | null) {
+
+async function deleteFileFromStorageFirebase(fileUrl?: string | null) {
   if (fileUrl) {
     if (!storage) {
-      console.warn("deleteFileFromStorage: Firebase Storage connection not available. Skipping deletion.");
+      console.warn("deleteFileFromStorageFirebase: Firebase Storage connection not available. Skipping deletion.");
       return;
     }
     try {
+      // Extract the path from the GCS URL.
+      // Example URL: https://firebasestorage.googleapis.com/v0/b/your-project-id.appspot.com/o/equipment_images%2FmaquinaId%2FfileName?alt=media&token=...
       const gcsPath = new URL(fileUrl).pathname.split('/o/')[1].split('?')[0];
-      const decodedPath = decodeURIComponent(gcsPath);
-      const fileStorageRef = storageRef(storage!, decodedPath);
+      const decodedPath = decodeURIComponent(gcsPath); // Path is URL encoded
+      const fileStorageRef = storageRefFB(storage!, decodedPath);
       await deleteObject(fileStorageRef);
-    } catch (e) {
-      console.warn(`[DELETE FILE] Failed to delete file from storage: ${fileUrl}`, e);
+      console.log("Successfully deleted from storage:", decodedPath);
+    } catch (e: any) {
+      if (e.code === 'storage/object-not-found') {
+        console.warn(`[DELETE FILE FB] File not found in storage, skipping deletion: ${fileUrl}`);
+      } else {
+        console.error(`[DELETE FILE FB] Failed to delete file from storage: ${fileUrl}`, e);
+      }
     }
   }
 }
-
 
 async function fetchMaquinas(): Promise<Maquina[]> {
   if (!db) {
@@ -103,7 +113,7 @@ async function fetchMaquinas(): Promise<Maquina[]> {
       brand: data.brand || "Marca Desconhecida",
       model: data.model || "Modelo Desconhecido",
       chassisNumber: data.chassisNumber || "N/A",
-      fleetNumber: data.fleetNumber || null, // Novo campo
+      fleetNumber: data.fleetNumber || null,
       equipmentType: (maquinaTypeOptions.includes(data.equipmentType as any) || typeof data.equipmentType === 'string') ? data.equipmentType : "Empilhadeira Contrabalançada GLP",
       manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
       operationalStatus: maquinaOperationalStatusOptions.includes(data.operationalStatus as any) ? data.operationalStatus : "Disponível",
@@ -121,6 +131,7 @@ async function fetchMaquinas(): Promise<Maquina[]> {
       partsCatalogUrl: data.partsCatalogUrl || null,
       errorCodesUrl: data.errorCodesUrl || null,
       linkedAuxiliaryEquipmentIds: Array.isArray(data.linkedAuxiliaryEquipmentIds) ? data.linkedAuxiliaryEquipmentIds : null,
+      imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : null,
     } as Maquina;
   });
 }
@@ -171,6 +182,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const [editingMaquina, setEditingMaquina] = useState<Maquina | null>(null);
   const [partsCatalogFile, setPartsCatalogFile] = useState<File | null>(null);
   const [errorCodesFile, setErrorCodesFile] = useState<File | null>(null);
+  const [imageFilesToUpload, setImageFilesToUpload] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
@@ -199,13 +213,15 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       towerOpenHeightMm: undefined, towerClosedHeightMm: undefined,
       nominalCapacityKg: undefined,
       batteryBoxWidthMm: undefined, batteryBoxHeightMm: undefined, batteryBoxDepthMm: undefined,
-      notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
-      partsCatalogUrl: null, errorCodesUrl: null,
+      monthlyRentalValue: undefined, hourMeter: undefined,
+      notes: "", partsCatalogUrl: null, errorCodesUrl: null,
       linkedAuxiliaryEquipmentIds: [],
+      imageUrls: [],
     },
   });
 
   const watchedCustomerId = useWatch({ control: form.control, name: 'customerId' });
+  const watchedImageUrls = useWatch({ control: form.control, name: 'imageUrls' });
   const prevCustomerIdRef = useRef<string | null | undefined>(null);
 
   useEffect(() => {
@@ -226,7 +242,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
 
 
 
-  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinas } = useQuery<Maquina[], Error>({
+  const { data: maquinaList = [], isLoading: isLoadingMaquinas, isError: isErrorMaquinas, error: errorMaquinasData } = useQuery<Maquina[], Error>({
     queryKey: [FIRESTORE_EQUIPMENT_COLLECTION_NAME],
     queryFn: fetchMaquinas,
     enabled: !!db,
@@ -273,7 +289,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
           maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
-          (maq.fleetNumber && maq.fleetNumber.toLowerCase().includes(lowercasedSearchTerm)) || // Novo campo
+          (maq.fleetNumber && maq.fleetNumber.toLowerCase().includes(lowercasedSearchTerm)) ||
           ownerDisplay.toLowerCase().includes(lowercasedSearchTerm) ||
           (customer?.name.toLowerCase().includes(lowercasedSearchTerm)) ||
           (customer?.fantasyName && customer.fantasyName.toLowerCase().includes(lowercasedSearchTerm))
@@ -287,9 +303,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const openModal = useCallback((maquina?: Maquina) => {
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
+    setImageFilesToUpload([]);
+    setImagePreviews(maquina?.imageUrls || []);
+
     if (maquina) {
       setEditingMaquina(maquina);
-      setIsEditMode(false); // View mode first
+      setIsEditMode(false);
       const isBrandPredefined = predefinedBrandOptionsList.includes(maquina.brand) && maquina.brand !== "Outra";
       const isEquipmentTypePredefined = maquinaTypeOptions.includes(maquina.equipmentType as any);
 
@@ -298,7 +317,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         model: maquina.model || "",
         brand: isBrandPredefined ? maquina.brand : '_CUSTOM_' as any,
         customBrand: isBrandPredefined ? "" : (maquina.brand === "Outra" || maquina.brand === "_CUSTOM_" ? "" : maquina.brand),
-        fleetNumber: maquina.fleetNumber || null, // Novo campo
+        fleetNumber: maquina.fleetNumber || null,
         equipmentType: isEquipmentTypePredefined ? maquina.equipmentType : '_CUSTOM_',
         customEquipmentType: isEquipmentTypePredefined ? "" : maquina.equipmentType,
         customerId: maquina.customerId || null,
@@ -316,12 +335,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         partsCatalogUrl: maquina.partsCatalogUrl || null,
         errorCodesUrl: maquina.errorCodesUrl || null,
         linkedAuxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
+        imageUrls: maquina.imageUrls || [],
       });
       setShowCustomFields({ brand: !isBrandPredefined, equipmentType: !isEquipmentTypePredefined });
       prevCustomerIdRef.current = maquina.customerId;
     } else {
       setEditingMaquina(null);
-      setIsEditMode(true); // Edit mode for new
+      setIsEditMode(true);
       form.reset({
         brand: "", model: "", chassisNumber: "", fleetNumber: null, equipmentType: "Empilhadeira Contrabalançada GLP",
         operationalStatus: "Disponível", customerId: null,
@@ -333,6 +353,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         notes: "", monthlyRentalValue: undefined, hourMeter: undefined,
         partsCatalogUrl: null, errorCodesUrl: null,
         linkedAuxiliaryEquipmentIds: [],
+        imageUrls: [],
       });
       setShowCustomFields({ brand: false, equipmentType: false });
       prevCustomerIdRef.current = null;
@@ -383,7 +404,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const prepareDataForFirestore = (
     formData: z.infer<typeof MaquinaSchema>,
     newPartsCatalogUrl?: string | null,
-    newErrorCodesUrl?: string | null
+    newErrorCodesUrl?: string | null,
+    finalImageUrls?: string[] | null
   ): Omit<Maquina, 'id' | 'customBrand' | 'customEquipmentType'> => {
     const {
       customBrand,
@@ -391,7 +413,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       customerId: formCustomerId,
       ownerReference: formOwnerReferenceFromForm,
       linkedAuxiliaryEquipmentIds: formLinkedAuxiliaryEquipmentIds,
-      fleetNumber: formFleetNumber, // Novo campo
+      fleetNumber: formFleetNumber,
+      imageUrls: formImageUrls, // Ignorar do form, usar finalImageUrls
       ...restOfData
     } = formData;
 
@@ -415,7 +438,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       brand: parsedData.brand === '_CUSTOM_' ? customBrand || "Não especificado" : parsedData.brand,
       model: parsedData.model,
       chassisNumber: parsedData.chassisNumber,
-      fleetNumber: formFleetNumber || null, // Novo campo
+      fleetNumber: formFleetNumber || null,
       equipmentType: parsedData.equipmentType === '_CUSTOM_' ? customEquipmentType || "Não especificado" : parsedData.equipmentType,
       customerId: formCustomerId,
       ownerReference: finalOwnerReference,
@@ -423,6 +446,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       partsCatalogUrl: newPartsCatalogUrl === undefined ? formData.partsCatalogUrl : newPartsCatalogUrl,
       errorCodesUrl: newErrorCodesUrl === undefined ? formData.errorCodesUrl : newErrorCodesUrl,
       linkedAuxiliaryEquipmentIds: formLinkedAuxiliaryEquipmentIds || null,
+      imageUrls: finalImageUrls === undefined ? (Array.isArray(formImageUrls) ? formImageUrls : null) : finalImageUrls,
     };
   };
 
@@ -430,7 +454,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     mutationFn: async (data: {
       formData: z.infer<typeof MaquinaSchema>,
       catalogFile: File | null,
-      codesFile: File | null
+      codesFile: File | null,
+      newImageFiles: File[],
     }) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
@@ -444,15 +469,22 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       const newMaquinaId = doc(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME)).id;
       let partsCatalogUrl: string | null = null;
       let errorCodesUrl: string | null = null;
+      const uploadedImageUrls: string[] = [];
 
       if (data.catalogFile) {
-        partsCatalogUrl = await uploadFile(data.catalogFile, newMaquinaId, 'partsCatalog');
+        partsCatalogUrl = await uploadMaquinaImageFile(data.catalogFile, newMaquinaId, 'partsCatalog');
       }
       if (data.codesFile) {
-        errorCodesUrl = await uploadFile(data.codesFile, newMaquinaId, 'errorCodes');
+        errorCodesUrl = await uploadMaquinaImageFile(data.codesFile, newMaquinaId, 'errorCodes');
+      }
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadMaquinaImageFile(file, newMaquinaId, `image_${Date.now()}_${i}`);
+        uploadedImageUrls.push(imageUrl);
       }
 
-      const maquinaDataForFirestore = prepareDataForFirestore(data.formData, partsCatalogUrl, errorCodesUrl);
+
+      const maquinaDataForFirestore = prepareDataForFirestore(data.formData, partsCatalogUrl, errorCodesUrl, uploadedImageUrls);
       const batch = writeBatch(db!);
 
       batch.set(doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, newMaquinaId), maquinaDataForFirestore);
@@ -484,7 +516,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       formData: z.infer<typeof MaquinaSchema>,
       catalogFile: File | null,
       codesFile: File | null,
-      currentMaquina: Maquina
+      currentMaquina: Maquina,
+      newImageFiles: File[],
+      existingImageUrlsToKeep: string[],
     }) => {
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
@@ -499,17 +533,32 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       setIsUploadingFiles(true);
       let newPartsCatalogUrl = data.currentMaquina.partsCatalogUrl;
       let newErrorCodesUrl = data.currentMaquina.errorCodesUrl;
+      const finalImageUrls: string[] = [...data.existingImageUrlsToKeep];
 
       if (data.catalogFile) {
-        await deleteFileFromStorage(data.currentMaquina.partsCatalogUrl);
-        newPartsCatalogUrl = await uploadFile(data.catalogFile, data.id, 'partsCatalog');
+        await deleteFileFromStorageFirebase(data.currentMaquina.partsCatalogUrl);
+        newPartsCatalogUrl = await uploadMaquinaImageFile(data.catalogFile, data.id, 'partsCatalog');
       }
       if (data.codesFile) {
-        await deleteFileFromStorage(data.currentMaquina.errorCodesUrl);
-        newErrorCodesUrl = await uploadFile(data.codesFile, data.id, 'errorCodes');
+        await deleteFileFromStorageFirebase(data.currentMaquina.errorCodesUrl);
+        newErrorCodesUrl = await uploadMaquinaImageFile(data.codesFile, data.id, 'errorCodes');
       }
 
-      const maquinaDataForFirestore = prepareDataForFirestore(data.formData, newPartsCatalogUrl, newErrorCodesUrl);
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadMaquinaImageFile(file, data.id, `image_${Date.now()}_${i}`);
+        finalImageUrls.push(imageUrl);
+      }
+
+      const urlsToDeleteFromStorage = (data.currentMaquina.imageUrls || []).filter(
+        (url) => !data.existingImageUrlsToKeep.includes(url)
+      );
+      for (const url of urlsToDeleteFromStorage) {
+        await deleteFileFromStorageFirebase(url);
+      }
+
+
+      const maquinaDataForFirestore = prepareDataForFirestore(data.formData, newPartsCatalogUrl, newErrorCodesUrl, finalImageUrls);
       const batch = writeBatch(db!);
       const maquinaRef = doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, data.id);
       batch.update(maquinaRef, maquinaDataForFirestore as { [x: string]: any });
@@ -549,7 +598,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
-      await deleteFileFromStorage(data.fileUrl);
+      await deleteFileFromStorageFirebase(data.fileUrl);
       const maquinaRef = doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, data.maquinaId);
       await updateDoc(maquinaRef, { [data.fileType]: null });
       return { maquinaId: data.maquinaId, fileType: data.fileType };
@@ -575,9 +624,14 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       if (!maquinaToDelete?.id) {
         throw new Error("ID da máquina inválido fornecido para a função de mutação.");
       }
-      const { id, partsCatalogUrl, errorCodesUrl, linkedAuxiliaryEquipmentIds } = maquinaToDelete;
-      await deleteFileFromStorage(partsCatalogUrl);
-      await deleteFileFromStorage(errorCodesUrl);
+      const { id, partsCatalogUrl, errorCodesUrl, linkedAuxiliaryEquipmentIds, imageUrls } = maquinaToDelete;
+      await deleteFileFromStorageFirebase(partsCatalogUrl);
+      await deleteFileFromStorageFirebase(errorCodesUrl);
+      if (imageUrls) {
+        for (const url of imageUrls) {
+          await deleteFileFromStorageFirebase(url);
+        }
+      }
 
       const batch = writeBatch(db!);
       const maquinaRef = doc(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME, id);
@@ -613,23 +667,36 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     setEditingMaquina(null);
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
+    setImageFilesToUpload([]);
+    setImagePreviews([]);
     setIsEditMode(false);
     form.reset();
     setShowCustomFields({ brand: false, equipmentType: false });
-    prevCustomerIdRef.current = undefined; // Reset prevCustomerIdRef
+    prevCustomerIdRef.current = undefined;
   };
 
   const onSubmit = async (values: z.infer<typeof MaquinaSchema>) => {
+    const existingImageUrlsToKeep = imagePreviews.filter(
+      (url) => (editingMaquina?.imageUrls || []).includes(url) && url.startsWith('https://firebasestorage.googleapis.com')
+    );
+
     if (editingMaquina && editingMaquina.id) {
       updateMaquinaMutation.mutate({
         id: editingMaquina.id,
         formData: values,
         catalogFile: partsCatalogFile,
         codesFile: errorCodesFile,
-        currentMaquina: editingMaquina
+        currentMaquina: editingMaquina,
+        newImageFiles: imageFilesToUpload,
+        existingImageUrlsToKeep,
       });
     } else {
-      addMaquinaMutation.mutate({ formData: values, catalogFile: partsCatalogFile, codesFile: errorCodesFile });
+      addMaquinaMutation.mutate({
+        formData: values,
+        catalogFile: partsCatalogFile,
+        codesFile: errorCodesFile,
+        newImageFiles: imageFilesToUpload,
+      });
     }
   };
 
@@ -680,6 +747,52 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     }).filter(Boolean) as { id: string, name: string }[];
   };
 
+  const handleImageFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const currentTotalFiles = imagePreviews.length + imageFilesToUpload.length - (editingMaquina?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) + files.length;
+
+      if (currentTotalFiles > MAX_IMAGE_FILES) {
+        toast({
+          title: "Limite de Imagens Excedido",
+          description: `Você pode ter no máximo ${MAX_IMAGE_FILES} imagens por máquina. Atualmente: ${imagePreviews.length + imageFilesToUpload.length}. Tentando adicionar: ${files.length}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const newFilesArray = Array.from(files);
+      setImageFilesToUpload(prev => [...prev, ...newFilesArray]);
+      newFilesArray.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreviews(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const handleRemoveMachineImage = (index: number, isExistingUrl: boolean) => {
+    if (isExistingUrl) {
+      // For existing URLs, just remove from previews. Actual deletion from storage happens on submit.
+      const urlToRemove = imagePreviews[index];
+      setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      // Also update the form value to reflect this removal for submission
+      const currentFormUrls = form.getValues('imageUrls') || [];
+      form.setValue('imageUrls', currentFormUrls.filter(url => url !== urlToRemove), {shouldDirty: true});
+    } else {
+      // For new files, find its original index in imageFilesToUpload based on its preview URL
+      // This is a bit tricky because previews are mixed. We assume new files are appended to previews.
+      const numExistingUrls = (editingMaquina?.imageUrls || []).filter(url => imagePreviews.includes(url)).length;
+      const fileIndexToRemove = index - numExistingUrls;
+
+      if (fileIndexToRemove >= 0 && fileIndexToRemove < imageFilesToUpload.length) {
+        setImageFilesToUpload(prev => prev.filter((_, i) => i !== fileIndexToRemove));
+        setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      }
+    }
+  };
+
 
   const isLoadingPage = isLoadingMaquinas || isLoadingCustomers || isLoadingAuxiliaryEquipment;
   const isMutating = addMaquinaMutation.isPending || updateMaquinaMutation.isPending || deleteMaquinaMutation.isPending || removeFileMutation.isPending || isUploadingFiles;
@@ -698,8 +811,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       <div className="flex flex-col items-center justify-center h-64 text-destructive">
         <AlertIconLI className="h-12 w-12 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Máquinas</h2>
-        <p className="text-center">Não foi possível buscar os dados. Tente novamente mais tarde.</p>
-        <p className="text-sm mt-2">Detalhe: {errorMaquinas?.message}</p>
+        <p className="text-center">Não foi possível buscar os dados. Detalhe: {errorMaquinasData?.message}</p>
       </div>
     );
   }
@@ -780,6 +892,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
             const linkedAuxDetails = getLinkedAuxiliaryEquipmentDetails(maq.linkedAuxiliaryEquipmentIds);
             const customerAddressDisplay = customer ? formatAddressForDisplay(customer) : null;
             const customerGoogleMapsUrl = customer ? generateGoogleMapsUrl(customer) : "#";
+            const primaryImageUrl = maq.imageUrls && maq.imageUrls.length > 0 ? maq.imageUrls[0] : null;
 
             return (
             <Card
@@ -788,6 +901,21 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
               onClick={() => openModal(maq)}
             >
               <CardHeader>
+                 {primaryImageUrl ? (
+                    <div className="relative w-full h-40 mb-2 rounded-t-md overflow-hidden">
+                        <NextImage
+                            src={primaryImageUrl}
+                            alt={`Imagem de ${maq.brand} ${maq.model}`}
+                            layout="fill"
+                            objectFit="cover"
+                            data-ai-hint="machinery product"
+                        />
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-center w-full h-40 mb-2 rounded-t-md bg-muted">
+                        <ImageIcon className="w-12 h-12 text-muted-foreground" />
+                    </div>
+                )}
                 <CardTitle className="font-headline text-xl text-primary">{maq.brand} {maq.model}</CardTitle>
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
@@ -880,7 +1008,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                           <PackageSearch className="mr-1.5 h-3.5 w-3.5 text-primary" />
                           <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
                         </h4>
-                        <ScrollArea className="max-h-24 pr-2"> {/* Consistent with customer's machine list styling */}
+                        <ScrollArea className="max-h-24 pr-2">
                           <ul className="list-none pl-1 space-y-0.5">
                             {linkedAuxDetails.map(aux => (
                               <li key={aux.id} className="text-xs text-muted-foreground">
@@ -959,7 +1087,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         isOpen={isModalOpen}
         onClose={closeModal}
         title={editingMaquina ? "Editar Máquina" : "Adicionar Nova Máquina"}
-        description="Forneça os detalhes da máquina, incluindo arquivos PDF se necessário."
+        description="Forneça os detalhes da máquina, incluindo arquivos PDF e imagens se necessário."
         formId="maquina-form"
         isSubmitting={isMutating}
         editingItem={editingMaquina}
@@ -1221,6 +1349,55 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                     <FormItem><FormLabel>Comprimento (mm)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ""} onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))} /></FormControl><FormMessage /></FormItem>
                 )} />
             </div>
+
+             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Imagens da Máquina (Máx. {MAX_IMAGE_FILES})</h3>
+                <FormItem>
+                    <FormLabel htmlFor="machine-images-upload">Adicionar Imagens</FormLabel>
+                    <FormControl>
+                        <Input
+                            id="machine-images-upload"
+                            type="file"
+                            multiple
+                            accept="image/jpeg, image/png, image/webp"
+                            onChange={handleImageFilesChange}
+                            disabled={isUploadingFiles || imagePreviews.length + imageFilesToUpload.length >= MAX_IMAGE_FILES}
+                        />
+                    </FormControl>
+                    <FormDescription>
+                        Total de imagens: {imagePreviews.length + imageFilesToUpload.length - (editingMaquina?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) } de {MAX_IMAGE_FILES}.
+                    </FormDescription>
+                    <FormMessage />
+                </FormItem>
+                {(imagePreviews.length > 0 || imageFilesToUpload.length > 0) && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mt-2">
+                        {imagePreviews.map((previewUrl, index) => {
+                            const isExisting = (editingMaquina?.imageUrls || []).includes(previewUrl) && previewUrl.startsWith('https://firebasestorage.googleapis.com');
+                            return (
+                                <div key={`preview-${index}`} className="relative group aspect-square">
+                                    <NextImage
+                                        src={previewUrl}
+                                        alt={`Preview ${index + 1}`}
+                                        layout="fill"
+                                        objectFit="cover"
+                                        className="rounded-md"
+                                        data-ai-hint="machine image"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground opacity-80 hover:opacity-100 transition-opacity"
+                                        onClick={() => handleRemoveMachineImage(index, isExisting)}
+                                        title={isExisting ? "Remover imagem existente (será excluída ao salvar)" : "Remover nova imagem"}
+                                    >
+                                        <XCircle className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
 
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Arquivos (PDF)</h3>
             <FormItem>
