@@ -155,7 +155,7 @@ export function CustomerClientPage() {
       (customer.fantasyName && customer.fantasyName.toLowerCase().includes(lowercasedSearchTerm)) ||
       customer.cnpj.toLowerCase().includes(lowercasedSearchTerm) ||
       (customer.contactName && customer.contactName.toLowerCase().includes(lowercasedSearchTerm)) ||
-      customer.email.toLowerCase().includes(lowercasedSearchTerm)
+      (customer.email && customer.email.toLowerCase().includes(lowercasedSearchTerm))
     );
   }, [customers, searchTerm]);
 
@@ -285,7 +285,7 @@ export function CustomerClientPage() {
         form.setValue("name", form.getValues("name") || "");
       } else {
         form.setValue("name", data.razao_social || "");
-        form.setValue("fantasyName", data.nome_fantasia || form.getValues("fantasyName") || "");
+        form.setValue("fantasyName", data.nome_fantasia || "");
         form.setValue("street", data.logradouro || "");
         form.setValue("number", data.numero || "");
         form.setValue("complement", data.complemento || "");
@@ -293,8 +293,7 @@ export function CustomerClientPage() {
         form.setValue("city", data.municipio || "");
         form.setValue("state", data.uf || "");
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
-        
-        form.setValue("email", data.email ?? ""); // Se data.email for null, define como ""
+        form.setValue("email", data.email ?? "");
 
         let primaryPhone = data.ddd_telefone_1 || "";
         if (!primaryPhone && (data as any).ddd_telefone_2) {
@@ -318,6 +317,7 @@ export function CustomerClientPage() {
       form.reset({
         ...customer,
         fantasyName: customer.fantasyName || "",
+        email: customer.email || "",
         phone: customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : "",
         preferredTechnician: customer.preferredTechnician || null,
         cep: customer.cep || null,
@@ -347,6 +347,7 @@ export function CustomerClientPage() {
     const dataToSave = {
         ...values,
         preferredTechnician: values.preferredTechnician || null,
+        email: values.email || null,
     };
     if (editingCustomer && editingCustomer.id) {
       updateCustomerMutation.mutate({ ...dataToSave, id: editingCustomer.id });
@@ -413,7 +414,7 @@ export function CustomerClientPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome, CNPJ, contato ou email..."
+            placeholder="Buscar por nome, nome fantasia, CNPJ, contato ou email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
@@ -476,20 +477,22 @@ export function CustomerClientPage() {
                     <span>{toTitleCase(customer.contactName)}</span>
                   </p>
                 )}
-                <p className="flex items-center text-sm">
-                  <Mail className="mr-2 h-4 w-4 text-primary" />
-                  <span className="font-medium text-muted-foreground mr-1">Email:</span>
-                  <a
-                    href={`mailto:${customer.email}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline text-primary truncate"
-                    onClick={(e) => e.stopPropagation()}
-                    title={customer.email}
-                  >
-                    {customer.email}
-                  </a>
-                </p>
+                {customer.email && (
+                  <p className="flex items-center text-sm">
+                    <Mail className="mr-2 h-4 w-4 text-primary" />
+                    <span className="font-medium text-muted-foreground mr-1">Email:</span>
+                    <a
+                      href={`mailto:${customer.email}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline text-primary truncate"
+                      onClick={(e) => e.stopPropagation()}
+                      title={customer.email}
+                    >
+                      {customer.email}
+                    </a>
+                  </p>
+                )}
                 {customer.phone && (
                   <p className="flex items-center text-sm">
                     <Phone className="mr-2 h-4 w-4 text-primary" />
@@ -639,7 +642,7 @@ export function CustomerClientPage() {
                 <FormItem><FormLabel>Nome do Contato (Opcional)</FormLabel><FormControl><Input placeholder="Nome da pessoa de contato" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
                <FormField control={form.control} name="email" render={({ field }) => (
-                <FormItem><FormLabel>Email Principal</FormLabel><FormControl><Input type="email" placeholder="contato@exemplo.com" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Email Principal (Opcional)</FormLabel><FormControl><Input type="email" placeholder="contato@exemplo.com" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="phone" render={({ field }) => (
                 <FormItem>

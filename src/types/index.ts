@@ -12,9 +12,9 @@ const NO_TECHNICIAN_SELECTED_VALUE_FOR_SCHEMA_CHECK = "_NO_TECHNICIAN_SELECTED_"
 export interface Customer {
   id: string;
   name: string;
-  fantasyName?: string; // Novo campo
+  fantasyName?: string | null; // Alterado para aceitar null
   cnpj: string;
-  email: string;
+  email?: string | null; // Alterado para opcional e aceitar null
   phone?: string;
   contactName?: string;
   cep?: string | null;
@@ -261,9 +261,9 @@ const requiredString = (field: string) => z.string().min(1, `${field} é obrigat
 
 export const CustomerSchema = z.object({
   name: requiredString("Nome (Razão Social)"),
-  fantasyName: z.string().optional().nullable(), // Novo campo
+  fantasyName: z.string().optional().nullable(),
   cnpj: requiredString("CNPJ"),
-  email: z.string().email("Endereço de email inválido"),
+  email: z.string().email("Endereço de email inválido").optional().nullable(),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
   contactName: z.string().optional(),
   cep: z.string()
@@ -477,4 +477,3 @@ export const PartsRequisitionSchema = z.object({
   items: z.array(PartsRequisitionItemSchema).min(1, "A requisição deve ter pelo menos uma peça."),
   generalNotes: z.string().optional().nullable(),
 });
-
