@@ -20,13 +20,13 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc, writeBatch } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc, writeBatch, where } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; // Import centralized utils
+import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; 
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -141,6 +141,21 @@ async function fetchAllAuxiliaryEquipments(): Promise<AuxiliaryEquipment[]> {
     const q = query(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME), orderBy("name", "asc"));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as AuxiliaryEquipment));
+}
+
+async function checkChassisNumberExists(chassisNumber: string, currentMaquinaId?: string): Promise<boolean> {
+  if (!db || !chassisNumber) return false;
+  // Consider consistent casing for query if needed, e.g., chassisNumber.toUpperCase()
+  const q = query(collection(db, FIRESTORE_EQUIPMENT_COLLECTION_NAME), where("chassisNumber", "==", chassisNumber));
+  const querySnapshot = await getDocs(q);
+  if (querySnapshot.empty) {
+    return false;
+  }
+  // If updating, check if the found chassis number belongs to a different machine
+  if (currentMaquinaId) {
+    return querySnapshot.docs.some(doc => doc.id !== currentMaquinaId);
+  }
+  return true; // Found for a new machine
 }
 
 
@@ -352,6 +367,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       ...parsedData,
       brand: parsedData.brand === '_CUSTOM_' ? customBrand || "Não especificado" : parsedData.brand,
       model: parsedData.model,
+      chassisNumber: parsedData.chassisNumber, // Keep as is from form
       equipmentType: parsedData.equipmentType === '_CUSTOM_' ? customEquipmentType || "Não especificado" : parsedData.equipmentType,
       customerId: formCustomerId,
       ownerReference: finalOwnerReference,
@@ -371,6 +387,11 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
+      const chassisExists = await checkChassisNumberExists(data.formData.chassisNumber);
+      if (chassisExists) {
+        throw new Error(`Já existe uma máquina cadastrada com o chassi: ${data.formData.chassisNumber}`);
+      }
+
       setIsUploadingFiles(true);
       const newMaquinaId = doc(collection(db!, FIRESTORE_EQUIPMENT_COLLECTION_NAME)).id;
       let partsCatalogUrl: string | null = null;
@@ -403,10 +424,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       closeModal();
     },
     onError: (err: Error, variables) => {
-      let message = `Não foi possível criar ${variables.formData.brand} ${variables.formData.model}. Detalhe: ${err.message}`;
-      if (err.message.includes("Um cliente deve ser selecionado")) {
-        message = err.message;
-      }
+      let message = err.message || `Não foi possível criar ${variables.formData.brand} ${variables.formData.model}.`;
       toast({ title: "Erro ao Criar Máquina", description: message, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFiles(false)
@@ -423,6 +441,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       if (!db || !storage) {
         throw new Error("Firebase Firestore ou Storage connection not available.");
       }
+      if (data.formData.chassisNumber !== data.currentMaquina.chassisNumber) {
+        const chassisExists = await checkChassisNumberExists(data.formData.chassisNumber, data.id);
+        if (chassisExists) {
+          throw new Error(`O número do chassi ${data.formData.chassisNumber} já está em uso por outra máquina.`);
+        }
+      }
+
       setIsUploadingFiles(true);
       let newPartsCatalogUrl = data.currentMaquina.partsCatalogUrl;
       let newErrorCodesUrl = data.currentMaquina.errorCodesUrl;
@@ -465,10 +490,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl }: MaquinasClientPageProps
       closeModal();
     },
     onError: (err: Error, variables) => {
-      let message = `Não foi possível atualizar ${variables.formData.brand} ${variables.formData.model}. Detalhe: ${err.message}`;
-      if (err.message.includes("Um cliente deve ser selecionado")) {
-        message = err.message;
-      }
+      let message = err.message || `Não foi possível atualizar ${variables.formData.brand} ${variables.formData.model}.`;
       toast({ title: "Erro ao Atualizar Máquina", description: message, variant: "destructive" });
     },
     onSettled: () => setIsUploadingFiles(false)
