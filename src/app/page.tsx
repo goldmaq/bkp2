@@ -24,6 +24,14 @@ interface MaquinaRentalKPIs {
   lowestRentalMachine?: { name: string; value: number; id: string };
 }
 
+const normalizeStatusString = (str: string | undefined | null): string => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .normalize("NFD") // Normaliza para decompor acentos
+    .replace(/[\u0300-\u036f]/g, ""); // Remove diacríticos (acentos)
+};
+
 async function getMaquinaKPIs(): Promise<{
   total: number;
   disponivel: number;
@@ -54,12 +62,17 @@ async function getMaquinaKPIs(): Promise<{
     }
   });
 
+  const normalizedDisponivel = normalizeStatusString("Disponível");
+  const normalizedLocada = normalizeStatusString("Locada");
+  const normalizedManutencao = normalizeStatusString("Em Manutenção");
+  const normalizedSucata = normalizeStatusString("Sucata");
+
   return {
     total: maquinas.length,
-    disponivel: maquinas.filter(m => m.operationalStatus === 'Disponível').length,
-    locada: maquinas.filter(m => m.operationalStatus === 'Locada').length,
-    manutencao: maquinas.filter(m => m.operationalStatus === 'Em Manutenção').length,
-    sucata: maquinas.filter(m => m.operationalStatus === 'Sucata').length,
+    disponivel: maquinas.filter(m => normalizeStatusString(m.operationalStatus) === normalizedDisponivel).length,
+    locada: maquinas.filter(m => normalizeStatusString(m.operationalStatus) === normalizedLocada).length,
+    manutencao: maquinas.filter(m => normalizeStatusString(m.operationalStatus) === normalizedManutencao).length,
+    sucata: maquinas.filter(m => normalizeStatusString(m.operationalStatus) === normalizedSucata).length,
     totalRentalValue,
     highestRentalMachine,
     lowestRentalMachine,
