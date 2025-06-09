@@ -80,6 +80,7 @@ export interface Maquina {
   notes?: string | null;
   partsCatalogUrl?: string | null;
   errorCodesUrl?: string | null;
+  imageUrls?: string[] | null; // New field for image URLs
   linkedAuxiliaryEquipmentIds?: string[] | null;
 }
 
@@ -137,6 +138,7 @@ export interface Technician {
   role: typeof roleOptionsList[number] | string;
   specialization?: string;
   phone?: string;
+  imageUrl?: string | null; // Added field for technician profile image URL
 }
 
 export interface Company {
@@ -351,6 +353,10 @@ export const MaquinaSchema = z.object({
   partsCatalogUrl: z.string().url("URL inválida para catálogo de peças").nullable().optional(),
   errorCodesUrl: z.string().url("URL inválida para códigos de erro").nullable().optional(),
   linkedAuxiliaryEquipmentIds: z.array(z.string()).optional().nullable(),
+  imageUrls: z.array(z.string().url("URL de imagem inválida"))
+    .max(5, "Máximo de 5 imagens por máquina")
+    .nullable()
+    .optional(), // New field with validation
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;
@@ -367,6 +373,7 @@ export const TechnicianSchema = z.object({
   role: requiredString("Cargo"),
   specialization: z.string().optional(),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
+  imageUrl: z.string().url("URL da imagem de perfil inválida.").optional().nullable(), // Added field validation
 });
 
 export const FuelingRecordSchema = z.object({

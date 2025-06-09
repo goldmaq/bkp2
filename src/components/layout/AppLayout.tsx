@@ -58,7 +58,7 @@ const navItems: NavItem[] = [
   { href: "/company-config", icon: SlidersHorizontal, label: "Dados das Empresas" },
 ];
 
-const appVersion = "5.2.0"; 
+const appVersion = "6.0"; 
 
 function MainSidebar() {
   const pathname = usePathname();

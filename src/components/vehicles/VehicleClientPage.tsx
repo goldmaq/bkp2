@@ -60,6 +60,7 @@ async function fetchVehicles(): Promise<Vehicle[]> {
         fuelConsumption: Number(data.fuelConsumption),
         costPerKilometer: Number(data.costPerKilometer),
         fipeValue: data.fipeValue !== undefined && data.fipeValue !== null ? Number(data.fipeValue) : null,
+ year: data.year !== undefined && data.year !== null ? Number(data.year) : null,
         registrationInfo: data.registrationInfo,
         status: data.status,
         fuelingHistory: Array.isArray(data.fuelingHistory) ? data.fuelingHistory : [],
@@ -89,7 +90,7 @@ export function VehicleClientPage() {
   const form = useForm<z.infer<typeof VehicleSchema>>({
     resolver: zodResolver(VehicleSchema),
     defaultValues: {
-      model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0,
+      model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, year: null,
       fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
       nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
     },
@@ -282,6 +283,7 @@ export function VehicleClientPage() {
         fuelConsumption: Number(vehicle.fuelConsumption),
         costPerKilometer: Number(vehicle.costPerKilometer),
         fipeValue: vehicle.fipeValue !== undefined && vehicle.fipeValue !== null ? Number(vehicle.fipeValue) : null,
+ year: vehicle.year !== undefined && vehicle.year !== null ? Number(vehicle.year) : null,
         fuelingHistory: vehicle.fuelingHistory || [],
         maintenanceHistory: vehicle.maintenanceHistory || [],
         nextMaintenanceType: vehicle.nextMaintenanceType || null,
@@ -293,7 +295,7 @@ export function VehicleClientPage() {
     } else {
       setEditingVehicle(null);
       form.reset({
-        model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0,
+        model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, year: null,
         fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
         nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
       });
@@ -685,6 +687,17 @@ export function VehicleClientPage() {
                     </FormItem>
                   )} />
                 </div>
+ <FormField control={form.control} name="year" render={({ field }) => (
+ <FormItem>
+ <FormLabel>Ano de Fabricação</FormLabel>
+ <FormControl>
+ <Input type="number" placeholder="Ex: 2018" {...field}
+ onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+ value={field.value ?? ""}
+ />
+ </FormControl><FormMessage /></FormItem>
+ )} />
+
               <FormField control={form.control} name="registrationInfo" render={({ field }) => (
                 <FormItem><FormLabel>Informações de Registro (Opcional)</FormLabel><FormControl><Input placeholder="ex: Renavam, Chassi" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
