@@ -107,6 +107,9 @@ function MainSidebar() {
               );
             })}
           </SidebarMenu>
+          <div className="mt-auto p-4 text-center text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
+            Versão {appVersion}
+          </div>
         </ScrollArea>
       </SidebarContent>
     </Sidebar>
@@ -139,12 +142,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </header>
           <main className="flex-1 p-6 overflow-auto bg-background">
             {children}
-            <div className="text-center text-xs text-muted-foreground mt-8 py-4">
-              Versão {appVersion}
-            </div>
+            
           </main>
           <footer className="p-4 text-right text-xs text-muted-foreground border-t">
-            {/* A informação da versão foi movida para o final do <main> */}
+            
           </footer>
           <BackToTopButton />
         </SidebarInset>
