@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -34,7 +33,8 @@ import {
 } from "@/components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { BackToTopButton } from "@/components/shared/BackToTopButton"; // Importa o novo botão
+import { BackToTopButton } from "@/components/shared/BackToTopButton";
+import { ThemeToggle } from "@/components/shared/ThemeToggle"; // Importar ThemeToggle
 
 interface NavItem {
   href: string;
@@ -132,7 +132,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <div className="font-heading text-lg font-semibold text-foreground">
               {currentPathname === "/" ? "Painel Principal" : pageTitle}
             </div>
-            <div>{/* User menu or other actions can go here */}</div>
+            <div>
+              <ThemeToggle /> {/* Adicionar ThemeToggle aqui */}
+            </div>
           </header>
           <main className="flex-1 p-6 overflow-auto bg-background">
             {children}
@@ -140,7 +142,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <footer className="p-4 text-right text-xs text-muted-foreground border-t">
             <p>Versão {appVersion}</p>
           </footer>
-          <BackToTopButton /> {/* Adiciona o botão aqui */}
+          <BackToTopButton />
         </SidebarInset>
       </div>
     </SidebarProvider>
