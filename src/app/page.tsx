@@ -11,7 +11,7 @@ import {
 import { KPICard } from '@/components/dashboard/KPICard';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { Maquina, Budget, ServiceOrder } from '@/types';
+import type { Maquina, Budget, ServiceOrder, Vehicle } from '@/types'; // Added Vehicle
 import { maquinaOperationalStatusOptions, budgetStatusOptions, serviceOrderPhaseOptions } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -73,11 +73,25 @@ async function getServiceOrderKPIs() {
   };
 }
 
+async function getVehicleKPIs() {
+  if (!db) return { totalFipeValue: 0, vehicleCount: 0 };
+  const vehiclesSnapshot = await getDocs(collection(db, 'veiculos'));
+  const vehicles = vehiclesSnapshot.docs.map(doc => doc.data() as Vehicle);
+
+  const totalFipeValue = vehicles.reduce((sum, v) => sum + (v.fipeValue || 0), 0);
+  
+  return {
+    totalFipeValue: totalFipeValue,
+    vehicleCount: vehicles.length,
+  };
+}
+
 
 export default async function DashboardPage() {
   const maquinaKPIs = await getMaquinaKPIs();
   const budgetKPIs = await getBudgetKPIs();
   const serviceOrderKPIs = await getServiceOrderKPIs();
+  const vehicleKPIs = await getVehicleKPIs();
 
   return (
     <AppLayout>
@@ -134,6 +148,14 @@ export default async function DashboardPage() {
               icon={ClipboardList} 
               iconColor="text-orange-500"
               href="/service-orders?status=Abertas"
+            />
+            <KPICard
+              title="Valor Total da Frota (FIPE)"
+              value={formatCurrency(vehicleKPIs.totalFipeValue)}
+              icon={CarFront}
+              iconColor="text-indigo-500"
+              additionalInfo={<span className="text-sm">{vehicleKPIs.vehicleCount} veículos</span>}
+              href="/vehicles"
             />
           </div>
         </section>
