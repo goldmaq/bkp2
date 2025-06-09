@@ -83,6 +83,7 @@ interface BrasilApiResponseCnpj {
   uf?: string;
   cep?: string;
   ddd_telefone_1?: string;
+  email?: string; // Adicionado para capturar o email da API
   descricao_situacao_cadastral?: string;
   erro?: boolean;
   message?: string;
@@ -104,6 +105,7 @@ export function CustomerClientPage() {
     resolver: zodResolver(CustomerSchema),
     defaultValues: {
       name: "",
+      fantasyName: "", // Adicionado
       cnpj: "",
       email: "",
       phone: "",
@@ -150,6 +152,7 @@ export function CustomerClientPage() {
     const lowercasedSearchTerm = searchTerm.toLowerCase();
     return customers.filter((customer) =>
       customer.name.toLowerCase().includes(lowercasedSearchTerm) ||
+      (customer.fantasyName && customer.fantasyName.toLowerCase().includes(lowercasedSearchTerm)) ||
       customer.cnpj.toLowerCase().includes(lowercasedSearchTerm) ||
       (customer.contactName && customer.contactName.toLowerCase().includes(lowercasedSearchTerm)) ||
       customer.email.toLowerCase().includes(lowercasedSearchTerm)
@@ -282,6 +285,7 @@ export function CustomerClientPage() {
         form.setValue("name", form.getValues("name") || "");
       } else {
         form.setValue("name", data.razao_social || "");
+        form.setValue("fantasyName", data.nome_fantasia || ""); // Preenche Nome Fantasia
         form.setValue("street", data.logradouro || "");
         form.setValue("number", data.numero || "");
         form.setValue("complement", data.complemento || "");
@@ -289,6 +293,7 @@ export function CustomerClientPage() {
         form.setValue("city", data.municipio || "");
         form.setValue("state", data.uf || "");
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
+        form.setValue("email", data.email || form.getValues("email") || ""); // Preenche Email
 
         let primaryPhone = data.ddd_telefone_1 || "";
         if (!primaryPhone && (data as any).ddd_telefone_2) {
@@ -311,6 +316,7 @@ export function CustomerClientPage() {
       setEditingCustomer(customer);
       form.reset({
         ...customer,
+        fantasyName: customer.fantasyName || "", // Adicionado
         phone: customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : "",
         preferredTechnician: customer.preferredTechnician || null,
         cep: customer.cep || null,
@@ -319,7 +325,8 @@ export function CustomerClientPage() {
     } else {
       setEditingCustomer(null);
       form.reset({
-        name: "", cnpj: "", email: "", phone: "", contactName: "", cep: null, street: "", number: "",
+        name: "", fantasyName: "", cnpj: "", email: "", phone: "", contactName: "", // Adicionado fantasyName
+        cep: null, street: "", number: "",
         complement: "", neighborhood: "", city: "", state: "",
         preferredTechnician: null, notes: ""
       });
@@ -438,7 +445,7 @@ export function CustomerClientPage() {
               ? `https://wa.me/${whatsappNumber}?text=Ol%C3%A1%20${encodeURIComponent(customer.name)}`
               : "#";
             const displayAddress = formatAddressForDisplay(customer);
-            const googleMapsUrl = generateGoogleMapsUrl(customer); 
+            const googleMapsUrl = generateGoogleMapsUrl(customer);
             const preferredTechnicianDetails = technicians.find(t => t.name === customer.preferredTechnician);
 
             return (
@@ -449,6 +456,11 @@ export function CustomerClientPage() {
             >
               <CardHeader>
                 <CardTitle className="font-headline text-xl text-primary">{toTitleCase(customer.name)}</CardTitle>
+                {customer.fantasyName && (
+                  <CardDescription className="text-sm text-muted-foreground">
+                    {toTitleCase(customer.fantasyName)}
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="flex-grow space-y-2 text-sm">
                 <p className="flex items-center text-sm">
@@ -619,6 +631,9 @@ export function CustomerClientPage() {
               <FormField control={form.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Nome (Razão Social)</FormLabel><FormControl><Input placeholder="Nome completo do cliente ou razão social" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
+              <FormField control={form.control} name="fantasyName" render={({ field }) => (
+                <FormItem><FormLabel>Nome Fantasia (Opcional)</FormLabel><FormControl><Input placeholder="Nome fantasia, se houver" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+              )} />
               <FormField control={form.control} name="contactName" render={({ field }) => (
                 <FormItem><FormLabel>Nome do Contato (Opcional)</FormLabel><FormControl><Input placeholder="Nome da pessoa de contato" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
@@ -747,3 +762,4 @@ export function CustomerClientPage() {
     </>
   );
 }
+

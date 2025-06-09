@@ -57,7 +57,7 @@ const phaseIcons: Record<ServiceOrderPhaseType, JSX.Element> = {
 };
 
 const FIRESTORE_COLLECTION_NAME = "ordensDeServico";
-const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets"; // Adicionado
+const FIRESTORE_BUDGET_COLLECTION_NAME = "budgets"; 
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
 const FIRESTORE_EQUIPMENT_COLLECTION_NAME = "equipamentos";
 const FIRESTORE_TECHNICIAN_COLLECTION_NAME = "tecnicos";
@@ -625,7 +625,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       if (variables.budgetIdToMark) {
-        queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] }); // Invalidate budget cache
+        queryClient.invalidateQueries({ queryKey: [FIRESTORE_BUDGET_COLLECTION_NAME] });
       }
       toast({ title: "Ordem de Serviço Criada", description: `Ordem ${data.orderNumber} criada.` });
       closeModal();
@@ -809,7 +809,7 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     setIsEditMode(false);
     form.reset();
     setMediaFiles([]);
-     if (typeof window !== "undefined" && (serviceOrderIdFromUrl || initialDataFromBudget || budgetIdToCreateFrom)) {
+     if (typeof window !== "undefined" && (serviceOrderIdFromUrl || (initialDataFromBudget && budgetIdToCreateFrom))) {
       window.history.replaceState(null, '', '/service-orders');
     }
   };
@@ -979,18 +979,18 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     doc.setFont("helvetica", "bold");
     doc.text("OBSERVAÇÕES / DIAGNÓSTICO TÉCNICO:", 14, yPos);
     yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 30); 
+    doc.rect(14, yPos, 182, 30);
     yPos += 30 + lineSpacing;
 
     doc.setFont("helvetica", "bold");
     doc.text("SERVIÇOS REALIZADOS / PEÇAS UTILIZADAS:", 14, yPos);
     yPos += lineSpacing;
-    doc.rect(14, yPos, 182, 30); 
+    doc.rect(14, yPos, 182, 30);
     yPos += 30 + lineSpacing * 1.5;
 
-    doc.line(14, yPos, 84, yPos); 
+    doc.line(14, yPos, 84, yPos);
     doc.text("Assinatura do Técnico", 14, yPos + 5);
-    doc.line(112, yPos, 182, yPos); 
+    doc.line(112, yPos, 182, yPos);
     doc.text("Assinatura do Cliente", 112, yPos + 5);
     yPos += lineSpacing * 1.5;
 
@@ -1136,15 +1136,18 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
       const orderToOpen = serviceOrdersRaw.find(o => o.id === serviceOrderIdFromUrl);
       if (orderToOpen) {
         openModal(orderToOpen);
-         if (typeof window !== "undefined") { // Clear URL after opening
+        // Clear URL immediately after deciding to open the modal
+        if (typeof window !== "undefined") {
+            window.history.replaceState(null, '', '/service-orders');
+          }
+      }
+    } else if (initialDataFromBudget && !isModalOpen && !serviceOrderIdFromUrl && !isLoadingServiceOrders && budgetIdToCreateFrom) {
+      // This case is for creating a new OS prefilled from a budget
+      openModal(); // openModal will use initialDataFromBudget if editingOrder is null
+      // Clear URL immediately after deciding to open the modal
+      if (typeof window !== "undefined") {
           window.history.replaceState(null, '', '/service-orders');
         }
-      }
-    } else if (initialDataFromBudget && !isModalOpen && !serviceOrderIdFromUrl) {
-      openModal();
-       if (typeof window !== "undefined") { // Clear URL after opening for creation from budget
-        window.history.replaceState(null, '', '/service-orders');
-      }
     }
   }, [serviceOrderIdFromUrl, initialDataFromBudget, serviceOrdersRaw, isLoadingServiceOrders, openModal, isModalOpen, budgetIdToCreateFrom]);
 
@@ -1656,5 +1659,3 @@ export function ServiceOrderClientPage(props: ServiceOrderClientPageProps) {
     </TooltipProvider>
   );
 }
-
-    
