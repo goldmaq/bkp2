@@ -287,7 +287,10 @@ export function PartsTriageClientPage() {
 
   return (
     <TooltipProvider>
-      <PageHeader title="Triagem de Ordens e Peças" />
+      <PageHeader title="" />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Tela para o setor responsável (geralmente almoxarifado ou compras) analisar as requisições de peças feitas pelos técnicos. Permite aprovar ou recusar cada item solicitado e adicionar notas sobre a decisão. Também é o local para processar orçamentos aprovados para gerar as Ordens de Serviço correspondentes.
+      </p>
 
       <section className="mb-10">
         <h2 className="text-2xl font-headline font-semibold mb-4 border-b pb-2">Orçamentos Aprovados para Geração de OS</h2>
@@ -558,3 +561,4 @@ export function PartsTriageClientPage() {
     </TooltipProvider>
   );
 }
+
