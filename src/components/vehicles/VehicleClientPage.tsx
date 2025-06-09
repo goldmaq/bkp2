@@ -5,15 +5,15 @@ import { useState, useEffect, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon } from "lucide-react";
+import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import type { Vehicle, FuelingRecord } from "@/types";
-import { VehicleSchema, FuelingRecordSchema } from "@/types";
+import type { Vehicle, FuelingRecord, VehicleMaintenanceRecord } from "@/types";
+import { VehicleSchema, FuelingRecordSchema, VehicleMaintenanceRecordSchema } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -25,18 +25,18 @@ import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { formatDateForInput, formatDateForDisplay } from "@/lib/utils"; // Import centralized utils
+import { formatDateForInput, formatDateForDisplay } from "@/lib/utils";
 
 const statusOptions: Vehicle['status'][] = ['Disponível', 'Em Uso', 'Manutenção'];
 const statusIcons = {
   Disponível: <CircleCheck className="h-4 w-4 text-green-500" />,
   'Em Uso': <CarFront className="h-4 w-4 text-blue-500" />,
-  Manutenção: <WrenchIcon className="h-4 w-4 text-yellow-500" />,
+  Manutenção: <WrenchIconMain className="h-4 w-4 text-yellow-500" />,
 };
 
 const FIRESTORE_COLLECTION_NAME = "veiculos";
 
-const mockVehiclesData: Omit<Vehicle, 'id' | 'fuelingHistory'>[] = [
+const mockVehiclesData: Omit<Vehicle, 'id' | 'fuelingHistory' | 'maintenanceHistory'>[] = [
   { model: "FIAT DOBLO", licensePlate: "ENC8C91", fipeValue: 29243, kind: "Furgão", currentMileage: 150000, fuelConsumption: 9.5, costPerKilometer: 0.6, status: "Disponível", registrationInfo: "Exemplo" },
   { model: "FIAT FIORINO", licensePlate: "FQC4777", fipeValue: 48869, kind: "Furgão", currentMileage: 80000, fuelConsumption: 11.0, costPerKilometer: 0.5, status: "Em Uso", registrationInfo: "Exemplo" },
 ];
@@ -62,6 +62,7 @@ async function fetchVehicles(): Promise<Vehicle[]> {
         registrationInfo: data.registrationInfo,
         status: data.status,
         fuelingHistory: Array.isArray(data.fuelingHistory) ? data.fuelingHistory : [],
+        maintenanceHistory: Array.isArray(data.maintenanceHistory) ? data.maintenanceHistory : [],
     } as Vehicle;
   });
 }
@@ -77,9 +78,12 @@ export function VehicleClientPage() {
   const [isFuelingModalOpen, setIsFuelingModalOpen] = useState(false);
   const [selectedVehicleForFueling, setSelectedVehicleForFueling] = useState<Vehicle | null>(null);
 
+  const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+  const [selectedVehicleForMaintenance, setSelectedVehicleForMaintenance] = useState<Vehicle | null>(null);
+
   const form = useForm<z.infer<typeof VehicleSchema>>({
     resolver: zodResolver(VehicleSchema),
-    defaultValues: { model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [] },
+    defaultValues: { model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [] },
   });
 
   const fuelingForm = useForm<z.infer<typeof FuelingRecordSchema>>({
@@ -91,6 +95,18 @@ export function VehicleClientPage() {
       totalCost: undefined,
       mileageAtFueling: undefined,
       fuelStation: "",
+      notes: "",
+    },
+  });
+
+  const maintenanceForm = useForm<z.infer<typeof VehicleMaintenanceRecordSchema>>({
+    resolver: zodResolver(VehicleMaintenanceRecordSchema),
+    defaultValues: {
+      date: formatDateForInput(new Date()),
+      description: "",
+      cost: undefined,
+      mileageAtMaintenance: undefined,
+      serviceProvider: "",
       notes: "",
     },
   });
@@ -127,8 +143,8 @@ export function VehicleClientPage() {
 
   const isMockDataActive = vehiclesFromFirestore.length === 0 && !isLoading && !isError;
   const vehiclesToDisplay = useMemo(() => {
-    return isMockDataActive 
-      ? mockVehiclesData.map((v, i) => ({ ...v, id: `mock${i+1}`, fuelingHistory: [] })) 
+    return isMockDataActive
+      ? mockVehiclesData.map((v, i) => ({ ...v, id: `mock${i+1}`, fuelingHistory: [], maintenanceHistory: [] }))
       : vehiclesFromFirestore;
   }, [isMockDataActive, vehiclesFromFirestore]);
 
@@ -136,7 +152,7 @@ export function VehicleClientPage() {
   const addVehicleMutation = useMutation({
     mutationFn: async (newVehicleData: z.infer<typeof VehicleSchema>) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para adicionar veículo.");
-      const dataToSave = { ...newVehicleData, fuelingHistory: newVehicleData.fuelingHistory || [] };
+      const dataToSave = { ...newVehicleData, fuelingHistory: newVehicleData.fuelingHistory || [], maintenanceHistory: newVehicleData.maintenanceHistory || [] };
       return addDoc(collection(db!, FIRESTORE_COLLECTION_NAME), dataToSave);
     },
     onSuccess: (docRef, variables) => {
@@ -155,7 +171,7 @@ export function VehicleClientPage() {
       const { id, ...dataToUpdate } = vehicleData;
       if (!id || id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
       const vehicleRef = doc(db!, FIRESTORE_COLLECTION_NAME, id);
-      const dataToSave = { ...dataToUpdate, fuelingHistory: dataToUpdate.fuelingHistory || [] };
+      const dataToSave = { ...dataToUpdate, fuelingHistory: dataToUpdate.fuelingHistory || [], maintenanceHistory: dataToUpdate.maintenanceHistory || [] };
       return updateDoc(vehicleRef, dataToSave);
     },
     onSuccess: (_, variables) => {
@@ -177,7 +193,7 @@ export function VehicleClientPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
       toast({ title: "Veículo Excluído", description: `O veículo foi removido.` });
-      closeModal(); 
+      closeModal();
     },
     onError: (err: Error) => {
       toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o veículo. Detalhe: ${err.message}`, variant: "destructive" });
@@ -189,7 +205,7 @@ export function VehicleClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const vehicleRef = doc(db, FIRESTORE_COLLECTION_NAME, vehicleId);
       const batch = writeBatch(db);
-      
+
       batch.update(vehicleRef, {
         fuelingHistory: arrayUnion(newRecord)
       });
@@ -197,7 +213,7 @@ export function VehicleClientPage() {
       if (newRecord.mileageAtFueling > currentMileage) {
         batch.update(vehicleRef, { currentMileage: newRecord.mileageAtFueling });
       }
-      
+
       await batch.commit();
     },
     onSuccess: () => {
@@ -210,9 +226,34 @@ export function VehicleClientPage() {
     },
   });
 
+  const addMaintenanceRecordMutation = useMutation({
+    mutationFn: async ({ vehicleId, newRecord, currentMileage }: { vehicleId: string; newRecord: VehicleMaintenanceRecord; currentMileage: number }) => {
+      if (!db) throw new Error("Conexão com Firebase não disponível.");
+      const vehicleRef = doc(db, FIRESTORE_COLLECTION_NAME, vehicleId);
+      const batch = writeBatch(db);
+
+      batch.update(vehicleRef, {
+        maintenanceHistory: arrayUnion(newRecord)
+      });
+
+      if (newRecord.mileageAtMaintenance > currentMileage) {
+        batch.update(vehicleRef, { currentMileage: newRecord.mileageAtMaintenance });
+      }
+      await batch.commit();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
+      toast({ title: "Manutenção Registrada", description: "O novo registro de manutenção foi salvo." });
+      closeMaintenanceModal();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Erro ao Registrar Manutenção", description: error.message, variant: "destructive" });
+    },
+  });
+
   const openModal = (vehicle?: Vehicle) => {
     if (vehicle) {
-      setEditingVehicle(vehicle); 
+      setEditingVehicle(vehicle);
       form.reset({
         ...vehicle,
         currentMileage: Number(vehicle.currentMileage),
@@ -220,11 +261,12 @@ export function VehicleClientPage() {
         costPerKilometer: Number(vehicle.costPerKilometer),
         fipeValue: vehicle.fipeValue !== undefined && vehicle.fipeValue !== null ? Number(vehicle.fipeValue) : null,
         fuelingHistory: vehicle.fuelingHistory || [],
+        maintenanceHistory: vehicle.maintenanceHistory || [],
       });
-      setIsEditMode(false); 
+      setIsEditMode(false);
     } else {
-      setEditingVehicle(null); 
-      form.reset({ model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [] });
+      setEditingVehicle(null);
+      form.reset({ model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [] });
       setIsEditMode(true);
     }
     setIsModalOpen(true);
@@ -234,12 +276,12 @@ export function VehicleClientPage() {
     setIsModalOpen(false);
     setEditingVehicle(null);
     form.reset();
-    setIsEditMode(false); 
+    setIsEditMode(false);
   };
 
   const onSubmit = async (values: z.infer<typeof VehicleSchema>) => {
     if (editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock")) {
-      updateVehicleMutation.mutate({ ...values, id: editingVehicle.id, fuelingHistory: editingVehicle.fuelingHistory || [] });
+      updateVehicleMutation.mutate({ ...values, id: editingVehicle.id, fuelingHistory: editingVehicle.fuelingHistory || [], maintenanceHistory: editingVehicle.maintenanceHistory || [] });
     } else {
       addVehicleMutation.mutate(values);
     }
@@ -288,8 +330,8 @@ export function VehicleClientPage() {
 
     const newRecord: FuelingRecord = {
       ...values,
-      id: crypto.randomUUID(), // Gerar UUID client-side
-      totalCost: values.totalCost || (values.liters * values.pricePerLiter), // Recalcular se não fornecido
+      id: crypto.randomUUID(),
+      totalCost: values.totalCost || (values.liters * values.pricePerLiter),
     };
 
     addFuelingRecordMutation.mutate({
@@ -299,10 +341,50 @@ export function VehicleClientPage() {
     });
   };
 
+  const openMaintenanceModal = (vehicle: Vehicle) => {
+    setSelectedVehicleForMaintenance(vehicle);
+    maintenanceForm.reset({
+      date: formatDateForInput(new Date()),
+      description: "",
+      cost: undefined,
+      mileageAtMaintenance: vehicle.currentMileage || undefined,
+      serviceProvider: "",
+      notes: "",
+    });
+    setIsMaintenanceModalOpen(true);
+  };
+
+  const closeMaintenanceModal = () => {
+    setIsMaintenanceModalOpen(false);
+    setSelectedVehicleForMaintenance(null);
+    maintenanceForm.reset();
+  };
+
+  const onMaintenanceSubmit = async (values: z.infer<typeof VehicleMaintenanceRecordSchema>) => {
+    if (!selectedVehicleForMaintenance || selectedVehicleForMaintenance.id.startsWith("mock")) {
+      toast({ title: "Erro", description: "Veículo inválido para registrar manutenção.", variant: "destructive" });
+      return;
+    }
+     if (values.mileageAtMaintenance < selectedVehicleForMaintenance.currentMileage) {
+        if(!window.confirm(`A quilometragem informada (${values.mileageAtMaintenance} km) é menor que a quilometragem atual do veículo (${selectedVehicleForMaintenance.currentMileage} km). Deseja continuar?`)){
+            return;
+        }
+    }
+    const newRecord: VehicleMaintenanceRecord = {
+      ...values,
+      id: crypto.randomUUID(),
+    };
+    addMaintenanceRecordMutation.mutate({
+      vehicleId: selectedVehicleForMaintenance.id,
+      newRecord,
+      currentMileage: selectedVehicleForMaintenance.currentMileage,
+    });
+  };
+
 
   const isMutating = addVehicleMutation.isPending || updateVehicleMutation.isPending;
 
-  if (isLoading && !isModalOpen && !isFuelingModalOpen) {
+  if (isLoading && !isModalOpen && !isFuelingModalOpen && !isMaintenanceModalOpen) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -321,14 +403,18 @@ export function VehicleClientPage() {
       </div>
     );
   }
-  
-  const sortedFuelingHistory = editingVehicle?.fuelingHistory 
-    ? [...editingVehicle.fuelingHistory].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()) 
+
+  const sortedFuelingHistory = editingVehicle?.fuelingHistory
+    ? [...editingVehicle.fuelingHistory].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
+    : [];
+
+  const sortedMaintenanceHistory = editingVehicle?.maintenanceHistory
+    ? [...editingVehicle.maintenanceHistory].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
     : [];
 
   return (
     <>
-      <PageHeader 
+      <PageHeader
         title="Gerenciamento de Veículos"
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating || deleteVehicleMutation.isPending}>
@@ -362,10 +448,9 @@ export function VehicleClientPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {vehiclesToDisplay.map((vehicle) => (
-            <Card 
-              key={vehicle.id} 
+            <Card
+              key={vehicle.id}
               className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 "
-              
             >
               <div onClick={() => openModal(vehicle)} className="cursor-pointer flex-grow">
                 <CardHeader>
@@ -384,7 +469,7 @@ export function VehicleClientPage() {
                   </p>
                   <p className="flex items-center text-sm">
                     <Gauge className="mr-2 h-4 w-4 text-primary" />
-                    <span className="font-medium text-muted-foreground mr-1">KM Atual:</span> 
+                    <span className="font-medium text-muted-foreground mr-1">KM Atual:</span>
                     <span>{Number(vehicle.currentMileage).toLocaleString('pt-BR')} km</span>
                   </p>
                   <p className="flex items-center text-sm">
@@ -399,13 +484,13 @@ export function VehicleClientPage() {
                   </p>
                   {vehicle.fipeValue !== null && vehicle.fipeValue !== undefined && (
                     <p className="flex items-center text-sm">
-                      <DollarSign className="mr-2 h-4 w-4 text-primary" /> 
+                      <DollarSign className="mr-2 h-4 w-4 text-primary" />
                       <span className="font-medium text-muted-foreground mr-1">FIPE:</span>
                       <span>{Number(vehicle.fipeValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     </p>
                   )}
                   <p className="flex items-center text-sm">
-                    {statusIcons[vehicle.status]} 
+                    {statusIcons[vehicle.status]}
                     <span className="font-medium text-muted-foreground ml-2 mr-1">Status:</span>
                     <span className={cn({
                       'text-green-600': vehicle.status === 'Disponível',
@@ -417,14 +502,27 @@ export function VehicleClientPage() {
                   </p>
                   {vehicle.registrationInfo && (
                     <p className="flex items-center text-sm">
-                      <FileBadge className="mr-2 h-4 w-4 text-primary" /> 
+                      <FileBadge className="mr-2 h-4 w-4 text-primary" />
                       <span className="font-medium text-muted-foreground mr-1">Registro:</span>
                       <span>{vehicle.registrationInfo}</span>
                     </p>
                   )}
                 </CardContent>
               </div>
-              <CardFooter className="border-t pt-4 flex justify-end gap-2">
+              <CardFooter className="border-t pt-4 flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openMaintenanceModal(vehicle);
+                  }}
+                  disabled={vehicle.id.startsWith("mock") || addMaintenanceRecordMutation.isPending}
+                  className="text-amber-600 border-amber-600 hover:bg-amber-600/10 hover:text-amber-700"
+                >
+                  <WrenchIconMain className="mr-2 h-4 w-4" />
+                  Manutenção
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -475,14 +573,14 @@ export function VehicleClientPage() {
                     <FormItem>
                       <FormLabel>Quilometragem Atual (km)</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          step="any" {...field} 
+                        <Input
+                          type="number"
+                          step="any" {...field}
                           onChange={e => {
                             const rawValue = e.target.value;
                             field.onChange(rawValue === '' ? null : parseFloat(rawValue));
-                          }} 
-                          value={String(field.value ?? '')} 
+                          }}
+                          value={String(field.value ?? '')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -492,14 +590,14 @@ export function VehicleClientPage() {
                     <FormItem>
                       <FormLabel>Consumo Médio (km/L)</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          step="any" {...field} 
+                        <Input
+                          type="number"
+                          step="any" {...field}
                           onChange={e => {
                             const rawValue = e.target.value;
                              field.onChange(rawValue === '' ? null : parseFloat(rawValue));
-                          }} 
-                          value={String(field.value ?? '')} 
+                          }}
+                          value={String(field.value ?? '')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -509,14 +607,14 @@ export function VehicleClientPage() {
                     <FormItem>
                       <FormLabel>Custo Médio por KM (R$)</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          step="any" {...field} 
+                        <Input
+                          type="number"
+                          step="any" {...field}
                            onChange={e => {
                             const rawValue = e.target.value;
                             field.onChange(rawValue === '' ? null : parseFloat(rawValue));
-                          }} 
-                          value={String(field.value ?? '')} 
+                          }}
+                          value={String(field.value ?? '')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -526,15 +624,15 @@ export function VehicleClientPage() {
                       <FormItem>
                           <FormLabel>Valor Tabela FIPE (R$) (Opcional)</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              step="any" 
-                              placeholder="Ex: 29243" {...field} 
+                            <Input
+                              type="number"
+                              step="any"
+                              placeholder="Ex: 29243" {...field}
                               onChange={e => {
                                 const rawValue = e.target.value;
                                 field.onChange(rawValue === '' ? null : parseFloat(rawValue));
-                              }} 
-                              value={String(field.value ?? '')} 
+                              }}
+                              value={String(field.value ?? '')}
                             />
                           </FormControl>
                           <FormMessage />
@@ -553,41 +651,74 @@ export function VehicleClientPage() {
                 <FormItem><FormLabel>Informações de Registro (Opcional)</FormLabel><FormControl><Input placeholder="ex: Renavam, Chassi" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
             </fieldset>
-            
+
             {editingVehicle && !editingVehicle.id.startsWith("mock") && (
-              <div className="mt-6 pt-4 border-t">
-                <h3 className="text-lg font-semibold mb-2 font-headline">Histórico de Abastecimentos</h3>
-                {sortedFuelingHistory.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum abastecimento registrado para este veículo.</p>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Data</TableHead>
-                          <TableHead className="text-right">Litros</TableHead>
-                          <TableHead className="text-right">Preço/L</TableHead>
-                          <TableHead className="text-right">Custo Total</TableHead>
-                          <TableHead className="text-right">KM</TableHead>
-                          <TableHead>Posto</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedFuelingHistory.map((record) => (
-                          <TableRow key={record.id}>
-                            <TableCell>{formatDateForDisplay(record.date)}</TableCell>
-                            <TableCell className="text-right">{record.liters.toFixed(2)} L</TableCell>
-                            <TableCell className="text-right">R$ {record.pricePerLiter.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">R$ {record.totalCost.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{record.mileageAtFueling.toLocaleString('pt-BR')} km</TableCell>
-                            <TableCell>{record.fuelStation || '-'}</TableCell>
+              <>
+                <div className="mt-6 pt-4 border-t">
+                  <h3 className="text-lg font-semibold mb-2 font-headline">Histórico de Abastecimentos</h3>
+                  {sortedFuelingHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum abastecimento registrado para este veículo.</p>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Data</TableHead>
+                            <TableHead className="text-right">Litros</TableHead>
+                            <TableHead className="text-right">Preço/L</TableHead>
+                            <TableHead className="text-right">Custo Total</TableHead>
+                            <TableHead className="text-right">KM</TableHead>
+                            <TableHead>Posto</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </div>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedFuelingHistory.map((record) => (
+                            <TableRow key={record.id}>
+                              <TableCell>{formatDateForDisplay(record.date)}</TableCell>
+                              <TableCell className="text-right">{record.liters.toFixed(2)} L</TableCell>
+                              <TableCell className="text-right">R$ {record.pricePerLiter.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">R$ {record.totalCost.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{record.mileageAtFueling.toLocaleString('pt-BR')} km</TableCell>
+                              <TableCell>{record.fuelStation || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-6 pt-4 border-t">
+                  <h3 className="text-lg font-semibold mb-2 font-headline">Histórico de Manutenções</h3>
+                  {sortedMaintenanceHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma manutenção registrada para este veículo.</p>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Descrição</TableHead>
+                            <TableHead className="text-right">Custo</TableHead>
+                            <TableHead className="text-right">KM</TableHead>
+                            <TableHead>Fornecedor</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedMaintenanceHistory.map((record) => (
+                            <TableRow key={record.id}>
+                              <TableCell>{formatDateForDisplay(record.date)}</TableCell>
+                              <TableCell>{record.description}</TableCell>
+                              <TableCell className="text-right">R$ {record.cost.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{record.mileageAtMaintenance.toLocaleString('pt-BR')} km</TableCell>
+                              <TableCell>{record.serviceProvider || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </form>
         </Form>
@@ -601,7 +732,7 @@ export function VehicleClientPage() {
           description="Preencha os detalhes do abastecimento."
           formId="fueling-form"
           isSubmitting={addFuelingRecordMutation.isPending}
-          isEditMode={true} 
+          isEditMode={true}
           submitButtonLabel="Registrar Abastecimento"
         >
           <Form {...fuelingForm}>
@@ -619,7 +750,7 @@ export function VehicleClientPage() {
                 <FormField control={fuelingForm.control} name="liters" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Litros Abastecidos</FormLabel>
-                    <FormControl><Input type="number" step="0.01" placeholder="Ex: 45.50" {...field} 
+                    <FormControl><Input type="number" step="0.01" placeholder="Ex: 45.50" {...field}
                      onChange={e => field.onChange(parseFloat(e.target.value) || null)}
                     /></FormControl>
                     <FormMessage />
@@ -628,7 +759,7 @@ export function VehicleClientPage() {
                 <FormField control={fuelingForm.control} name="pricePerLiter" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Preço por Litro (R$)</FormLabel>
-                    <FormControl><Input type="number" step="0.001" placeholder="Ex: 5.899" {...field} 
+                    <FormControl><Input type="number" step="0.001" placeholder="Ex: 5.899" {...field}
                      onChange={e => field.onChange(parseFloat(e.target.value) || null)}
                     /></FormControl>
                     <FormMessage />
@@ -638,7 +769,7 @@ export function VehicleClientPage() {
               <FormField control={fuelingForm.control} name="totalCost" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Custo Total (R$)</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="Calculado ou manual" {...field} 
+                  <FormControl><Input type="number" step="0.01" placeholder="Calculado ou manual" {...field}
                    onChange={e => field.onChange(parseFloat(e.target.value) || null)}
                   /></FormControl>
                    <FormDescription>Será calculado se litros e preço/litro forem preenchidos.</FormDescription>
@@ -648,7 +779,7 @@ export function VehicleClientPage() {
               <FormField control={fuelingForm.control} name="mileageAtFueling" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Quilometragem no Abastecimento (km)</FormLabel>
-                  <FormControl><Input type="number" placeholder="Ex: 150250" {...field} 
+                  <FormControl><Input type="number" placeholder="Ex: 150250" {...field}
                    onChange={e => field.onChange(parseInt(e.target.value, 10) || null)}
                   /></FormControl>
                   <FormMessage />
@@ -672,6 +803,73 @@ export function VehicleClientPage() {
           </Form>
         </FormModal>
       )}
+
+      {selectedVehicleForMaintenance && (
+        <FormModal
+          isOpen={isMaintenanceModalOpen}
+          onClose={closeMaintenanceModal}
+          title={`Registrar Manutenção: ${selectedVehicleForMaintenance.model} (${selectedVehicleForMaintenance.licensePlate})`}
+          description="Preencha os detalhes da manutenção."
+          formId="maintenance-form"
+          isSubmitting={addMaintenanceRecordMutation.isPending}
+          isEditMode={true}
+          submitButtonLabel="Registrar Manutenção"
+        >
+          <Form {...maintenanceForm}>
+            <form onSubmit={maintenanceForm.handleSubmit(onMaintenanceSubmit)} id="maintenance-form" className="space-y-4">
+              <FormField control={maintenanceForm.control} name="date" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Data da Manutenção</FormLabel>
+                  <FormControl><Input type="date" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={maintenanceForm.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Descrição do Serviço</FormLabel>
+                  <FormControl><Textarea placeholder="Ex: Troca de óleo e filtros" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={maintenanceForm.control} name="cost" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Custo Total (R$)</FormLabel>
+                    <FormControl><Input type="number" step="0.01" placeholder="Ex: 350.00" {...field}
+                    onChange={e => field.onChange(parseFloat(e.target.value) || null)}
+                    /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={maintenanceForm.control} name="mileageAtMaintenance" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quilometragem na Manutenção (km)</FormLabel>
+                    <FormControl><Input type="number" placeholder="Ex: 155300" {...field}
+                     onChange={e => field.onChange(parseInt(e.target.value, 10) || null)}
+                    /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <FormField control={maintenanceForm.control} name="serviceProvider" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fornecedor / Oficina (Opcional)</FormLabel>
+                  <FormControl><Input placeholder="Ex: Oficina do Zé" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={maintenanceForm.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Observações (Opcional)</FormLabel>
+                  <FormControl><Textarea placeholder="Detalhes adicionais sobre a manutenção" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </form>
+          </Form>
+        </FormModal>
+      )}
     </>
   );
 }
+

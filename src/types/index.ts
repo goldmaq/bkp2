@@ -166,6 +166,16 @@ export interface FuelingRecord {
   notes?: string | null;
 }
 
+export interface VehicleMaintenanceRecord {
+  id: string;
+  date: string;
+  description: string;
+  cost: number;
+  mileageAtMaintenance: number;
+  serviceProvider?: string | null;
+  notes?: string | null;
+}
+
 export interface Vehicle {
   id: string;
   model: string;
@@ -178,6 +188,7 @@ export interface Vehicle {
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
   fuelingHistory?: FuelingRecord[] | null;
+  maintenanceHistory?: VehicleMaintenanceRecord[] | null;
 }
 
 export const auxiliaryEquipmentTypeOptions = ["Bateria", "Carregador", "Berço", "Cabo"] as const;
@@ -347,6 +358,22 @@ export const FuelingRecordSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+export const VehicleMaintenanceRecordSchema = z.object({
+  id: z.string().uuid("ID inválido").optional(),
+  date: z.string().refine((val) => {
+    try {
+      return !!parseISO(val);
+    } catch (e) {
+      return false;
+    }
+  }, "Data inválida").transform((val) => formatISO(parseISO(val), { representation: 'date' })),
+  description: requiredString("Descrição da manutenção"),
+  cost: z.coerce.number().min(0, "Custo deve ser um número não negativo."),
+  mileageAtMaintenance: z.coerce.number().int().min(0, "Quilometragem deve ser um número não negativo."),
+  serviceProvider: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
 export const VehicleSchema = z.object({
   model: requiredString("Modelo"),
   licensePlate: requiredString("Placa"),
@@ -358,37 +385,8 @@ export const VehicleSchema = z.object({
   registrationInfo: z.string().optional(),
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
   fuelingHistory: z.array(FuelingRecordSchema).optional().nullable(),
+  maintenanceHistory: z.array(VehicleMaintenanceRecordSchema).optional().nullable(),
 });
-
-export const ServiceOrderSchema = z.object({
-  orderNumber: requiredString("Número da ordem"),
-  customerId: requiredString("Cliente"),
-  equipmentId: requiredString("Máquina"),
-  requesterName: z.string().optional().nullable(),
-  phase: z.enum(serviceOrderPhaseOptions),
-  technicianId: z.string().nullable().optional(),
-  serviceType: requiredString("Tipo de serviço"),
-  customServiceType: z.string().optional(),
-  vehicleId: z.string().nullable().optional(),
-  startDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de início inválida"),
-  endDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de conclusão inválida"),
-  description: requiredString("Problema relatado"),
-  notes: z.string().optional().nullable(),
-  mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
-  technicalConclusion: z.string().nullable().optional(),
-  estimatedTravelDistanceKm: z.coerce.number().min(0, "Distância deve ser positiva ou zero").optional().nullable(),
-  estimatedTollCosts: z.coerce.number().min(0, "Custo de pedágio deve ser positivo ou zero").optional().nullable(),
-  estimatedTravelCost: z.coerce.number().min(0, "Custo de viagem deve ser positivo ou zero").optional().nullable(),
-}).refine(data => {
-  if (data.serviceType === '_CUSTOM_' && (!data.customServiceType || data.customServiceType.trim() === "")) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Por favor, especifique o tipo de serviço customizado.",
-  path: ["customServiceType"],
-});
-
 
 export const CompanySchema = z.object({
   id: z.enum(companyIds),
@@ -402,11 +400,11 @@ export const CompanySchema = z.object({
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória"),
   cep: requiredString("CEP").regex(/^\d{5}-?\d{3}$/, "CEP inválido. Use XXXXX-XXX."),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
-  email: z.string().email("Email inválido").optional(), // Changed from .optional().nullable()
-  bankName: z.string().optional(),
-  bankAgency: z.string().optional(),
-  bankAccount: z.string().optional(),
-  bankPixKey: z.string().optional(),
+  email: z.string().email("Email inválido").optional(),
+  bankName: z.string().optional().nullable().transform(val => val || undefined),
+  bankAgency: z.string().optional().nullable().transform(val => val || undefined),
+  bankAccount: z.string().optional().nullable().transform(val => val || undefined),
+  bankPixKey: z.string().optional().nullable().transform(val => val || undefined),
 });
 
 export const AuxiliaryEquipmentSchema = z.object({
@@ -480,4 +478,33 @@ export const PartsRequisitionSchema = z.object({
   status: z.enum(partsRequisitionStatusOptions, { required_error: "Status da requisição é obrigatório."}),
   items: z.array(PartsRequisitionItemSchema).min(1, "A requisição deve ter pelo menos uma peça."),
   generalNotes: z.string().optional().nullable(),
+});
+
+export const ServiceOrderSchema = z.object({
+  orderNumber: requiredString("Número da ordem"),
+  customerId: requiredString("Cliente"),
+  equipmentId: requiredString("Máquina"),
+  requesterName: z.string().optional().nullable(),
+  phase: z.enum(serviceOrderPhaseOptions),
+  technicianId: z.string().nullable().optional(),
+  serviceType: requiredString("Tipo de serviço"),
+  customServiceType: z.string().optional(),
+  vehicleId: z.string().nullable().optional(),
+  startDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de início inválida"),
+  endDate: z.string().optional().refine(val => !val || isValidDate(parseISO(val)), "Data de conclusão inválida"),
+  description: requiredString("Problema relatado"),
+  notes: z.string().optional().nullable(),
+  mediaUrls: z.array(z.string().url("URL de mídia inválida")).max(5, "Máximo de 5 arquivos de mídia").nullable().optional(),
+  technicalConclusion: z.string().nullable().optional(),
+  estimatedTravelDistanceKm: z.coerce.number().min(0, "Distância deve ser positiva ou zero").optional().nullable(),
+  estimatedTollCosts: z.coerce.number().min(0, "Custo de pedágio deve ser positivo ou zero").optional().nullable(),
+  estimatedTravelCost: z.coerce.number().min(0, "Custo de viagem deve ser positivo ou zero").optional().nullable(),
+}).refine(data => {
+  if (data.serviceType === '_CUSTOM_' && (!data.customServiceType || data.customServiceType.trim() === "")) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Por favor, especifique o tipo de serviço customizado.",
+  path: ["customServiceType"],
 });
