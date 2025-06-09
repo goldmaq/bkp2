@@ -1,16 +1,16 @@
 
 "use client";
 
-import React, { useMemo } from 'react'; 
+import React, { useMemo } from 'react';
 import { useState, useEffect, useCallback, useRef } from "react"; // Added useRef
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form"; // Added useWatch
 import type * as z from "zod";
-import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter } from "lucide-react"; 
+import { PlusCircle, Construction, Tag, Layers, CalendarDays, CheckCircle, User, Loader2, Users, FileText, Coins, Package, ShieldAlert, Trash2, AlertTriangle as AlertIconLI, UploadCloud, BookOpen, AlertCircle, Link as LinkIconLI, XCircle, Building, UserCog, ArrowUpFromLine, ArrowDownToLine, Timer, Check, PackageSearch, Search as SearchIcon, Filter, Hash as HashIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input"; 
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { Maquina, Customer, CompanyId, OwnerReferenceType, AuxiliaryEquipment } from "@/types";
@@ -24,9 +24,9 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy,
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
-import { cn, toTitleCase } from "@/lib/utils"; 
-import type { LucideIcon } from "lucide-react";
-import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils"; 
+import { cn, toTitleCase } from "@/lib/utils";
+import type { LucideIcon } from "react-icons";
+import { getFileNameFromUrl, parseNumericToNullOrNumber } from "@/lib/utils";
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -103,6 +103,7 @@ async function fetchMaquinas(): Promise<Maquina[]> {
       brand: data.brand || "Marca Desconhecida",
       model: data.model || "Modelo Desconhecido",
       chassisNumber: data.chassisNumber || "N/A",
+      fleetNumber: data.fleetNumber || null, // Novo campo
       equipmentType: (maquinaTypeOptions.includes(data.equipmentType as any) || typeof data.equipmentType === 'string') ? data.equipmentType : "Empilhadeira Contrabalançada GLP",
       manufactureYear: parseNumericToNullOrNumber(data.manufactureYear),
       operationalStatus: maquinaOperationalStatusOptions.includes(data.operationalStatus as any) ? data.operationalStatus : "Disponível",
@@ -153,7 +154,7 @@ async function checkChassisNumberExists(chassisNumber: string, currentMaquinaId?
   if (currentMaquinaId) {
     return querySnapshot.docs.some(doc => doc.id !== currentMaquinaId);
   }
-  return true; 
+  return true;
 }
 
 
@@ -174,7 +175,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAuxiliaryEquipmentPopoverOpen, setIsAuxiliaryEquipmentPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   const [statusFilter, setStatusFilter] = useState<typeof maquinaOperationalStatusOptions[number] | typeof ALL_STATUSES_FILTER_VALUE>(
     (initialStatusFilter && maquinaOperationalStatusOptions.includes(initialStatusFilter as any))
       ? initialStatusFilter as typeof maquinaOperationalStatusOptions[number]
@@ -190,7 +191,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const form = useForm<z.infer<typeof MaquinaSchema>>({
     resolver: zodResolver(MaquinaSchema),
     defaultValues: {
-      brand: "", model: "", chassisNumber: "", equipmentType: "Empilhadeira Contrabalançada GLP",
+      brand: "", model: "", chassisNumber: "", fleetNumber: null, equipmentType: "Empilhadeira Contrabalançada GLP",
       operationalStatus: "Disponível", customerId: null,
       ownerReference: null,
       manufactureYear: new Date().getFullYear(),
@@ -272,6 +273,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
           maq.brand.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.model.toLowerCase().includes(lowercasedSearchTerm) ||
           maq.chassisNumber.toLowerCase().includes(lowercasedSearchTerm) ||
+          (maq.fleetNumber && maq.fleetNumber.toLowerCase().includes(lowercasedSearchTerm)) || // Novo campo
           ownerDisplay.toLowerCase().includes(lowercasedSearchTerm) ||
           (customer?.name.toLowerCase().includes(lowercasedSearchTerm)) ||
           (customer?.fantasyName && customer.fantasyName.toLowerCase().includes(lowercasedSearchTerm))
@@ -296,6 +298,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         model: maquina.model || "",
         brand: isBrandPredefined ? maquina.brand : '_CUSTOM_' as any,
         customBrand: isBrandPredefined ? "" : (maquina.brand === "Outra" || maquina.brand === "_CUSTOM_" ? "" : maquina.brand),
+        fleetNumber: maquina.fleetNumber || null, // Novo campo
         equipmentType: isEquipmentTypePredefined ? maquina.equipmentType : '_CUSTOM_',
         customEquipmentType: isEquipmentTypePredefined ? "" : maquina.equipmentType,
         customerId: maquina.customerId || null,
@@ -315,12 +318,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         linkedAuxiliaryEquipmentIds: maquina.linkedAuxiliaryEquipmentIds || [],
       });
       setShowCustomFields({ brand: !isBrandPredefined, equipmentType: !isEquipmentTypePredefined });
-      prevCustomerIdRef.current = maquina.customerId; 
+      prevCustomerIdRef.current = maquina.customerId;
     } else {
       setEditingMaquina(null);
       setIsEditMode(true); // Edit mode for new
       form.reset({
-        brand: "", model: "", chassisNumber: "", equipmentType: "Empilhadeira Contrabalançada GLP",
+        brand: "", model: "", chassisNumber: "", fleetNumber: null, equipmentType: "Empilhadeira Contrabalançada GLP",
         operationalStatus: "Disponível", customerId: null,
         ownerReference: null,
         manufactureYear: new Date().getFullYear(),
@@ -351,7 +354,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       }
     }
   }, [maquinaIdFromUrl, maquinaList, isLoadingMaquinas, openModal, isModalOpen]);
-  
+
   useEffect(() => {
     if (initialStatusFilter && maquinaOperationalStatusOptions.includes(initialStatusFilter as any)) {
       setStatusFilter(initialStatusFilter as typeof maquinaOperationalStatusOptions[number]);
@@ -388,6 +391,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       customerId: formCustomerId,
       ownerReference: formOwnerReferenceFromForm,
       linkedAuxiliaryEquipmentIds: formLinkedAuxiliaryEquipmentIds,
+      fleetNumber: formFleetNumber, // Novo campo
       ...restOfData
     } = formData;
 
@@ -403,14 +407,15 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       monthlyRentalValue: parseNumericToNullOrNumber(restOfData.monthlyRentalValue),
       hourMeter: parseNumericToNullOrNumber(restOfData.hourMeter)
     };
-    
+
     const finalOwnerReference: OwnerReferenceType | null = formOwnerReferenceFromForm ?? null;
 
     return {
       ...parsedData,
       brand: parsedData.brand === '_CUSTOM_' ? customBrand || "Não especificado" : parsedData.brand,
       model: parsedData.model,
-      chassisNumber: parsedData.chassisNumber, 
+      chassisNumber: parsedData.chassisNumber,
+      fleetNumber: formFleetNumber || null, // Novo campo
       equipmentType: parsedData.equipmentType === '_CUSTOM_' ? customEquipmentType || "Não especificado" : parsedData.equipmentType,
       customerId: formCustomerId,
       ownerReference: finalOwnerReference,
@@ -722,7 +727,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         <div className="relative flex-grow">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            placeholder="Buscar por marca, modelo, chassi, cliente, fantasia ou proprietário..."
+            placeholder="Buscar por marca, modelo, chassi, frota, cliente, fantasia ou proprietário..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10"
@@ -785,6 +790,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                     <span className="font-medium text-muted-foreground mr-1">Chassi:</span>
                     <span>{maq.chassisNumber}</span>
                   </p>
+                  {maq.fleetNumber && (
+                    <p className="flex items-center text-sm">
+                        <HashIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="font-medium text-muted-foreground mr-1">Nº Frota:</span>
+                        <span>{maq.fleetNumber}</span>
+                    </p>
+                  )}
                 <p className="flex items-center text-sm"><Layers className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Tipo:</span> {maq.equipmentType}</p>
                 {maq.manufactureYear && <p className="flex items-center text-sm"><CalendarDays className="mr-2 h-4 w-4 text-primary" /> <span className="font-medium text-muted-foreground mr-1">Ano:</span> {maq.manufactureYear}</p>}
                 <p className="flex items-center text-sm">
@@ -969,6 +981,13 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
               <FormField control={form.control} name="chassisNumber" render={({ field }) => (
                 <FormItem><FormLabel>Número do Chassi</FormLabel><FormControl><Input placeholder="Número único do chassi" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
+               <FormField control={form.control} name="fleetNumber" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Número da Frota (Opcional)</FormLabel>
+                  <FormControl><Input placeholder="Ex: GM001, F-123" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
               <FormField
                 control={form.control}
@@ -1075,7 +1094,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
             <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Equipamentos Auxiliares Vinculados</h3>
             <FormField
               control={form.control}
-              name="linkedAuxiliaryEquipmentIds" 
+              name="linkedAuxiliaryEquipmentIds"
               render={({ field: { onChange, value } }) => (
                 <FormItem>
                   <Popover open={isAuxiliaryEquipmentPopoverOpen} onOpenChange={setIsAuxiliaryEquipmentPopoverOpen}>

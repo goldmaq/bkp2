@@ -58,6 +58,7 @@ export interface Maquina {
   brand: string;
   model: string;
   chassisNumber: string;
+  fleetNumber?: string | null; // Novo campo
   equipmentType: typeof maquinaTypeOptions[number] | string;
   manufactureYear: number | null;
   operationalStatus: typeof maquinaOperationalStatusOptions[number];
@@ -280,7 +281,7 @@ const requiredString = (field: string) => z.string().min(1, `${field} é obrigat
 
 // Helper para formatar data para yyyy-MM-dd ANTES da validação/transformação de Zod
 // Zod espera string para inputs de data, e então podemos transformar/validar.
-const formatDateForInputHelper = (dateValue: any): string | null => { // Renamed to avoid conflict with existing formatDateForInput if any
+const formatDateForInputHelper = (dateValue: any): string | null => {
   if (!dateValue) return null;
   let d: Date;
   if (dateValue instanceof Timestamp) {
@@ -329,6 +330,7 @@ export const MaquinaSchema = z.object({
   brand: requiredString("Marca"),
   model: requiredString("Modelo"),
   chassisNumber: requiredString("Número do chassi"),
+  fleetNumber: z.string().optional().nullable(), // Novo campo
   equipmentType: requiredString("Tipo de máquina"),
   manufactureYear: z.coerce.number().min(1900, "Ano inválido").max(new Date().getFullYear() + 1, "Ano inválido").nullable(),
   operationalStatus: z.enum(maquinaOperationalStatusOptions),
@@ -418,7 +420,7 @@ export const VehicleSchema = z.object({
     .nullable()
     .optional()
     .refine(val => !val || isValidDate(parseISO(val)), { message: "Data inválida." })
-    .transform(val => val ? formatDateForInputHelper(val) : null), // Garante yyyy-MM-dd
+    .transform(val => val ? formatDateForInputHelper(val) : null),
   maintenanceNotes: z.string().optional().nullable(),
 }).refine(data => {
   if (data.nextMaintenanceType === 'km' && (data.nextMaintenanceKm === null || data.nextMaintenanceKm === undefined)) {
@@ -554,21 +556,3 @@ export const ServiceOrderSchema = z.object({
   message: "Por favor, especifique o tipo de serviço customizado.",
   path: ["customServiceType"],
 });
-
-// Renomeei a função helper para evitar conflito com a importação, caso exista.
-// E a função original `formatDateForInput` foi movida para `lib/utils.ts`
-// const formatDateForInput = (dateValue: any): string | null => {
-//   if (!dateValue) return null;
-//   let d: Date;
-//   if (dateValue instanceof Timestamp) {
-//     d = dateValue.toDate();
-//   } else if (typeof dateValue === 'string') {
-//     d = parseISO(dateValue);
-//   } else if (dateValue instanceof Date) {
-//     d = dateValue;
-//   } else {
-//     return null;
-//   }
-//   if (!isValidDate(d)) return null;
-//   return format(d, 'yyyy-MM-dd');
-// };
