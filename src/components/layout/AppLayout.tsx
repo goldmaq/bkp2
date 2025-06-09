@@ -133,7 +133,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center">
                <SidebarTrigger className="md:hidden"/>
             </div>
-            <div className="font-heading text-lg font-semibold text-foreground">
+            <div className="font-heading text-2xl font-semibold text-foreground"> {/* Alterado de text-lg para text-2xl */}
               {currentPathname === "/" ? "Painel Principal" : pageTitle}
             </div>
             <div>
