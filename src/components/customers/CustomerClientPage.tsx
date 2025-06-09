@@ -455,7 +455,7 @@ export function CustomerClientPage() {
         }
       />
       <p className="text-muted-foreground text-sm mb-6 -mt-4">
-        Centralize o cadastro e gerencie todos os seus clientes. Adicione, edite e visualize informações e máquinas vinculadas.
+        Centralize o cadastro e gerencie suas informações de contato. Adicione, edite e visualize informações e máquinas vinculadas.
       </p>
 
       <div className="mb-6">
