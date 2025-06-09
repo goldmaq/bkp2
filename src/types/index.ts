@@ -190,15 +190,16 @@ export interface Vehicle {
   fuelConsumption: number;
   costPerKilometer: number;
   fipeValue?: number | null;
+  year?: number | null;
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
   fuelingHistory?: FuelingRecord[] | null;
   maintenanceHistory?: VehicleMaintenanceRecord[] | null;
-  // Campos para próxima manutenção
   nextMaintenanceType?: 'km' | 'date' | null;
   nextMaintenanceKm?: number | null;
   nextMaintenanceDate?: string | null; // ISO date string 'yyyy-MM-dd'
   maintenanceNotes?: string | null;
+  imageUrls?: string[] | null; // Added field for vehicle images
 }
 
 export const auxiliaryEquipmentTypeOptions = ["Bateria", "Carregador", "Berço", "Cabo"] as const;
@@ -418,6 +419,7 @@ export const VehicleSchema = z.object({
   fuelConsumption: z.coerce.number().min(0, "Consumo de combustível deve ser um número não negativo"),
   costPerKilometer: z.coerce.number().min(0, "Custo por quilômetro deve ser um número não negativo"),
   fipeValue: z.coerce.number().min(0, "Valor FIPE deve ser um número não negativo").optional().nullable(),
+  year: z.coerce.number().min(1900, "Ano inválido").max(new Date().getFullYear() + 1, "Ano inválido").nullable().optional(),
   registrationInfo: z.string().optional(),
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
   fuelingHistory: z.array(FuelingRecordSchema).optional().nullable(),
@@ -430,6 +432,10 @@ export const VehicleSchema = z.object({
     .refine(val => !val || isValidDate(parseISO(val)), { message: "Data inválida." })
     .transform(val => val ? formatDateForInputHelper(val) : null),
   maintenanceNotes: z.string().optional().nullable(),
+  imageUrls: z.array(z.string().url("URL de imagem inválida"))
+    .max(2, "Máximo de 2 imagens por veículo")
+    .nullable()
+    .optional(),
 }).refine(data => {
   if (data.nextMaintenanceType === 'km' && (data.nextMaintenanceKm === null || data.nextMaintenanceKm === undefined)) {
     return false;

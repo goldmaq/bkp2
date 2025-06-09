@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon, Clock } from "lucide-react"; // Added Clock
+import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon, Clock, Image as ImageIcon, UploadCloud, XCircle } from "lucide-react"; // Added Clock, ImageIcon, UploadCloud, XCircle
+import NextImage from "next/image"; // For Next.js optimized images
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,9 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase"; // Import storage
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, arrayUnion, writeBatch } from "firebase/firestore";
+import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // Storage functions
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -36,11 +38,49 @@ const statusIcons = {
 
 const FIRESTORE_COLLECTION_NAME = "veiculos";
 const NO_MAINTENANCE_ALERT_VALUE = "_NO_ALERT_"; // Constante para o valor "Nenhum"
+const MAX_VEHICLE_IMAGE_FILES = 2;
 
-const mockVehiclesData: Omit<Vehicle, 'id' | 'fuelingHistory' | 'maintenanceHistory'>[] = [
-  { model: "FIAT DOBLO", licensePlate: "ENC8C91", fipeValue: 29243, kind: "Furgão", currentMileage: 150000, fuelConsumption: 9.5, costPerKilometer: 0.6, status: "Disponível", registrationInfo: "Exemplo" },
-  { model: "FIAT FIORINO", licensePlate: "FQC4777", fipeValue: 48869, kind: "Furgão", currentMileage: 80000, fuelConsumption: 11.0, costPerKilometer: 0.5, status: "Em Uso", registrationInfo: "Exemplo" },
+
+const mockVehiclesData: Omit<Vehicle, 'id' | 'fuelingHistory' | 'maintenanceHistory' | 'imageUrls'>[] = [
+  { model: "FIAT DOBLO", licensePlate: "ENC8C91", fipeValue: 29243, year: 2010, kind: "Furgão", currentMileage: 150000, fuelConsumption: 9.5, costPerKilometer: 0.6, status: "Disponível", registrationInfo: "Exemplo" },
+  { model: "FIAT FIORINO", licensePlate: "FQC4777", fipeValue: 48869, year: 2015, kind: "Furgão", currentMileage: 80000, fuelConsumption: 11.0, costPerKilometer: 0.5, status: "Em Uso", registrationInfo: "Exemplo" },
 ];
+
+async function uploadVehicleImageFile(
+  file: File,
+  vehicleId: string,
+  fileNameSuffix: string
+): Promise<string> {
+  if (!storage) {
+    throw new Error("Firebase Storage connection not available.");
+  }
+  const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `vehicle_images/${vehicleId}/${fileNameSuffix}-${sanitizedFileName}`;
+  const fileStorageRef = storageRefFB(storage!, filePath);
+  await uploadBytes(fileStorageRef, file);
+  return getDownloadURL(fileStorageRef);
+}
+
+async function deleteVehicleImageFromStorage(fileUrl?: string | null) {
+  if (fileUrl) {
+    if (!storage) {
+      console.warn("deleteVehicleImageFromStorage: Firebase Storage connection not available. Skipping deletion.");
+      return;
+    }
+    try {
+      const gcsPath = new URL(fileUrl).pathname.split('/o/')[1].split('?')[0];
+      const decodedPath = decodeURIComponent(gcsPath);
+      const fileStorageRef = storageRefFB(storage!, decodedPath);
+      await deleteObject(fileStorageRef);
+    } catch (e: any) {
+      if (e.code === 'storage/object-not-found') {
+        console.warn(`[DELETE VEHICLE IMG] File not found, skipping: ${fileUrl}`);
+      } else {
+        console.error(`[DELETE VEHICLE IMG] Failed to delete file: ${fileUrl}`, e);
+      }
+    }
+  }
+}
 
 async function fetchVehicles(): Promise<Vehicle[]> {
   if (!db) {
@@ -60,7 +100,7 @@ async function fetchVehicles(): Promise<Vehicle[]> {
         fuelConsumption: Number(data.fuelConsumption),
         costPerKilometer: Number(data.costPerKilometer),
         fipeValue: data.fipeValue !== undefined && data.fipeValue !== null ? Number(data.fipeValue) : null,
- year: data.year !== undefined && data.year !== null ? Number(data.year) : null,
+        year: data.year !== undefined && data.year !== null ? Number(data.year) : null,
         registrationInfo: data.registrationInfo,
         status: data.status,
         fuelingHistory: Array.isArray(data.fuelingHistory) ? data.fuelingHistory : [],
@@ -69,6 +109,7 @@ async function fetchVehicles(): Promise<Vehicle[]> {
         nextMaintenanceKm: data.nextMaintenanceKm !== undefined && data.nextMaintenanceKm !== null ? Number(data.nextMaintenanceKm) : null,
         nextMaintenanceDate: data.nextMaintenanceDate || null,
         maintenanceNotes: data.maintenanceNotes || null,
+        imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : null,
     } as Vehicle;
   });
 }
@@ -87,12 +128,17 @@ export function VehicleClientPage() {
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
   const [selectedVehicleForMaintenance, setSelectedVehicleForMaintenance] = useState<Vehicle | null>(null);
 
+  const [imageFilesToUpload, setImageFilesToUpload] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+
   const form = useForm<z.infer<typeof VehicleSchema>>({
     resolver: zodResolver(VehicleSchema),
     defaultValues: {
       model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, year: null,
       fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
-      nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
+      nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "", imageUrls: [],
     },
   });
 
@@ -157,61 +203,108 @@ export function VehicleClientPage() {
   const isMockDataActive = vehiclesFromFirestore.length === 0 && !isLoading && !isError;
   const vehiclesToDisplay = useMemo(() => {
     return isMockDataActive
-      ? mockVehiclesData.map((v, i) => ({ ...v, id: `mock${i+1}`, fuelingHistory: [], maintenanceHistory: [] }))
+      ? mockVehiclesData.map((v, i) => ({ ...v, id: `mock${i+1}`, fuelingHistory: [], maintenanceHistory: [], imageUrls: [] }))
       : vehiclesFromFirestore;
   }, [isMockDataActive, vehiclesFromFirestore]);
 
 
   const addVehicleMutation = useMutation({
-    mutationFn: async (newVehicleData: z.infer<typeof VehicleSchema>) => {
+    mutationFn: async (data: { vehicleData: z.infer<typeof VehicleSchema>; newImageFiles: File[] }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para adicionar veículo.");
+      setIsUploadingImage(true);
+      const newVehicleId = doc(collection(db!, FIRESTORE_COLLECTION_NAME)).id;
+      const uploadedImageUrls: string[] = [];
+
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadVehicleImageFile(file, newVehicleId, `image_${Date.now()}_${i}`);
+        uploadedImageUrls.push(imageUrl);
+      }
+      setIsUploadingImage(false);
+
       const dataToSave = {
-        ...newVehicleData,
-        fuelingHistory: newVehicleData.fuelingHistory || [],
-        maintenanceHistory: newVehicleData.maintenanceHistory || [],
-        nextMaintenanceDate: newVehicleData.nextMaintenanceDate ? formatDateForInput(newVehicleData.nextMaintenanceDate) : null,
+        ...data.vehicleData,
+        fuelingHistory: data.vehicleData.fuelingHistory || [],
+        maintenanceHistory: data.vehicleData.maintenanceHistory || [],
+        nextMaintenanceDate: data.vehicleData.nextMaintenanceDate ? formatDateForInput(data.vehicleData.nextMaintenanceDate) : null,
+        imageUrls: uploadedImageUrls,
       };
-      return addDoc(collection(db!, FIRESTORE_COLLECTION_NAME), dataToSave);
+      await addDoc(collection(db!, FIRESTORE_COLLECTION_NAME), dataToSave);
+      return { ...dataToSave, id: newVehicleId };
     },
-    onSuccess: (docRef, variables) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Veículo Adicionado", description: `${variables.model} (${variables.licensePlate}) adicionado.` });
+      toast({ title: "Veículo Adicionado", description: `${data.model} (${data.licensePlate}) adicionado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar ${variables.model}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar ${variables.vehicleData.model}. Detalhe: ${err.message}`, variant: "destructive" });
+      setIsUploadingImage(false);
     },
   });
 
   const updateVehicleMutation = useMutation({
-    mutationFn: async (vehicleData: Vehicle) => {
+    mutationFn: async (data: {
+      id: string;
+      vehicleData: z.infer<typeof VehicleSchema>;
+      newImageFiles: File[];
+      existingImageUrlsToKeep: string[];
+      currentVehicle: Vehicle;
+    }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para atualizar veículo.");
-      const { id, ...dataToUpdate } = vehicleData;
-      if (!id || id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
-      const vehicleRef = doc(db!, FIRESTORE_COLLECTION_NAME, id);
+      if (data.id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
+      setIsUploadingImage(true);
+
+      const finalImageUrls: string[] = [...data.existingImageUrlsToKeep];
+
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadVehicleImageFile(file, data.id, `image_${Date.now()}_${i}`);
+        finalImageUrls.push(imageUrl);
+      }
+
+      const urlsToDeleteFromStorage = (data.currentVehicle.imageUrls || []).filter(
+        (url) => !data.existingImageUrlsToKeep.includes(url)
+      );
+      for (const url of urlsToDeleteFromStorage) {
+        await deleteVehicleImageFromStorage(url);
+      }
+      setIsUploadingImage(false);
+
       const dataToSave = {
-        ...dataToUpdate,
-        fuelingHistory: dataToUpdate.fuelingHistory || [],
-        maintenanceHistory: dataToUpdate.maintenanceHistory || [],
-        nextMaintenanceDate: dataToUpdate.nextMaintenanceDate ? formatDateForInput(dataToUpdate.nextMaintenanceDate) : null,
+        ...data.vehicleData,
+        fuelingHistory: data.currentVehicle.fuelingHistory || [],
+        maintenanceHistory: data.currentVehicle.maintenanceHistory || [],
+        nextMaintenanceDate: data.vehicleData.nextMaintenanceDate ? formatDateForInput(data.vehicleData.nextMaintenanceDate) : null,
+        imageUrls: finalImageUrls,
       };
-      return updateDoc(vehicleRef, dataToSave as { [key: string]: any });
+      const { id, ...updatePayload } = dataToSave; // Remove id from payload to update
+      const vehicleRef = doc(db!, FIRESTORE_COLLECTION_NAME, data.id);
+      await updateDoc(vehicleRef, updatePayload as { [key: string]: any });
+      return { ...dataToSave, id: data.id };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
-      toast({ title: "Veículo Atualizado", description: `${variables.model} (${variables.licensePlate}) atualizado.` });
+      toast({ title: "Veículo Atualizado", description: `${data.model} (${data.licensePlate}) atualizado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar ${variables.model}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar ${variables.vehicleData.model}. Detalhe: ${err.message}`, variant: "destructive" });
+      setIsUploadingImage(false);
     },
   });
 
+
   const deleteVehicleMutation = useMutation({
-    mutationFn: async (vehicleId: string) => {
+    mutationFn: async (vehicleToDelete: Vehicle) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para excluir veículo.");
-      if (!vehicleId || vehicleId.startsWith("mock")) throw new Error("ID do veículo inválido para exclusão.");
-      return deleteDoc(doc(db!, FIRESTORE_COLLECTION_NAME, vehicleId));
+      if (!vehicleToDelete.id || vehicleToDelete.id.startsWith("mock")) throw new Error("ID do veículo inválido para exclusão.");
+      if (vehicleToDelete.imageUrls) {
+        for (const url of vehicleToDelete.imageUrls) {
+          await deleteVehicleImageFromStorage(url);
+        }
+      }
+      return deleteDoc(doc(db!, FIRESTORE_COLLECTION_NAME, vehicleToDelete.id));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
@@ -275,6 +368,8 @@ export function VehicleClientPage() {
   });
 
   const openModal = (vehicle?: Vehicle) => {
+    setImageFilesToUpload([]);
+    setImagePreviews(vehicle?.imageUrls || []);
     if (vehicle) {
       setEditingVehicle(vehicle);
       form.reset({
@@ -283,13 +378,14 @@ export function VehicleClientPage() {
         fuelConsumption: Number(vehicle.fuelConsumption),
         costPerKilometer: Number(vehicle.costPerKilometer),
         fipeValue: vehicle.fipeValue !== undefined && vehicle.fipeValue !== null ? Number(vehicle.fipeValue) : null,
- year: vehicle.year !== undefined && vehicle.year !== null ? Number(vehicle.year) : null,
+        year: vehicle.year !== undefined && vehicle.year !== null ? Number(vehicle.year) : null,
         fuelingHistory: vehicle.fuelingHistory || [],
         maintenanceHistory: vehicle.maintenanceHistory || [],
         nextMaintenanceType: vehicle.nextMaintenanceType || null,
         nextMaintenanceKm: vehicle.nextMaintenanceKm !== undefined ? vehicle.nextMaintenanceKm : null,
         nextMaintenanceDate: vehicle.nextMaintenanceDate ? formatDateForInput(vehicle.nextMaintenanceDate) : null,
         maintenanceNotes: vehicle.maintenanceNotes || "",
+        imageUrls: vehicle.imageUrls || [],
       });
       setIsEditMode(false);
     } else {
@@ -297,7 +393,7 @@ export function VehicleClientPage() {
       form.reset({
         model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, year: null,
         fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
-        nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
+        nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "", imageUrls: [],
       });
       setIsEditMode(true);
     }
@@ -309,6 +405,8 @@ export function VehicleClientPage() {
     setEditingVehicle(null);
     form.reset();
     setIsEditMode(false);
+    setImageFilesToUpload([]);
+    setImagePreviews([]);
   };
 
   const onSubmit = async (values: z.infer<typeof VehicleSchema>) => {
@@ -316,18 +414,28 @@ export function VehicleClientPage() {
       ...values,
       nextMaintenanceDate: values.nextMaintenanceDate ? formatDateForInput(values.nextMaintenanceDate) : null,
     };
+    const existingImageUrlsToKeep = imagePreviews.filter(
+      (url) => (editingVehicle?.imageUrls || []).includes(url) && url.startsWith('https://firebasestorage.googleapis.com')
+    );
+
 
     if (editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock")) {
-      updateVehicleMutation.mutate({ ...dataToSubmit, id: editingVehicle.id, fuelingHistory: editingVehicle.fuelingHistory || [], maintenanceHistory: editingVehicle.maintenanceHistory || [] });
+      updateVehicleMutation.mutate({
+        id: editingVehicle.id,
+        vehicleData: dataToSubmit,
+        newImageFiles: imageFilesToUpload,
+        existingImageUrlsToKeep,
+        currentVehicle: editingVehicle,
+      });
     } else {
-      addVehicleMutation.mutate(dataToSubmit);
+      addVehicleMutation.mutate({ vehicleData: dataToSubmit, newImageFiles: imageFilesToUpload });
     }
   };
 
   const handleModalDeleteConfirm = () => {
     if (editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock")) {
        if (window.confirm(`Tem certeza que deseja excluir o veículo "${editingVehicle.model} (${editingVehicle.licensePlate})"?`)) {
-        deleteVehicleMutation.mutate(editingVehicle.id);
+        deleteVehicleMutation.mutate(editingVehicle);
       }
     } else {
       toast({ title: "Ação Inválida", description: "Não é possível excluir um veículo de exemplo ou não salvo.", variant: "default" });
@@ -418,8 +526,50 @@ export function VehicleClientPage() {
     });
   };
 
+  const handleImageFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const currentTotalFiles = imagePreviews.length + imageFilesToUpload.length - (editingVehicle?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) + files.length;
 
-  const isMutating = addVehicleMutation.isPending || updateVehicleMutation.isPending;
+      if (currentTotalFiles > MAX_VEHICLE_IMAGE_FILES) {
+        toast({
+          title: "Limite de Imagens Excedido",
+          description: `Você pode ter no máximo ${MAX_VEHICLE_IMAGE_FILES} imagens por veículo.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const newFilesArray = Array.from(files);
+      setImageFilesToUpload(prev => [...prev, ...newFilesArray]);
+      newFilesArray.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreviews(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const handleRemoveVehicleImage = (index: number, isExistingUrl: boolean) => {
+    if (isExistingUrl) {
+      const urlToRemove = imagePreviews[index];
+      setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      const currentFormUrls = form.getValues('imageUrls') || [];
+      form.setValue('imageUrls', currentFormUrls.filter(url => url !== urlToRemove), {shouldDirty: true});
+    } else {
+      const numExistingUrls = (editingVehicle?.imageUrls || []).filter(url => imagePreviews.includes(url)).length;
+      const fileIndexToRemove = index - numExistingUrls;
+
+      if (fileIndexToRemove >= 0 && fileIndexToRemove < imageFilesToUpload.length) {
+        setImageFilesToUpload(prev => prev.filter((_, i) => i !== fileIndexToRemove));
+        setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      }
+    }
+  };
+
+
+  const isMutating = addVehicleMutation.isPending || updateVehicleMutation.isPending || isUploadingImage;
 
   if (isLoading && !isModalOpen && !isFuelingModalOpen && !isMaintenanceModalOpen) {
     return (
@@ -487,13 +637,30 @@ export function VehicleClientPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {vehiclesToDisplay.map((vehicle) => (
+          {vehiclesToDisplay.map((vehicle) => {
+            const primaryImageUrl = vehicle.imageUrls && vehicle.imageUrls.length > 0 ? vehicle.imageUrls[0] : null;
+            return (
             <Card
               key={vehicle.id}
               className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 "
             >
               <div onClick={() => openModal(vehicle)} className="cursor-pointer flex-grow">
                 <CardHeader>
+                 {primaryImageUrl ? (
+                    <div className="relative w-full h-32 mb-2 rounded-t-md overflow-hidden">
+                        <NextImage
+                            src={primaryImageUrl}
+                            alt={`Imagem de ${vehicle.model}`}
+                            layout="fill"
+                            objectFit="cover"
+                            data-ai-hint="vehicle car"
+                        />
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-center w-full h-32 mb-2 rounded-t-md bg-muted">
+                        <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                )}
                   <CardTitle className="font-headline text-xl text-primary">{vehicle.model}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2 text-sm">
@@ -578,7 +745,7 @@ export function VehicleClientPage() {
                 </Button>
               </CardFooter>
             </Card>
-          ))}
+          )})}
         </div>
       )}
 
@@ -687,20 +854,70 @@ export function VehicleClientPage() {
                     </FormItem>
                   )} />
                 </div>
- <FormField control={form.control} name="year" render={({ field }) => (
- <FormItem>
- <FormLabel>Ano de Fabricação</FormLabel>
- <FormControl>
- <Input type="number" placeholder="Ex: 2018" {...field}
- onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
- value={field.value ?? ""}
- />
- </FormControl><FormMessage /></FormItem>
- )} />
+                <FormField control={form.control} name="year" render={({ field }) => (
+                <FormItem>
+                <FormLabel>Ano de Fabricação/Modelo</FormLabel>
+                <FormControl>
+                <Input type="number" placeholder="Ex: 2018" {...field}
+                onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                value={field.value ?? ""}
+                />
+                </FormControl><FormMessage /></FormItem>
+                )} />
 
               <FormField control={form.control} name="registrationInfo" render={({ field }) => (
                 <FormItem><FormLabel>Informações de Registro (Opcional)</FormLabel><FormControl><Input placeholder="ex: Renavam, Chassi" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
+
+                <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Imagens do Veículo (Máx. {MAX_VEHICLE_IMAGE_FILES})</h3>
+                <FormItem>
+                    <FormLabel htmlFor="vehicle-images-upload">Adicionar Imagens</FormLabel>
+                    <FormControl>
+                        <Input
+                            id="vehicle-images-upload"
+                            type="file"
+                            multiple
+                            accept="image/jpeg, image/png, image/webp"
+                            onChange={handleImageFilesChange}
+                            disabled={isUploadingImage || imageFilesToUpload.length + (form.getValues('imageUrls')?.length || 0) >= MAX_VEHICLE_IMAGE_FILES}
+                        />
+                    </FormControl>
+                    <FormDescription>
+                        Total de imagens: {imagePreviews.length + imageFilesToUpload.length - (editingVehicle?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) } de {MAX_VEHICLE_IMAGE_FILES}.
+                    </FormDescription>
+                    <FormMessage />
+                </FormItem>
+                {(imagePreviews.length > 0 || imageFilesToUpload.length > 0) && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                        {imagePreviews.map((previewUrl, index) => {
+                            const isExisting = (editingVehicle?.imageUrls || []).includes(previewUrl) && previewUrl.startsWith('https://firebasestorage.googleapis.com');
+                            return (
+                                <div key={`preview-${index}-${previewUrl.slice(-10)}`} className="relative group aspect-video">
+                                    <NextImage
+                                        src={previewUrl}
+                                        alt={`Preview ${index + 1}`}
+                                        layout="fill"
+                                        objectFit="cover"
+                                        className="rounded-md"
+                                        data-ai-hint="vehicle photo"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground opacity-80 hover:opacity-100 transition-opacity"
+                                        onClick={() => handleRemoveVehicleImage(index, isExisting)}
+                                        title={isExisting ? "Remover imagem existente (será excluída ao salvar)" : "Remover nova imagem"}
+                                    >
+                                        <XCircle className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} />} />
+
 
               <h3 className="text-md font-semibold pt-4 border-t mt-4 pb-1 font-headline">Alerta Próxima Manutenção</h3>
               <FormField
@@ -1006,3 +1223,4 @@ export function VehicleClientPage() {
     </>
   );
 }
+
