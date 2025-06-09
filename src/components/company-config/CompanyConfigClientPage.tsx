@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { Building, Landmark, Hash, QrCode, MapPin, Contact, Loader2, AlertTriangle, Search, ShieldQuestion } from "lucide-react"; // Added ShieldQuestion for CNPJ
+import { Building, Landmark, Hash, QrCode, MapPin, Contact, Loader2, AlertTriangle, Search, ShieldQuestion, Phone, Mail } from "lucide-react"; // Added Phone, Mail
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { formatAddressForDisplay } from "@/lib/utils"; // Import the utility function
+import { formatAddressForDisplay, formatPhoneNumberForInputDisplay } from "@/lib/utils"; // Import the utility function
 
 const FIRESTORE_COLLECTION_NAME = "empresas";
 
@@ -34,6 +34,8 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     city: "Jundiai", 
     state: "SP", 
     cep: "13211-740",
+    phone: "11999998888",
+    email: "contato@goldmaq.com.br",
     bankName: "Banco Alpha", 
     bankAgency: "0001", 
     bankAccount: "12345-6", 
@@ -48,6 +50,8 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     city: "Jundiai", 
     state: "SP", 
     cep: "13211-740",
+    phone: "11777776666",
+    email: "comercial@goldcomercio.com.br",
     bankName: "Banco Beta", 
     bankAgency: "0002", 
     bankAccount: "65432-1" 
@@ -60,7 +64,9 @@ const initialCompanyDataFromCode: Record<CompanyId, Omit<Company, 'id'>> = {
     neighborhood: "RECANTO QUARTO CENTENARIO", 
     city: "Jundiai", 
     state: "SP", 
-    cep: "13211-740" 
+    cep: "13211-740",
+    phone: "11555554444",
+    email: "orcamento@goldempilhadeiras.com.br"
   },
 };
 
@@ -96,14 +102,14 @@ async function fetchCompanyConfigs(): Promise<Company[]> {
         city: data.city || initialCompanyDataFromCode[id].city,
         state: data.state || initialCompanyDataFromCode[id].state,
         cep: data.cep || initialCompanyDataFromCode[id].cep,
+        phone: data.phone || initialCompanyDataFromCode[id].phone,
+        email: data.email || initialCompanyDataFromCode[id].email,
         bankName: data.bankName,
         bankAgency: data.bankAgency,
         bankAccount: data.bankAccount,
         bankPixKey: data.bankPixKey,
       } as Company);
     } else {
-      // If the document doesn't exist, use the initial data from code for display,
-      // but DO NOT write it back to Firestore from this read function.
       const initialData = initialCompanyDataFromCode[id];
       if (initialData) {
         console.warn(`CompanyConfig: Document for ${id} not found in Firestore. Using initial data from code. Consider seeding this data if it should persist.`);
@@ -124,13 +130,14 @@ export function CompanyConfigClientPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [isCepLoading, setIsCepLoading] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false); // Added isEditMode state
+  const [isEditMode, setIsEditMode] = useState(false); 
 
   const form = useForm<z.infer<typeof CompanySchema>>({
     resolver: zodResolver(CompanySchema),
     defaultValues: {
       name: "", cnpj: "", 
       street: "", number: "", complement: "", neighborhood: "", city: "", state: "", cep: "",
+      phone: "", email: "",
       bankName: "", bankAgency: "", bankAccount: "", bankPixKey: "",
     },
   });
@@ -138,7 +145,7 @@ export function CompanyConfigClientPage() {
   const { data: companies = [], isLoading, isError, error } = useQuery<Company[], Error>({
     queryKey: [FIRESTORE_COLLECTION_NAME],
     queryFn: fetchCompanyConfigs,
-    enabled: !!db, // Only run query if db is available
+    enabled: !!db, 
   });
 
   if (!db) {
@@ -162,8 +169,7 @@ export function CompanyConfigClientPage() {
         throw new Error("Firebase DB is not available for updating company.");
       }
       const { id, ...rawDataToUpdate } = companyData;
-
-      // Filter out undefined values before sending to Firestore
+      
       const dataToUpdate = Object.fromEntries(
         Object.entries(rawDataToUpdate).filter(([_, value]) => value !== undefined)
       );
@@ -173,7 +179,6 @@ export function CompanyConfigClientPage() {
       if (docSnap.exists()) {
         return updateDoc(companyRef, dataToUpdate);
       } else {
-        // If it doesn't exist and we are trying to "update" (likely from an initialData setup), create it.
         console.log(`CompanyConfig: Document for ${id} not found. Creating it now.`);
         return setDoc(companyRef, dataToUpdate); 
       }
@@ -192,25 +197,33 @@ export function CompanyConfigClientPage() {
 
   const openModal = (company: Company) => {
     setEditingCompany(company);
-    form.reset(company);
-    setIsEditMode(true); // Always open in edit mode for company config
+    form.reset({
+        ...company,
+        phone: company.phone ? formatPhoneNumberForInputDisplay(company.phone) : ""
+    });
+    setIsEditMode(true); 
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingCompany(null);
-    setIsEditMode(false); // Reset edit mode on close
+    setIsEditMode(false); 
     form.reset({ 
       name: "", cnpj: "", 
       street: "", number: "", complement: "", neighborhood: "", city: "", state: "", cep: "",
+      phone: "", email: "",
       bankName: "", bankAgency: "", bankAccount: "", bankPixKey: ""
     });
   };
 
   const onSubmit = async (values: z.infer<typeof CompanySchema>) => {
     if (!editingCompany || !editingCompany.id) return;
-    updateCompanyMutation.mutate({ ...values, id: editingCompany.id });
+    const dataToSave = {
+        ...values,
+        phone: values.phone ? values.phone.replace(/\D/g, '') : undefined,
+    };
+    updateCompanyMutation.mutate({ ...dataToSave, id: editingCompany.id });
   };
   
   const handleSearchCep = async () => {
@@ -251,7 +264,7 @@ export function CompanyConfigClientPage() {
     }
   };
 
-  if (isLoading && !isModalOpen) { // Added !isModalOpen to prevent loading screen when modal is open
+  if (isLoading && !isModalOpen) { 
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -309,7 +322,20 @@ export function CompanyConfigClientPage() {
                       <span>{displayAddress}</span>
                     </div>
                   </div>
-                  
+                  {company.phone && (
+                    <p className="flex items-center text-sm">
+                      <Phone className="mr-2 h-4 w-4 text-primary" />
+                      <span className="font-medium text-muted-foreground mr-1">Telefone:</span>
+                      <span>{formatPhoneNumberForInputDisplay(company.phone)}</span>
+                    </p>
+                  )}
+                  {company.email && (
+                    <p className="flex items-center text-sm">
+                      <Mail className="mr-2 h-4 w-4 text-primary" />
+                      <span className="font-medium text-muted-foreground mr-1">Email:</span>
+                      <span>{company.email}</span>
+                    </p>
+                  )}
                   {company.bankName && (
                     <p className="flex items-center text-sm">
                       <Landmark className="mr-2 h-4 w-4 text-primary" />
@@ -355,8 +381,7 @@ export function CompanyConfigClientPage() {
         formId="company-form"
         isSubmitting={updateCompanyMutation.isPending}
         editingItem={editingCompany}
-        isEditMode={isEditMode} // Pass isEditMode
-        // No onEditModeToggle here as it's always edit mode when open
+        isEditMode={isEditMode}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="company-form" className="space-y-4">
@@ -419,6 +444,29 @@ export function CompanyConfigClientPage() {
                 <FormItem className="md:col-span-1"><FormLabel>Estado (UF)</FormLabel><FormControl><Input placeholder="Ex: SP" maxLength={2} {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
+
+            <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Informações de Contato (Opcional)</h3>
+            <FormField control={form.control} name="phone" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Telefone</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="(00) 00000-0000"
+                      {...field}
+                      value={field.value ?? ""}
+                      onChange={(e) => {
+                         field.onChange(formatPhoneNumberForInputDisplay(e.target.value));
+                      }}
+                      maxLength={15}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            <FormField control={form.control} name="email" render={({ field }) => (
+              <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="contato@empresa.com" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+            )} />
+
 
             <h3 className="text-md font-semibold pt-2 border-b pb-1 font-headline">Informações Bancárias (Opcional)</h3>
             <FormField control={form.control} name="bankName" render={({ field }) => (

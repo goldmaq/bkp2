@@ -12,9 +12,9 @@ const NO_TECHNICIAN_SELECTED_VALUE_FOR_SCHEMA_CHECK = "_NO_TECHNICIAN_SELECTED_"
 export interface Customer {
   id: string;
   name: string;
-  fantasyName?: string | null; // Alterado para aceitar null
+  fantasyName?: string | null;
   cnpj: string;
-  email?: string | null; // Alterado para opcional e aceitar null
+  email?: string | null;
   phone?: string;
   contactName?: string;
   cep?: string | null;
@@ -147,6 +147,8 @@ export interface Company {
   city: string;
   state: string;
   cep: string;
+  phone?: string;
+  email?: string;
   bankName?: string;
   bankAgency?: string;
   bankAccount?: string;
@@ -399,6 +401,8 @@ export const CompanySchema = z.object({
   city: requiredString("Cidade"),
   state: z.string().length(2, "UF deve ter 2 caracteres").min(2, "UF é obrigatória"),
   cep: requiredString("CEP").regex(/^\d{5}-?\d{3}$/, "CEP inválido. Use XXXXX-XXX."),
+  phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
+  email: z.string().email("Email inválido").optional().nullable(),
   bankName: z.string().optional(),
   bankAgency: z.string().optional(),
   bankAccount: z.string().optional(),
