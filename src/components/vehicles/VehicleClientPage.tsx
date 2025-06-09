@@ -35,6 +35,7 @@ const statusIcons = {
 };
 
 const FIRESTORE_COLLECTION_NAME = "veiculos";
+const NO_MAINTENANCE_ALERT_VALUE = "_NO_ALERT_"; // Constante para o valor "Nenhum"
 
 const mockVehiclesData: Omit<Vehicle, 'id' | 'fuelingHistory' | 'maintenanceHistory'>[] = [
   { model: "FIAT DOBLO", licensePlate: "ENC8C91", fipeValue: 29243, kind: "Furgão", currentMileage: 150000, fuelConsumption: 9.5, costPerKilometer: 0.6, status: "Disponível", registrationInfo: "Exemplo" },
@@ -692,14 +693,19 @@ export function VehicleClientPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Alertar por</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value === NO_MAINTENANCE_ALERT_VALUE ? null : value);
+                      }}
+                      value={field.value || NO_MAINTENANCE_ALERT_VALUE}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione tipo de alerta" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Nenhum</SelectItem>
+                        <SelectItem value={NO_MAINTENANCE_ALERT_VALUE}>Nenhum</SelectItem>
                         <SelectItem value="km">Quilometragem</SelectItem>
                         <SelectItem value="date">Data</SelectItem>
                       </SelectContent>
