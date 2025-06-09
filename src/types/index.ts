@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { formatISO, parseISO, isValid as isValidDate } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+import { ptBR } from 'date-fns/locale';
 
 // Placeholder constants to be used for schema validation checks
 // These must match the values used for placeholder SelectItems in the client page
@@ -189,6 +190,11 @@ export interface Vehicle {
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
   fuelingHistory?: FuelingRecord[] | null;
   maintenanceHistory?: VehicleMaintenanceRecord[] | null;
+  // Campos para próxima manutenção
+  nextMaintenanceType?: 'km' | 'date' | null;
+  nextMaintenanceKm?: number | null;
+  nextMaintenanceDate?: string | null; // ISO date string 'yyyy-MM-dd'
+  maintenanceNotes?: string | null;
 }
 
 export const auxiliaryEquipmentTypeOptions = ["Bateria", "Carregador", "Berço", "Cabo"] as const;
@@ -271,6 +277,25 @@ export interface PartsRequisition {
 }
 
 const requiredString = (field: string) => z.string().min(1, `${field} é obrigatório.`);
+
+// Helper para formatar data para yyyy-MM-dd ANTES da validação/transformação de Zod
+// Zod espera string para inputs de data, e então podemos transformar/validar.
+const formatDateForInput = (dateValue: any): string | null => {
+  if (!dateValue) return null;
+  let d: Date;
+  if (dateValue instanceof Timestamp) {
+    d = dateValue.toDate();
+  } else if (typeof dateValue === 'string') {
+    d = parseISO(dateValue);
+  } else if (dateValue instanceof Date) {
+    d = dateValue;
+  } else {
+    return null;
+  }
+  if (!isValidDate(d)) return null;
+  return format(d, 'yyyy-MM-dd');
+};
+
 
 export const CustomerSchema = z.object({
   name: requiredString("Nome (Razão Social)"),
@@ -386,7 +411,28 @@ export const VehicleSchema = z.object({
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
   fuelingHistory: z.array(FuelingRecordSchema).optional().nullable(),
   maintenanceHistory: z.array(VehicleMaintenanceRecordSchema).optional().nullable(),
+  // Novos campos para próxima manutenção com validações
+  nextMaintenanceType: z.enum(['km', 'date']).nullable().optional(),
+  nextMaintenanceKm: z.coerce.number().min(0, "KM da próxima manutenção deve ser não negativo.").nullable().optional(),
+  nextMaintenanceDate: z.string()
+    .nullable()
+    .optional()
+    .refine(val => !val || isValidDate(parseISO(val)), { message: "Data inválida." })
+    .transform(val => val ? formatDateForInput(val) : null), // Garante yyyy-MM-dd
+  maintenanceNotes: z.string().optional().nullable(),
+}).refine(data => {
+  if (data.nextMaintenanceType === 'km' && (data.nextMaintenanceKm === null || data.nextMaintenanceKm === undefined)) {
+    return false;
+  }
+  if (data.nextMaintenanceType === 'date' && (!data.nextMaintenanceDate)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Especifique o valor (KM ou Data) para o tipo de alerta selecionado.",
+  path: ["nextMaintenanceKm"],
 });
+
 
 export const CompanySchema = z.object({
   id: z.enum(companyIds),

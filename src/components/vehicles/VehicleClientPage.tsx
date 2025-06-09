@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon } from "lucide-react";
+import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon, Clock } from "lucide-react"; // Added Clock
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,10 @@ async function fetchVehicles(): Promise<Vehicle[]> {
         status: data.status,
         fuelingHistory: Array.isArray(data.fuelingHistory) ? data.fuelingHistory : [],
         maintenanceHistory: Array.isArray(data.maintenanceHistory) ? data.maintenanceHistory : [],
+        nextMaintenanceType: data.nextMaintenanceType || null,
+        nextMaintenanceKm: data.nextMaintenanceKm !== undefined && data.nextMaintenanceKm !== null ? Number(data.nextMaintenanceKm) : null,
+        nextMaintenanceDate: data.nextMaintenanceDate || null,
+        maintenanceNotes: data.maintenanceNotes || null,
     } as Vehicle;
   });
 }
@@ -83,8 +87,15 @@ export function VehicleClientPage() {
 
   const form = useForm<z.infer<typeof VehicleSchema>>({
     resolver: zodResolver(VehicleSchema),
-    defaultValues: { model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [] },
+    defaultValues: {
+      model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0,
+      fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
+      nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
+    },
   });
+
+  const nextMaintenanceTypeWatch = useWatch({ control: form.control, name: 'nextMaintenanceType' });
+
 
   const fuelingForm = useForm<z.infer<typeof FuelingRecordSchema>>({
     resolver: zodResolver(FuelingRecordSchema),
@@ -152,7 +163,12 @@ export function VehicleClientPage() {
   const addVehicleMutation = useMutation({
     mutationFn: async (newVehicleData: z.infer<typeof VehicleSchema>) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para adicionar veículo.");
-      const dataToSave = { ...newVehicleData, fuelingHistory: newVehicleData.fuelingHistory || [], maintenanceHistory: newVehicleData.maintenanceHistory || [] };
+      const dataToSave = {
+        ...newVehicleData,
+        fuelingHistory: newVehicleData.fuelingHistory || [],
+        maintenanceHistory: newVehicleData.maintenanceHistory || [],
+        nextMaintenanceDate: newVehicleData.nextMaintenanceDate ? formatDateForInput(newVehicleData.nextMaintenanceDate) : null,
+      };
       return addDoc(collection(db!, FIRESTORE_COLLECTION_NAME), dataToSave);
     },
     onSuccess: (docRef, variables) => {
@@ -171,8 +187,13 @@ export function VehicleClientPage() {
       const { id, ...dataToUpdate } = vehicleData;
       if (!id || id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
       const vehicleRef = doc(db!, FIRESTORE_COLLECTION_NAME, id);
-      const dataToSave = { ...dataToUpdate, fuelingHistory: dataToUpdate.fuelingHistory || [], maintenanceHistory: dataToUpdate.maintenanceHistory || [] };
-      return updateDoc(vehicleRef, dataToSave);
+      const dataToSave = {
+        ...dataToUpdate,
+        fuelingHistory: dataToUpdate.fuelingHistory || [],
+        maintenanceHistory: dataToUpdate.maintenanceHistory || [],
+        nextMaintenanceDate: dataToUpdate.nextMaintenanceDate ? formatDateForInput(dataToUpdate.nextMaintenanceDate) : null,
+      };
+      return updateDoc(vehicleRef, dataToSave as { [key: string]: any });
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_COLLECTION_NAME] });
@@ -262,11 +283,19 @@ export function VehicleClientPage() {
         fipeValue: vehicle.fipeValue !== undefined && vehicle.fipeValue !== null ? Number(vehicle.fipeValue) : null,
         fuelingHistory: vehicle.fuelingHistory || [],
         maintenanceHistory: vehicle.maintenanceHistory || [],
+        nextMaintenanceType: vehicle.nextMaintenanceType || null,
+        nextMaintenanceKm: vehicle.nextMaintenanceKm !== undefined ? vehicle.nextMaintenanceKm : null,
+        nextMaintenanceDate: vehicle.nextMaintenanceDate ? formatDateForInput(vehicle.nextMaintenanceDate) : null,
+        maintenanceNotes: vehicle.maintenanceNotes || "",
       });
       setIsEditMode(false);
     } else {
       setEditingVehicle(null);
-      form.reset({ model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [] });
+      form.reset({
+        model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0,
+        fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
+        nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "",
+      });
       setIsEditMode(true);
     }
     setIsModalOpen(true);
@@ -280,10 +309,15 @@ export function VehicleClientPage() {
   };
 
   const onSubmit = async (values: z.infer<typeof VehicleSchema>) => {
+    const dataToSubmit = {
+      ...values,
+      nextMaintenanceDate: values.nextMaintenanceDate ? formatDateForInput(values.nextMaintenanceDate) : null,
+    };
+
     if (editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock")) {
-      updateVehicleMutation.mutate({ ...values, id: editingVehicle.id, fuelingHistory: editingVehicle.fuelingHistory || [], maintenanceHistory: editingVehicle.maintenanceHistory || [] });
+      updateVehicleMutation.mutate({ ...dataToSubmit, id: editingVehicle.id, fuelingHistory: editingVehicle.fuelingHistory || [], maintenanceHistory: editingVehicle.maintenanceHistory || [] });
     } else {
-      addVehicleMutation.mutate(values);
+      addVehicleMutation.mutate(dataToSubmit);
     }
   };
 
@@ -300,7 +334,7 @@ export function VehicleClientPage() {
   const openFuelingModal = (vehicle: Vehicle) => {
     setSelectedVehicleForFueling(vehicle);
     fuelingForm.reset({
-      date: formatDateForInput(new Date()),
+      date: formatDateForInput(new Date().toISOString()),
       liters: undefined,
       pricePerLiter: undefined,
       totalCost: undefined,
@@ -344,7 +378,7 @@ export function VehicleClientPage() {
   const openMaintenanceModal = (vehicle: Vehicle) => {
     setSelectedVehicleForMaintenance(vehicle);
     maintenanceForm.reset({
-      date: formatDateForInput(new Date()),
+      date: formatDateForInput(new Date().toISOString()),
       description: "",
       cost: undefined,
       mileageAtMaintenance: vehicle.currentMileage || undefined,
@@ -650,6 +684,84 @@ export function VehicleClientPage() {
               <FormField control={form.control} name="registrationInfo" render={({ field }) => (
                 <FormItem><FormLabel>Informações de Registro (Opcional)</FormLabel><FormControl><Input placeholder="ex: Renavam, Chassi" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
+
+              <h3 className="text-md font-semibold pt-4 border-t mt-4 pb-1 font-headline">Alerta Próxima Manutenção</h3>
+              <FormField
+                control={form.control}
+                name="nextMaintenanceType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Alertar por</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione tipo de alerta" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Nenhum</SelectItem>
+                        <SelectItem value="km">Quilometragem</SelectItem>
+                        <SelectItem value="date">Data</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {nextMaintenanceTypeWatch === 'km' && (
+                <FormField
+                  control={form.control}
+                  name="nextMaintenanceKm"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Próxima Manutenção em (KM)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="Ex: 160000"
+                          {...field}
+                          onChange={e => field.onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              {nextMaintenanceTypeWatch === 'date' && (
+                <FormField
+                  control={form.control}
+                  name="nextMaintenanceDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Data da Próxima Manutenção</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          {...field}
+                          value={field.value ? formatDateForInput(field.value) : ""}
+                          onChange={e => field.onChange(e.target.value ? formatDateForInput(e.target.value) : null)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <FormField
+                control={form.control}
+                name="maintenanceNotes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notas da Próxima Manutenção (Opcional)</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Ex: Trocar óleo e filtro, verificar correias..." {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </fieldset>
 
             {editingVehicle && !editingVehicle.id.startsWith("mock") && (
@@ -872,4 +984,3 @@ export function VehicleClientPage() {
     </>
   );
 }
-
