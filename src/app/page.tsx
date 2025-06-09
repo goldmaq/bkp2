@@ -3,8 +3,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { 
-  Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal, 
+import {
+  Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal,
   ArrowRight, PackageCheck, FileText, BarChart3, AlertTriangle, CheckCircle,
   DollarSign, Package, ListChecks, Wrench as WrenchIcon, TrendingUp, TrendingDown, Banknote,
   FileCheck2
@@ -12,7 +12,7 @@ import {
 import { KPICard } from '@/components/dashboard/KPICard';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { Maquina, Budget, ServiceOrder } from '@/types'; 
+import type { Maquina, Budget, ServiceOrder } from '@/types';
 import { maquinaOperationalStatusOptions, budgetStatusOptions, serviceOrderPhaseOptions } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -32,7 +32,7 @@ async function getMaquinaKPIs(): Promise<{
   if (!db) return { total: 0, disponivel: 0, locada: 0, manutencao: 0, sucata: 0, totalRentalValue: 0 };
   const maquinasSnapshot = await getDocs(collection(db, 'equipamentos'));
   const maquinas = maquinasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Maquina));
-  
+
   let totalRentalValue = 0;
   let highestRentalMachine: { name: string; value: number; id: string } | undefined = undefined;
   let lowestRentalMachine: { name: string; value: number; id: string } | undefined = undefined;
@@ -88,7 +88,7 @@ async function getServiceOrderKPIs() {
   const openOrders = serviceOrders.filter(
     os => os.phase !== 'Concluída' && os.phase !== 'Cancelada'
   );
-  
+
   return {
     openCount: openOrders.length,
   };
@@ -103,33 +103,36 @@ export default async function DashboardPage() {
   return (
     <AppLayout>
       <div className="space-y-8">
+        <p className="text-muted-foreground text-sm mb-6">
+          Acompanhe os Indicadores Chave de Performance (KPIs) para uma visão geral do estado atual das suas operações.
+        </p>
         <section>
           <h2 className="text-xl font-headline font-semibold mb-4">Indicadores Chave</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-            <KPICard 
-              title="Total de Máquinas" 
-              value={maquinaKPIs.total} 
+            <KPICard
+              title="Total de Máquinas"
+              value={maquinaKPIs.total}
               icon={Construction}
               href="/maquinas"
             />
-            <KPICard 
-              title="Máquinas Disponíveis" 
-              value={maquinaKPIs.disponivel} 
-              icon={CheckCircle} 
+            <KPICard
+              title="Máquinas Disponíveis"
+              value={maquinaKPIs.disponivel}
+              icon={CheckCircle}
               iconColor="text-green-500"
               href="/maquinas?status=Disponível"
             />
-            <KPICard 
-              title="Máquinas Locadas" 
-              value={maquinaKPIs.locada} 
-              icon={PackageCheck} 
+            <KPICard
+              title="Máquinas Locadas"
+              value={maquinaKPIs.locada}
+              icon={PackageCheck}
               iconColor="text-blue-500"
               href="/maquinas?status=Locada"
             />
-            <KPICard 
-              title="Máquinas em Manutenção" 
-              value={maquinaKPIs.manutencao} 
-              icon={WrenchIcon} 
+            <KPICard
+              title="Máquinas em Manutenção"
+              value={maquinaKPIs.manutencao}
+              icon={WrenchIcon}
               iconColor="text-yellow-500"
               href="/maquinas?status=Em Manutenção"
             />
@@ -160,26 +163,26 @@ export default async function DashboardPage() {
                     href={`/maquinas?openMaquinaId=${maquinaKPIs.lowestRentalMachine.id}`}
                 />
             )}
-             <KPICard 
-              title="Orçamentos Pendentes" 
-              value={budgetKPIs.pendingCount} 
-              icon={FileText} 
+             <KPICard
+              title="Orçamentos Pendentes"
+              value={budgetKPIs.pendingCount}
+              icon={FileText}
               iconColor="text-yellow-500"
               additionalInfo={<span className="text-sm font-semibold">{formatCurrency(budgetKPIs.pendingValue)}</span>}
               href="/budgets?status=Pendente"
             />
-            <KPICard 
-              title="Orçamentos Aprovados" 
-              value={budgetKPIs.approvedCount} 
-              icon={FileCheck2} 
+            <KPICard
+              title="Orçamentos Aprovados"
+              value={budgetKPIs.approvedCount}
+              icon={FileCheck2}
               iconColor="text-green-500"
               additionalInfo={<span className="text-sm font-semibold">{formatCurrency(budgetKPIs.approvedValue)}</span>}
               href="/budgets?status=Aprovado"
             />
-            <KPICard 
-              title="Ordens de Serviço Abertas" 
-              value={serviceOrderKPIs.openCount} 
-              icon={ClipboardList} 
+            <KPICard
+              title="Ordens de Serviço Abertas"
+              value={serviceOrderKPIs.openCount}
+              icon={ClipboardList}
               iconColor="text-orange-500"
               href="/service-orders?status=Abertas"
             />

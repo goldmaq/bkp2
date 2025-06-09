@@ -61,8 +61,8 @@ async function fetchMaquinas(): Promise<Maquina[]> {
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(docSnap => {
     const data = docSnap.data();
-    return { 
-      id: docSnap.id, 
+    return {
+      id: docSnap.id,
       ...data,
       fleetNumber: data.fleetNumber || null, // Ensure fleetNumber is handled
     } as Maquina;
@@ -321,7 +321,7 @@ export function CustomerClientPage() {
     try {
       const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanedCnpj}`);
       const data: BrasilApiResponseCnpj = await response.json();
-      
+
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
         toast({ title: "Erro na Consulta de CNPJ", description: errorMessage, variant: "destructive" });
@@ -454,6 +454,9 @@ export function CustomerClientPage() {
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Centralize o cadastro e gerencie todos os seus clientes. Adicione, edite e visualize informações e máquinas vinculadas.
+      </p>
 
       <div className="mb-6">
         <div className="relative">
@@ -612,7 +615,7 @@ export function CustomerClientPage() {
                                 className="hover:underline hover:text-primary transition-colors"
                                 title={`Ver detalhes de ${maq.brand} ${maq.model}`}
                               >
-                                {maq.brand} {maq.model} 
+                                {maq.brand} {maq.model}
                                 <span className="text-gray-400">
                                   (Chassi: {maq.chassisNumber}{maq.fleetNumber ? `, Frota: ${maq.fleetNumber}` : ''})
                                 </span>

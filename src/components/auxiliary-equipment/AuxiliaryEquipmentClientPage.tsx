@@ -298,6 +298,9 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Cadastre e controle equipamentos auxiliares como baterias, carregadores e outros itens vinculados às suas máquinas principais.
+      </p>
 
       {auxEquipmentList.length === 0 && !isLoadingAux ? (
         <DataTablePlaceholder

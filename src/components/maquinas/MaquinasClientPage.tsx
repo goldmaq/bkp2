@@ -722,6 +722,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Gerencie sua frota de máquinas. Cadastre novos equipamentos, edite detalhes técnicos, status operacional e vincule a clientes e auxiliares.
+      </p>
 
       <div className="mb-6 flex flex-col md:flex-row gap-4">
         <div className="relative flex-grow">
