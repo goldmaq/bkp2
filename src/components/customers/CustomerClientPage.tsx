@@ -83,7 +83,7 @@ interface BrasilApiResponseCnpj {
   uf?: string;
   cep?: string;
   ddd_telefone_1?: string;
-  email?: string; // Adicionado para capturar o email da API
+  email?: string;
   descricao_situacao_cadastral?: string;
   erro?: boolean;
   message?: string;
@@ -105,7 +105,7 @@ export function CustomerClientPage() {
     resolver: zodResolver(CustomerSchema),
     defaultValues: {
       name: "",
-      fantasyName: "", // Adicionado
+      fantasyName: "",
       cnpj: "",
       email: "",
       phone: "",
@@ -278,6 +278,7 @@ export function CustomerClientPage() {
     try {
       const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanedCnpj}`);
       const data: BrasilApiResponseCnpj = await response.json();
+      console.log("Resposta da API CNPJ:", data); // Para depuração do e-mail
 
       if (!response.ok || data.erro || data.message) {
         const errorMessage = data.message || "CNPJ não encontrado ou dados inválidos.";
@@ -285,7 +286,7 @@ export function CustomerClientPage() {
         form.setValue("name", form.getValues("name") || "");
       } else {
         form.setValue("name", data.razao_social || "");
-        form.setValue("fantasyName", data.nome_fantasia || ""); // Preenche Nome Fantasia
+        form.setValue("fantasyName", data.nome_fantasia || form.getValues("fantasyName") || "");
         form.setValue("street", data.logradouro || "");
         form.setValue("number", data.numero || "");
         form.setValue("complement", data.complemento || "");
@@ -293,7 +294,8 @@ export function CustomerClientPage() {
         form.setValue("city", data.municipio || "");
         form.setValue("state", data.uf || "");
         form.setValue("cep", data.cep ? data.cep.replace(/\D/g, '') : "");
-        form.setValue("email", data.email || form.getValues("email") || ""); // Preenche Email
+        
+        form.setValue("email", data.email || form.getValues("email") || "");
 
         let primaryPhone = data.ddd_telefone_1 || "";
         if (!primaryPhone && (data as any).ddd_telefone_2) {
@@ -316,7 +318,7 @@ export function CustomerClientPage() {
       setEditingCustomer(customer);
       form.reset({
         ...customer,
-        fantasyName: customer.fantasyName || "", // Adicionado
+        fantasyName: customer.fantasyName || "",
         phone: customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : "",
         preferredTechnician: customer.preferredTechnician || null,
         cep: customer.cep || null,
@@ -325,7 +327,7 @@ export function CustomerClientPage() {
     } else {
       setEditingCustomer(null);
       form.reset({
-        name: "", fantasyName: "", cnpj: "", email: "", phone: "", contactName: "", // Adicionado fantasyName
+        name: "", fantasyName: "", cnpj: "", email: "", phone: "", contactName: "",
         cep: null, street: "", number: "",
         complement: "", neighborhood: "", city: "", state: "",
         preferredTechnician: null, notes: ""
@@ -763,3 +765,5 @@ export function CustomerClientPage() {
   );
 }
 
+
+    
