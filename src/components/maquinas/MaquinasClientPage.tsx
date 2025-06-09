@@ -715,7 +715,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
 
   return (
     <>
-      <PageHeader title="Máquinas"
+      <PageHeader title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Máquina
@@ -880,7 +880,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                           <PackageSearch className="mr-1.5 h-3.5 w-3.5 text-primary" />
                           <span className="font-medium text-muted-foreground mr-1">Equip. Aux.:</span>
                         </h4>
-                        <ScrollArea className="max-h-24 pr-2">
+                        <ScrollArea className="max-h-24 pr-2"> {/* Consistent with customer's machine list styling */}
                           <ul className="list-none pl-1 space-y-0.5">
                             {linkedAuxDetails.map(aux => (
                               <li key={aux.id} className="text-xs text-muted-foreground">
