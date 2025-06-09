@@ -375,7 +375,10 @@ export function PartsWarehouseClientPage() {
 
   return (
     <TooltipProvider>
-      <PageHeader title="Almoxarifado - Peças para Separação e Compra" />
+      <PageHeader title="" />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Gerencia o fluxo de peças aprovadas. Permite que o almoxarifado indique se uma peça está disponível em estoque ("Separado") ou se precisa ser comprada ("Aguardando Compra"). É possível registrar custos estimados ou reais das peças.
+      </p>
 
       <div className="mb-6 flex flex-col md:flex-row gap-4">
         <div className="relative flex-grow">
@@ -623,3 +626,4 @@ export function PartsWarehouseClientPage() {
     </TooltipProvider>
   );
 }
+
