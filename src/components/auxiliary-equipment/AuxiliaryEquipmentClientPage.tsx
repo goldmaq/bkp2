@@ -1,33 +1,36 @@
 
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react"; // Added useEffect, useCallback
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, PackageSearch, Edit, Trash2, Tag, CheckCircle, Construction, Link as LinkIconLI, FileText, Package, ShieldAlert, Loader2, AlertTriangle, Box, BatteryCharging, Anchor, MapPin } from "lucide-react";
+import { PlusCircle, PackageSearch, Edit, Trash2, Tag, CheckCircle, Construction, Link as LinkIconLI, FileText, Package, ShieldAlert, Loader2, AlertTriangle, Box, BatteryCharging, Anchor, MapPin, Image as ImageIcon, UploadCloud, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
+import NextImage from "next/image";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { AuxiliaryEquipment, Maquina } from "@/types";
 import { AuxiliaryEquipmentSchema, auxiliaryEquipmentTypeOptions, auxiliaryEquipmentStatusOptions } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
-import { db, storage } from "@/lib/firebase"; // Added storage
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
+import { db, storage } from "@/lib/firebase";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch, setDoc } from "firebase/firestore";
+import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn, getFileNameFromUrl } from "@/lib/utils";
 
 const FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME = "equipamentosAuxiliares";
 const FIRESTORE_MAQUINAS_COLLECTION_NAME = "equipamentos";
+const MAX_AUX_IMAGE_FILES = 5;
 
 const CUSTOM_AUXILIARY_TYPE_VALUE = "_CUSTOM_";
 
@@ -50,6 +53,42 @@ interface AuxiliaryEquipmentClientPageProps {
   auxEquipmentIdFromUrl?: string | null;
 }
 
+async function uploadAuxiliaryImageFile(
+  file: File,
+  auxEquipmentId: string,
+  fileNameSuffix: string
+): Promise<string> {
+  if (!storage) {
+    throw new Error("Firebase Storage connection not available.");
+  }
+  const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `auxiliary_equipment_images/${auxEquipmentId}/${fileNameSuffix}-${sanitizedFileName}`;
+  const fileStorageRef = storageRefFB(storage!, filePath);
+  await uploadBytes(fileStorageRef, file);
+  return getDownloadURL(fileStorageRef);
+}
+
+async function deleteAuxiliaryImageFromStorage(fileUrl?: string | null) {
+  if (fileUrl) {
+    if (!storage) {
+      console.warn("deleteAuxiliaryImageFromStorage: Firebase Storage connection not available. Skipping deletion.");
+      return;
+    }
+    try {
+      const gcsPath = new URL(fileUrl).pathname.split('/o/')[1].split('?')[0];
+      const decodedPath = decodeURIComponent(gcsPath);
+      const fileStorageRef = storageRefFB(storage!, decodedPath);
+      await deleteObject(fileStorageRef);
+    } catch (e: any) {
+      if (e.code === 'storage/object-not-found') {
+        console.warn(`[DELETE AUX IMG] File not found, skipping: ${fileUrl}`);
+      } else {
+        console.error(`[DELETE AUX IMG] Failed to delete file: ${fileUrl}`, e);
+      }
+    }
+  }
+}
+
 async function fetchAuxiliaryEquipment(): Promise<AuxiliaryEquipment[]> {
   if (!db) {
     console.error("fetchAuxiliaryEquipment: Firebase DB is not available.");
@@ -57,7 +96,14 @@ async function fetchAuxiliaryEquipment(): Promise<AuxiliaryEquipment[]> {
   }
   const q = query(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME), orderBy("name", "asc"));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as AuxiliaryEquipment));
+  return querySnapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      ...data,
+      imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : null,
+    } as AuxiliaryEquipment;
+  });
 }
 
 async function fetchMaquinasPrincipais(): Promise<Maquina[]> {
@@ -79,6 +125,11 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   const [showCustomTypeField, setShowCustomTypeField] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
+  const [imageFilesToUpload, setImageFilesToUpload] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+
+
   const form = useForm<z.infer<typeof AuxiliaryEquipmentSchema>>({
     resolver: zodResolver(AuxiliaryEquipmentSchema),
     defaultValues: {
@@ -88,6 +139,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       serialNumber: "",
       status: "Disponível",
       notes: "",
+      imageUrls: [],
     },
   });
 
@@ -104,6 +156,8 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   });
 
   const openModal = useCallback((item?: AuxiliaryEquipment) => {
+    setImageFilesToUpload([]);
+    setImagePreviews(item?.imageUrls || []);
     if (item) {
       setEditingItem(item);
       const isTypePredefined = auxiliaryEquipmentTypeOptions.includes(item.type as any);
@@ -114,6 +168,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
         serialNumber: item.serialNumber || "",
         status: item.status,
         notes: item.notes || "",
+        imageUrls: item.imageUrls || [],
       });
       setShowCustomTypeField(!isTypePredefined);
       setIsEditMode(false);
@@ -121,7 +176,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       setEditingItem(null);
       form.reset({
         name: "", type: "", customType: "", serialNumber: "",
-        status: "Disponível", notes: "",
+        status: "Disponível", notes: "", imageUrls: [],
       });
       setShowCustomTypeField(false);
       setIsEditMode(true);
@@ -142,81 +197,134 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   }, [auxEquipmentIdFromUrl, auxEquipmentList, isLoadingAux, openModal, isModalOpen]);
 
 
-  if (!db || !storage) { // Check for storage as well if page might interact with it
+  if (!db || !storage) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
         <PageHeader title="Erro de Conexão com Firebase" />
         <p className="text-lg text-center text-muted-foreground">
           Não foi possível conectar ao banco de dados ou ao serviço de armazenamento.
-          <br />
-          Verifique a configuração do Firebase e sua conexão com a internet.
         </p>
       </div>
     );
   }
 
   const addAuxEquipmentMutation = useMutation({
-    mutationFn: async (newItemData: z.infer<typeof AuxiliaryEquipmentSchema>) => {
+    mutationFn: async (data: { formData: z.infer<typeof AuxiliaryEquipmentSchema>; newImageFiles: File[] }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para adicionar equipamento auxiliar.");
-      const { customType, ...dataToSave } = newItemData;
+      setIsUploadingFiles(true);
+      const newAuxEquipmentId = doc(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME)).id;
+      const uploadedImageUrls: string[] = [];
+
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadAuxiliaryImageFile(file, newAuxEquipmentId, `image_${Date.now()}_${i}`);
+        uploadedImageUrls.push(imageUrl);
+      }
+
+      const { customType, ...dataToSave } = data.formData;
       const finalData = {
         ...dataToSave,
         type: dataToSave.type === CUSTOM_AUXILIARY_TYPE_VALUE ? customType || "Outro" : dataToSave.type,
         serialNumber: dataToSave.serialNumber || null,
         notes: dataToSave.notes || null,
+        imageUrls: uploadedImageUrls,
       };
-      return addDoc(collection(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME), finalData);
+      await setDoc(doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, newAuxEquipmentId), finalData);
+      return { ...finalData, id: newAuxEquipmentId };
     },
-    onSuccess: (docRef, variables) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
-      toast({ title: "Equipamento Auxiliar Adicionado", description: `${variables.name} foi adicionado.` });
+      toast({ title: "Equipamento Auxiliar Adicionado", description: `${data.name} foi adicionado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Adicionar", description: `Não foi possível adicionar ${variables.formData.name}. Detalhe: ${err.message}`, variant: "destructive" });
     },
+    onSettled: () => setIsUploadingFiles(false),
   });
 
   const updateAuxEquipmentMutation = useMutation({
-    mutationFn: async (itemData: AuxiliaryEquipment) => {
+    mutationFn: async (data: {
+      id: string;
+      formData: z.infer<typeof AuxiliaryEquipmentSchema>;
+      newImageFiles: File[];
+      existingImageUrlsToKeep: string[];
+      currentAuxEquipment: AuxiliaryEquipment;
+    }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para atualizar equipamento auxiliar.");
-      const formData = form.getValues();
-      const { id, linkedEquipmentId: currentLinkedEquipmentId } = itemData; // Keep currentLinkedEquipmentId from DB data
+      setIsUploadingFiles(true);
+      const finalImageUrls: string[] = [...data.existingImageUrlsToKeep];
 
-      if (!id) throw new Error("ID do item é necessário para atualização.");
+      for (let i = 0; i < data.newImageFiles.length; i++) {
+        const file = data.newImageFiles[i];
+        const imageUrl = await uploadAuxiliaryImageFile(file, data.id, `image_${Date.now()}_${i}`);
+        finalImageUrls.push(imageUrl);
+      }
 
+      const urlsToDeleteFromStorage = (data.currentAuxEquipment.imageUrls || []).filter(
+        (url) => !data.existingImageUrlsToKeep.includes(url)
+      );
+      for (const url of urlsToDeleteFromStorage) {
+        await deleteAuxiliaryImageFromStorage(url);
+      }
+
+      const { customType, ...dataToSave } = data.formData;
       const finalData = {
-        name: formData.name,
-        type: formData.type === CUSTOM_AUXILIARY_TYPE_VALUE ? formData.customType || "Outro" : formData.type,
-        serialNumber: formData.serialNumber || null,
-        status: formData.status,
-        notes: formData.notes || null,
-        linkedEquipmentId: currentLinkedEquipmentId, // Preserve existing linkedEquipmentId, it's managed by Maquinas form
+        name: dataToSave.name,
+        type: dataToSave.type === CUSTOM_AUXILIARY_TYPE_VALUE ? customType || "Outro" : dataToSave.type,
+        serialNumber: dataToSave.serialNumber || null,
+        status: dataToSave.status,
+        notes: dataToSave.notes || null,
+        linkedEquipmentId: data.currentAuxEquipment.linkedEquipmentId, // Preserve existing linkedEquipmentId
+        imageUrls: finalImageUrls,
       };
 
-      const itemRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, id);
-      return updateDoc(itemRef, finalData);
+      const itemRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, data.id);
+      await updateDoc(itemRef, finalData as { [x: string]: any }); // Cast to avoid type issues with updateDoc
+      return { ...finalData, id: data.id };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
-      toast({ title: "Equipamento Auxiliar Atualizado", description: `${variables.name} foi atualizado.` });
+      toast({ title: "Equipamento Auxiliar Atualizado", description: `${data.name} foi atualizado.` });
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar ${variables.formData.name}. Detalhe: ${err.message}`, variant: "destructive" });
     },
+    onSettled: () => setIsUploadingFiles(false),
   });
 
   const deleteAuxEquipmentMutation = useMutation({
-    mutationFn: async (itemId: string) => {
+    mutationFn: async (itemToDelete: AuxiliaryEquipment) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para excluir equipamento auxiliar.");
-      if (!itemId) throw new Error("ID do item é necessário para exclusão.");
-      return deleteDoc(doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, itemId));
+      if (!itemToDelete.id) throw new Error("ID do item é necessário para exclusão.");
+
+      if (itemToDelete.imageUrls) {
+        for (const url of itemToDelete.imageUrls) {
+          await deleteAuxiliaryImageFromStorage(url);
+        }
+      }
+
+      const batch = writeBatch(db);
+      const auxRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, itemToDelete.id);
+      batch.delete(auxRef);
+
+      // Unlink from any Maquina
+      const maquinasQuery = query(collection(db, FIRESTORE_MAQUINAS_COLLECTION_NAME), where("linkedAuxiliaryEquipmentIds", "array-contains", itemToDelete.id));
+      const maquinasSnapshot = await getDocs(maquinasQuery);
+      maquinasSnapshot.forEach(maquinaDoc => {
+        const maquinaData = maquinaDoc.data() as Maquina;
+        const updatedLinkedIds = (maquinaData.linkedAuxiliaryEquipmentIds || []).filter(id => id !== itemToDelete.id);
+        batch.update(doc(db, FIRESTORE_MAQUINAS_COLLECTION_NAME, maquinaDoc.id), { linkedAuxiliaryEquipmentIds: updatedLinkedIds });
+      });
+
+      await batch.commit();
+      return itemToDelete.id;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME] });
-      queryClient.invalidateQueries({ queryKey: [FIRESTORE_MAQUINAS_COLLECTION_NAME]});
+      queryClient.invalidateQueries({ queryKey: [FIRESTORE_MAQUINAS_COLLECTION_NAME] });
       toast({ title: "Equipamento Auxiliar Excluído", description: `O item foi removido.` });
       closeModal();
     },
@@ -232,21 +340,32 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     form.reset();
     setShowCustomTypeField(false);
     setIsEditMode(false);
+    setImageFilesToUpload([]);
+    setImagePreviews([]);
   };
 
   const onSubmit = async (values: z.infer<typeof AuxiliaryEquipmentSchema>) => {
+    const existingImageUrlsToKeep = imagePreviews.filter(
+      (url) => (editingItem?.imageUrls || []).includes(url) && url.startsWith('https://firebasestorage.googleapis.com')
+    );
+
     if (editingItem && editingItem.id) {
-      // Pass the original editingItem which includes linkedEquipmentId
-      updateAuxEquipmentMutation.mutate({ ...values, id: editingItem.id, linkedEquipmentId: editingItem.linkedEquipmentId } as AuxiliaryEquipment);
+      updateAuxEquipmentMutation.mutate({
+        id: editingItem.id,
+        formData: values,
+        newImageFiles: imageFilesToUpload,
+        existingImageUrlsToKeep,
+        currentAuxEquipment: editingItem,
+      });
     } else {
-      addAuxEquipmentMutation.mutate(values);
+      addAuxEquipmentMutation.mutate({ formData: values, newImageFiles: imageFilesToUpload });
     }
   };
 
   const handleModalDeleteConfirm = () => {
     if (editingItem && editingItem.id) {
-      if (window.confirm(`Tem certeza que deseja excluir o equipamento auxiliar "${editingItem.name}"? Esta ação também o desvinculará de qualquer máquina.`)) {
-        deleteAuxEquipmentMutation.mutate(editingItem.id);
+      if (window.confirm(`Tem certeza que deseja excluir o equipamento auxiliar "${editingItem.name}"? Esta ação também o desvinculará de qualquer máquina e removerá suas imagens.`)) {
+        deleteAuxEquipmentMutation.mutate(editingItem);
       }
     }
   };
@@ -265,8 +384,51 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     return maquina ? `${maquina.brand} ${maquina.model} (${maquina.chassisNumber})` : "Não encontrada";
   };
 
+  const handleImageFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const currentTotalFiles = imagePreviews.length + imageFilesToUpload.length - (editingItem?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) + files.length;
+
+      if (currentTotalFiles > MAX_AUX_IMAGE_FILES) {
+        toast({
+          title: "Limite de Imagens Excedido",
+          description: `Você pode ter no máximo ${MAX_AUX_IMAGE_FILES} imagens.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const newFilesArray = Array.from(files);
+      setImageFilesToUpload(prev => [...prev, ...newFilesArray]);
+      newFilesArray.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreviews(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const handleRemoveAuxImage = (index: number, isExistingUrl: boolean) => {
+    if (isExistingUrl) {
+      const urlToRemove = imagePreviews[index];
+      setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      const currentFormUrls = form.getValues('imageUrls') || [];
+      form.setValue('imageUrls', currentFormUrls.filter(url => url !== urlToRemove), {shouldDirty: true});
+    } else {
+      const numExistingUrls = (editingItem?.imageUrls || []).filter(url => imagePreviews.includes(url)).length;
+      const fileIndexToRemove = index - numExistingUrls;
+
+      if (fileIndexToRemove >= 0 && fileIndexToRemove < imageFilesToUpload.length) {
+        setImageFilesToUpload(prev => prev.filter((_, i) => i !== fileIndexToRemove));
+        setImagePreviews(prev => prev.filter((_, i) => i !== index));
+      }
+    }
+  };
+
+
   const isLoadingPageData = isLoadingAux || isLoadingMaquinasPrincipais;
-  const isMutating = addAuxEquipmentMutation.isPending || updateAuxEquipmentMutation.isPending || deleteAuxEquipmentMutation.isPending;
+  const isMutatingAll = addAuxEquipmentMutation.isPending || updateAuxEquipmentMutation.isPending || deleteAuxEquipmentMutation.isPending || isUploadingFiles;
 
   if (isLoadingPageData && !isModalOpen) {
     return (
@@ -293,7 +455,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       <PageHeader
         title=""
         actions={
-          <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
+          <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutatingAll}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Equip. Auxiliar
           </Button>
         }
@@ -315,6 +477,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
           {auxEquipmentList.map((item) => {
             const SpecificTypeIcon = typeIcons[item.type] || PackageSearch;
             const linkedMaquinaName = getLinkedMaquinaName(item.linkedEquipmentId);
+            const primaryImageUrl = item.imageUrls && item.imageUrls.length > 0 ? item.imageUrls[0] : null;
             return (
             <Card
               key={item.id}
@@ -322,6 +485,21 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
               onClick={() => openModal(item)}
             >
               <CardHeader>
+                 {primaryImageUrl ? (
+                    <div className="relative w-full h-32 mb-2 rounded-t-md overflow-hidden">
+                        <NextImage
+                            src={primaryImageUrl}
+                            alt={`Imagem de ${item.name}`}
+                            layout="fill"
+                            objectFit="cover"
+                            data-ai-hint="auxiliary equipment"
+                        />
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-center w-full h-32 mb-2 rounded-t-md bg-muted">
+                        <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                )}
                 <CardTitle className="font-headline text-xl text-primary flex items-center">
                   <SpecificTypeIcon className="mr-2 h-5 w-5" /> {item.name}
                 </CardTitle>
@@ -382,9 +560,9 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
         isOpen={isModalOpen}
         onClose={closeModal}
         title={editingItem ? "Editar Equipamento Auxiliar" : "Adicionar Novo Equip. Auxiliar"}
-        description="Forneça os detalhes do equipamento auxiliar."
+        description="Forneça os detalhes do equipamento auxiliar e adicione imagens se necessário."
         formId="aux-equipment-form"
-        isSubmitting={isMutating}
+        isSubmitting={isMutatingAll}
         editingItem={editingItem}
         onDeleteConfirm={handleModalDeleteConfirm}
         isDeleting={deleteAuxEquipmentMutation.isPending}
@@ -436,6 +614,56 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
                 </FormItem>
               )} />
 
+              <h3 className="text-md font-semibold pt-4 border-b pb-1 font-headline">Imagens (Máx. {MAX_AUX_IMAGE_FILES})</h3>
+                <FormItem>
+                    <FormLabel htmlFor="aux-equipment-images-upload">Adicionar Imagens</FormLabel>
+                    <FormControl>
+                        <Input
+                            id="aux-equipment-images-upload"
+                            type="file"
+                            multiple
+                            accept="image/jpeg, image/png, image/webp"
+                            onChange={handleImageFilesChange}
+                            disabled={isUploadingFiles || imageFilesToUpload.length + (form.getValues('imageUrls')?.length || 0) >= MAX_AUX_IMAGE_FILES}
+                        />
+                    </FormControl>
+                    <FormDescription>
+                        Total de imagens: {imagePreviews.length + imageFilesToUpload.length - (editingItem?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) } de {MAX_AUX_IMAGE_FILES}.
+                    </FormDescription>
+                    <FormMessage />
+                </FormItem>
+                {(imagePreviews.length > 0 || imageFilesToUpload.length > 0) && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                        {imagePreviews.map((previewUrl, index) => {
+                            const isExisting = (editingItem?.imageUrls || []).includes(previewUrl) && previewUrl.startsWith('https://firebasestorage.googleapis.com');
+                            return (
+                                <div key={`preview-${index}-${previewUrl.slice(-10)}`} className="relative group aspect-square">
+                                    <NextImage
+                                        src={previewUrl}
+                                        alt={`Preview ${index + 1}`}
+                                        layout="fill"
+                                        objectFit="cover"
+                                        className="rounded-md"
+                                        data-ai-hint="auxiliary equipment product"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground opacity-80 hover:opacity-100 transition-opacity"
+                                        onClick={() => handleRemoveAuxImage(index, isExisting)}
+                                        title={isExisting ? "Remover imagem existente (será excluída ao salvar)" : "Remover nova imagem"}
+                                    >
+                                        <XCircle className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} />} />
+
+
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais sobre o equipamento" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
               )} />
@@ -446,3 +674,5 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     </>
   );
 }
+
+    

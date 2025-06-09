@@ -80,7 +80,7 @@ export interface Maquina {
   notes?: string | null;
   partsCatalogUrl?: string | null;
   errorCodesUrl?: string | null;
-  imageUrls?: string[] | null; // New field for image URLs
+  imageUrls?: string[] | null;
   linkedAuxiliaryEquipmentIds?: string[] | null;
 }
 
@@ -213,6 +213,7 @@ export interface AuxiliaryEquipment {
   status: typeof auxiliaryEquipmentStatusOptions[number];
   linkedEquipmentId?: string | null;
   notes?: string | null;
+  imageUrls?: string[] | null;
 }
 
 export const budgetStatusOptions = [
@@ -333,7 +334,7 @@ export const MaquinaSchema = z.object({
   brand: requiredString("Marca"),
   model: requiredString("Modelo"),
   chassisNumber: requiredString("Número do chassi"),
-  fleetNumber: z.string().optional().nullable(), // Novo campo
+  fleetNumber: z.string().optional().nullable(),
   equipmentType: requiredString("Tipo de máquina"),
   manufactureYear: z.coerce.number().min(1900, "Ano inválido").max(new Date().getFullYear() + 1, "Ano inválido").nullable(),
   operationalStatus: z.enum(maquinaOperationalStatusOptions),
@@ -356,7 +357,7 @@ export const MaquinaSchema = z.object({
   imageUrls: z.array(z.string().url("URL de imagem inválida"))
     .max(5, "Máximo de 5 imagens por máquina")
     .nullable()
-    .optional(), // New field with validation
+    .optional(),
 }).refine(data => {
   if (data.ownerReference === OWNER_REF_CUSTOMER && !data.customerId) {
     return false;
@@ -373,7 +374,7 @@ export const TechnicianSchema = z.object({
   role: requiredString("Cargo"),
   specialization: z.string().optional(),
   phone: z.string().optional().transform(val => val ? val.replace(/\D/g, '') : undefined),
-  imageUrl: z.string().url("URL da imagem de perfil inválida.").optional().nullable(), // Added field validation
+  imageUrl: z.string().url("URL da imagem de perfil inválida.").optional().nullable(),
 });
 
 export const FuelingRecordSchema = z.object({
@@ -421,7 +422,6 @@ export const VehicleSchema = z.object({
   status: z.enum(['Disponível', 'Em Uso', 'Manutenção']),
   fuelingHistory: z.array(FuelingRecordSchema).optional().nullable(),
   maintenanceHistory: z.array(VehicleMaintenanceRecordSchema).optional().nullable(),
-  // Novos campos para próxima manutenção com validações
   nextMaintenanceType: z.enum(['km', 'date']).nullable().optional(),
   nextMaintenanceKm: z.coerce.number().min(0, "KM da próxima manutenção deve ser não negativo.").nullable().optional(),
   nextMaintenanceDate: z.string()
@@ -470,6 +470,10 @@ export const AuxiliaryEquipmentSchema = z.object({
   serialNumber: z.string().optional().nullable(),
   status: z.enum(auxiliaryEquipmentStatusOptions, { required_error: "Status é obrigatório" }),
   notes: z.string().optional().nullable(),
+  imageUrls: z.array(z.string().url("URL de imagem inválida"))
+    .max(5, "Máximo de 5 imagens por equipamento auxiliar")
+    .nullable()
+    .optional(),
 }).refine(data => {
   if (data.type === '_CUSTOM_' && (!data.customType || data.customType.trim() === "")) {
     return false;
@@ -555,7 +559,7 @@ export const ServiceOrderSchema = z.object({
   estimatedTravelDistanceKm: z.coerce.number().min(0, "Distância deve ser positiva ou zero").optional().nullable(),
   estimatedTollCosts: z.coerce.number().min(0, "Custo de pedágio deve ser positivo ou zero").optional().nullable(),
   estimatedTravelCost: z.coerce.number().min(0, "Custo de viagem deve ser positivo ou zero").optional().nullable(),
-  machineStatusBeforeOs: z.enum(maquinaOperationalStatusOptions).nullable().optional(), // Added field
+  machineStatusBeforeOs: z.enum(maquinaOperationalStatusOptions).nullable().optional(),
 }).refine(data => {
   if (data.serviceType === '_CUSTOM_' && (!data.customServiceType || data.customServiceType.trim() === "")) {
     return false;
@@ -565,3 +569,5 @@ export const ServiceOrderSchema = z.object({
   message: "Por favor, especifique o tipo de serviço customizado.",
   path: ["customServiceType"],
 });
+
+    
