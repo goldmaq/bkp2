@@ -454,13 +454,16 @@ export function PartsRequisitionClientPage() {
   return (
     <TooltipProvider>
       <PageHeader
-        title="Minhas Requisições de Peças"
+        title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Nova Requisição
           </Button>
         }
       />
+      <p className="text-muted-foreground text-sm mb-6 -mt-4">
+        Permite que técnicos e outros colaboradores solicitem formalmente peças necessárias para a execução de Ordens de Serviço. As requisições incluem detalhes das peças, quantidades e podem ter imagens anexadas.
+      </p>
 
       {requisitions.length === 0 && !isLoadingRequisitions ? (
         <DataTablePlaceholder
