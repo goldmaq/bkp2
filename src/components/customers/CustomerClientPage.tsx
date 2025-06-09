@@ -22,6 +22,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "../ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area"; // Import ScrollArea
 import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils"; // Import centralized utils
 
 const FIRESTORE_CUSTOMER_COLLECTION_NAME = "clientes";
@@ -592,25 +593,24 @@ export function CustomerClientPage() {
                     <div>
                       <h4 className="font-semibold text-xs mt-2 mb-1 flex items-center">
                         <Construction className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                        <span className="font-medium text-muted-foreground mr-1">Máquinas:</span>
+                        <span className="font-medium text-muted-foreground mr-1">Máquinas Vinculadas:</span>
                       </h4>
-                      <ul className="list-none pl-1 space-y-0.5">
-                        {linkedMaquinas.slice(0, 3).map(maq => (
-                          <li key={maq.id} className="text-xs text-muted-foreground">
-                            <Link
-                              href={`/maquinas?openMaquinaId=${maq.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="hover:underline hover:text-primary transition-colors"
-                              title={`Ver detalhes de ${maq.brand} ${maq.model}`}
-                            >
-                              {maq.brand} {maq.model} <span className="text-gray-400">(Chassi: {maq.chassisNumber})</span>
-                            </Link>
-                          </li>
-                        ))}
-                        {linkedMaquinas.length > 3 && (
-                           <li className="text-xs text-muted-foreground">...e mais {linkedMaquinas.length - 3}.</li>
-                        )}
-                      </ul>
+                      <ScrollArea className="max-h-32 pr-2"> {/* Max height for scrollable area */}
+                        <ul className="list-none pl-1 space-y-0.5">
+                          {linkedMaquinas.map(maq => (
+                            <li key={maq.id} className="text-xs text-muted-foreground">
+                              <Link
+                                href={`/maquinas?openMaquinaId=${maq.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:underline hover:text-primary transition-colors"
+                                title={`Ver detalhes de ${maq.brand} ${maq.model}`}
+                              >
+                                {maq.brand} {maq.model} <span className="text-gray-400">(Chassi: {maq.chassisNumber})</span>
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </ScrollArea>
                     </div>
                   ) : (
                     <p className="flex items-center text-xs text-muted-foreground mt-2">
