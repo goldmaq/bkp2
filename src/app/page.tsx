@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { 
   Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal, 
-  ArrowRight, PackageSearch, FileText, BarChart3, AlertTriangle, CheckCircle,
-  DollarSign, Package, ListChecks, Wrench as WrenchIcon, TrendingUp, TrendingDown, Banknote
+  ArrowRight, PackageCheck, FileText, BarChart3, AlertTriangle, CheckCircle,
+  DollarSign, Package, ListChecks, Wrench as WrenchIcon, TrendingUp, TrendingDown, Banknote,
+  FileCheck2
 } from "lucide-react";
 import { KPICard } from '@/components/dashboard/KPICard';
 import { db } from '@/lib/firebase';
@@ -121,7 +122,7 @@ export default async function DashboardPage() {
             <KPICard 
               title="Máquinas Locadas" 
               value={maquinaKPIs.locada} 
-              icon={PackageSearch} 
+              icon={PackageCheck} 
               iconColor="text-blue-500"
               href="/maquinas?status=Locada"
             />
@@ -170,7 +171,7 @@ export default async function DashboardPage() {
             <KPICard 
               title="Orçamentos Aprovados" 
               value={budgetKPIs.approvedCount} 
-              icon={DollarSign} 
+              icon={FileCheck2} 
               iconColor="text-green-500"
               additionalInfo={<span className="text-sm font-semibold">{formatCurrency(budgetKPIs.approvedValue)}</span>}
               href="/budgets?status=Aprovado"

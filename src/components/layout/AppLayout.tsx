@@ -140,7 +140,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 p-6 overflow-auto bg-background">
+          <main className="flex-1 px-4 sm:px-6 py-6 overflow-auto bg-background">
             {children}
             
           </main>
