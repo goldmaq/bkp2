@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect, useCallback } from "react"; // Added useE
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type * as z from "zod";
-import { PlusCircle, PackageSearch, Edit, Trash2, Tag, CheckCircle, Construction, Link as LinkIconLI, FileText, Package, ShieldAlert, Loader2, AlertTriangle, Box, BatteryCharging, Anchor } from "lucide-react";
+import { PlusCircle, PackageSearch, Edit, Trash2, Tag, CheckCircle, Construction, Link as LinkIconLI, FileText, Package, ShieldAlert, Loader2, AlertTriangle, Box, BatteryCharging, Anchor, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 
@@ -291,7 +291,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   return (
     <>
       <PageHeader
-        title="Equipamentos Auxiliares"
+        title=""
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutating}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Equip. Auxiliar
