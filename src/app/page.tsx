@@ -7,7 +7,7 @@ import {
   Users, Construction, ClipboardList, HardHat, CarFront, SlidersHorizontal,
   ArrowRight, PackageCheck, FileText, BarChart3, AlertTriangle, CheckCircle,
   DollarSign, Package, ListChecks, Wrench as WrenchIcon, TrendingUp, TrendingDown, Banknote,
-  FileCheck2
+  FileCheck2, Trash2
 } from "lucide-react";
 import { KPICard } from '@/components/dashboard/KPICard';
 import { db } from '@/lib/firebase';
@@ -16,7 +16,7 @@ import type { Maquina, Budget, ServiceOrder } from '@/types';
 import { maquinaOperationalStatusOptions, budgetStatusOptions, serviceOrderPhaseOptions } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
-export const dynamic = 'force-dynamic'; // Adicionado para forçar revalidação
+export const dynamic = 'force-dynamic';
 
 interface MaquinaRentalKPIs {
   totalRentalValue: number;
@@ -137,6 +137,13 @@ export default async function DashboardPage() {
               icon={WrenchIcon}
               iconColor="text-yellow-500"
               href="/maquinas?status=Em Manutenção"
+            />
+            <KPICard
+              title="Máquinas em Sucata"
+              value={maquinaKPIs.sucata}
+              icon={Trash2}
+              iconColor="text-red-500"
+              href="/maquinas?status=Sucata"
             />
             <KPICard
                 title="Soma Mensal Aluguéis Máquinas"
