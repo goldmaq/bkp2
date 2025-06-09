@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { Budget, BudgetItem, ServiceOrder, Customer, Maquina, BudgetStatusType, Company, CompanyId, ServiceOrderPhaseType } from "@/types";
-import { BudgetSchema, BudgetItemSchema, budgetStatusOptions, companyIds } from "@/types";
+import { BudgetSchema, BudgetItemSchema, budgetStatusOptions, companyIds, GOLDMAQ_COMPANY_ID } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -49,7 +49,7 @@ const FIRESTORE_COMPANY_COLLECTION_NAME = "empresas";
 
 const NO_SERVICE_ORDER_SELECTED = "_NO_SERVICE_ORDER_SELECTED_";
 const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_BUDGET_";
-const GOLDMAQ_COMPANY_ID: CompanyId = 'goldmaq';
+
 
 async function fetchBudgets(): Promise<Budget[]> {
   if (!db) throw new Error("Firebase DB is not available");
@@ -62,7 +62,7 @@ async function fetchBudgets(): Promise<Budget[]> {
       ...data,
       createdDate: data.createdDate instanceof Timestamp ? data.createdDate.toDate().toISOString() : data.createdDate,
       validUntilDate: data.validUntilDate instanceof Timestamp ? data.validUntilDate.toDate().toISOString() : data.validUntilDate,
-      serviceOrderCreated: data.serviceOrderCreated || false, // Garante que o campo exista
+      serviceOrderCreated: data.serviceOrderCreated || false,
     } as Budget;
   });
 }
@@ -107,15 +107,15 @@ const getNextBudgetNumber = (currentBudgets: Budget[]): string => {
   if (!currentBudgets || currentBudgets.length === 0) return "0001";
   let maxNum = 0;
   currentBudgets.forEach(budget => {
-    const numPartMatch = budget.budgetNumber.match(/(\d+)$/); 
+    const numPartMatch = budget.budgetNumber.match(/(\d+)$/);
     if (numPartMatch && numPartMatch[1]) {
       const num = parseInt(numPartMatch[1], 10);
-      if (!isNaN(num) && num > maxNum) { 
+      if (!isNaN(num) && num > maxNum) {
         maxNum = num;
       }
     }
   });
-  return (maxNum + 1).toString().padStart(4, '0'); 
+  return (maxNum + 1).toString().padStart(4, '0');
 };
 
 
@@ -123,24 +123,25 @@ const generateDetailedWhatsAppMessage = (
   budget: Budget,
   customer?: Customer,
   equipment?: Maquina,
-  serviceOrder?: ServiceOrder
+  serviceOrder?: ServiceOrder,
+  companyDetails?: Company | null
 ): string => {
-  let message = "Olá!\\n\\n";
-  message += `Segue o Orçamento Nº *${budget.budgetNumber}* da Gold Maq Empilhadeiras:\\n\\n`;
+  let message = `Olá, ${toTitleCase(customer?.name) || 'Cliente'}!\n\n`;
+  message += `Segue o Orçamento Nº *${budget.budgetNumber}* da ${companyDetails?.name || 'Gold Maq Empilhadeiras'}.\n\n`;
 
   if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
-    message += `Referente à OS: *${serviceOrder.orderNumber}*\\n`;
+    message += `Referente à OS: *${serviceOrder.orderNumber}*\n`;
   }
-  message += `Cliente: *${toTitleCase(customer?.name) || 'N/A'}*\\n`;
+  if (customer) {
+    message += `Cliente: *${toTitleCase(customer.name)}*\n`;
+  }
   if (equipment) {
-    message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\\n`;
-    message += `Chassi: *${equipment.chassisNumber || 'N/A'}*\\n`;
-    if (equipment.manufactureYear) {
-        message += `Ano: *${equipment.manufactureYear}*\\n`;
-    }
+    message += `Máquina: *${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}*\n`;
+    if (equipment.chassisNumber) message += `Chassi: *${equipment.chassisNumber}*\n`;
+    if (equipment.manufactureYear) message += `Ano: *${equipment.manufactureYear}*\n`;
   }
-  message += `Valor Total: *${formatCurrency(budget.totalAmount)}*\\n`;
-  message += `Data de Criação: *${formatDateForDisplay(budget.createdDate)}*\\n`;
+  message += `\n*Detalhes do Orçamento:*\n`;
+  message += `Data de Emissão: *${formatDateForDisplay(budget.createdDate)}*\n`;
 
   let validityDisplay = "7 dias";
   if (budget.validUntilDate && isValidDateFn(parseISO(budget.validUntilDate))) {
@@ -148,22 +149,115 @@ const generateDetailedWhatsAppMessage = (
   } else if (budget.createdDate && isValidDateFn(parseISO(budget.createdDate))) {
      const creationDate = parseISO(budget.createdDate);
      const validityEndDate = addDays(creationDate, 7);
-     validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias)`;
+     validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias úteis)`;
   }
+  message += `Validade da Proposta: *${validityDisplay}*\n`;
 
-  message += `Validade da Proposta: *${validityDisplay}*\\n\\n`;
-
-  message += "Itens/Serviços:\\n";
-  if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
-    message += `Baseado na OS ${serviceOrder.orderNumber}:\\n`;
-  }
+  message += "\n*Itens/Serviços:*\n";
   budget.items.forEach(item => {
-    message += `- ${item.description}: ${formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}\\n`;
+    message += `- ${item.description} (Qtd: ${item.quantity}, Unit.: ${formatCurrency(item.unitPrice)}): *${formatCurrency(item.quantity * item.unitPrice)}*\n`;
   });
+  if (budget.shippingCost && budget.shippingCost > 0) {
+    message += `Frete: *${formatCurrency(budget.shippingCost)}*\n`;
+  }
+  message += `\nValor Total do Orçamento: *${formatCurrency(budget.totalAmount)}*\n`;
 
-  message += "\\nAgradecemos a preferência!";
+  if (budget.notes) {
+    message += `\n*Observações:*\n${budget.notes}\n`;
+  }
+
+  if (companyDetails?.bankPixKey) {
+    message += `\n*Pagamento via PIX:*\nChave PIX (CNPJ): ${companyDetails.bankPixKey}\n`;
+  } else if (companyDetails?.bankName) {
+    message += `\n*Dados Bancários para Pagamento:*\n`;
+    message += `Banco: ${companyDetails.bankName}\n`;
+    if (companyDetails.bankAgency) message += `Agência: ${companyDetails.bankAgency}\n`;
+    if (companyDetails.bankAccount) message += `Conta: ${companyDetails.bankAccount}\n`;
+  }
+
+  message += "\nFicamos à disposição para quaisquer esclarecimentos.\n\n";
+  message += `Atenciosamente,\nEquipe ${companyDetails?.name || 'Gold Maq Empilhadeiras'}`;
+  if (companyDetails?.phone) {
+    message += `\n${formatPhoneNumberForInputDisplay(companyDetails.phone)}`;
+  }
   return message;
 };
+
+
+const generateEmailBody = (
+  budget: Budget,
+  customer?: Customer,
+  equipment?: Maquina,
+  serviceOrder?: ServiceOrder,
+  companyDetails?: Company | null
+): string => {
+  let body = `Prezado(a) ${toTitleCase(customer?.name) || 'Cliente'},%0A%0A`;
+  body += `Segue o Orçamento Nº ${budget.budgetNumber} da ${companyDetails?.name || 'Gold Maq Empilhadeiras'}.%0A%0A`;
+
+  if (serviceOrder && serviceOrder.orderNumber && serviceOrder.orderNumber !== NO_SERVICE_ORDER_SELECTED) {
+    body += `Referente à Ordem de Serviço (OS): ${serviceOrder.orderNumber}%0A`;
+  }
+  if (customer) {
+    body += `Cliente: ${toTitleCase(customer.name)}%0A`;
+  }
+  if (equipment) {
+    body += `Máquina: ${toTitleCase(equipment.brand)} ${toTitleCase(equipment.model)}%0A`;
+    if (equipment.chassisNumber) body += `Chassi: ${equipment.chassisNumber}%0A`;
+    if (equipment.manufactureYear) body += `Ano: ${equipment.manufactureYear}%0A`;
+  }
+  body += `%0A--- DETALHES DO ORÇAMENTO ---%0A`;
+  body += `Data de Emissão: ${formatDateForDisplay(budget.createdDate)}%0A`;
+
+  let validityDisplay = "7 dias";
+  if (budget.validUntilDate && isValidDateFn(parseISO(budget.validUntilDate))) {
+    validityDisplay = formatDateForDisplay(budget.validUntilDate);
+  } else if (budget.createdDate && isValidDateFn(parseISO(budget.createdDate))) {
+     const creationDate = parseISO(budget.createdDate);
+     const validityEndDate = addDays(creationDate, 7);
+     validityDisplay = `${formatDateForDisplay(validityEndDate)} (7 dias úteis)`;
+  }
+  body += `Validade da Proposta: ${validityDisplay}%0A`;
+
+  body += `%0A--- ITENS/SERVIÇOS ---%0A`;
+  budget.items.forEach(item => {
+    body += `- ${item.description} (Qtd: ${item.quantity}, Valor Unitário: ${formatCurrency(item.unitPrice)}): ${formatCurrency(item.quantity * item.unitPrice)}%0A`;
+  });
+  if (budget.shippingCost && budget.shippingCost > 0) {
+    body += `Frete: ${formatCurrency(budget.shippingCost)}%0A`;
+  }
+  body += `%0AVALOR TOTAL DO ORÇAMENTO: ${formatCurrency(budget.totalAmount)}%0A`;
+
+  if (budget.notes) {
+    body += `%0A--- OBSERVAÇÕES ---%0A${budget.notes.replace(/\n/g, '%0A')}%0A`;
+  }
+
+  if (companyDetails?.bankPixKey || companyDetails?.bankName) {
+      body += `%0A--- DADOS PARA PAGAMENTO ---%0A`;
+      if (companyDetails.bankPixKey) {
+          body += `Chave PIX (CNPJ): ${companyDetails.bankPixKey}%0A`;
+      }
+      if (companyDetails.bankName) {
+          body += `Banco: ${companyDetails.bankName}%0A`;
+          if (companyDetails.bankAgency) body += `Agência: ${companyDetails.bankAgency}%0A`;
+          if (companyDetails.bankAccount) body += `Conta Corrente: ${companyDetails.bankAccount}%0A`;
+      }
+  }
+
+
+  body += `%0AFicamos à disposição para quaisquer esclarecimentos.%0A%0A`;
+  body += `Atenciosamente,%0AEquipe ${companyDetails?.name || 'Gold Maq Empilhadeiras'}`;
+  if (companyDetails?.phone) {
+      body += `%0A${formatPhoneNumberForInputDisplay(companyDetails.phone)}`;
+  }
+  if (companyDetails?.email) {
+      body += `%0A${companyDetails.email}`;
+  }
+  if (companyDetails?.street) { // Add address if available
+      body += `%0A${formatAddressForDisplay(companyDetails)}`;
+  }
+  return body;
+};
+
 
 const generateBudgetPDF = (
   budget: Budget,
@@ -255,7 +349,7 @@ const generateBudgetPDF = (
     doc.text(`Referente à Ordem de Serviço Nº: ${serviceOrder.orderNumber}`, 14, yPos);
     yPos += lineSpacing;
   }
-  yPos += (lineSpacing / 2); 
+  yPos += (lineSpacing / 2);
 
   const tableColumn = ["Descrição", "Qtd.", "Preço Unit.", "Subtotal"];
   const tableRows: any[][] = [];
@@ -274,7 +368,7 @@ const generateBudgetPDF = (
     body: tableRows,
     startY: yPos,
     theme: 'grid',
-    headStyles: { fillColor: [249, 115, 22] }, 
+    headStyles: { fillColor: [249, 115, 22] },
     styles: { fontSize: 9, cellPadding: 1.5 },
     columnStyles: {
         0: { cellWidth: 'auto'},
@@ -454,7 +548,7 @@ export function BudgetClientPage() {
         items: newBudgetData.items.map(item => ({...item, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), totalPrice: (Number(item.quantity) * Number(item.unitPrice))})),
         subtotal: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0),
         totalAmount: newBudgetData.items.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0) + (Number(newBudgetData.shippingCost) || 0),
-        serviceOrderCreated: false, // Definir como false ao criar
+        serviceOrderCreated: false,
       };
       return addDoc(collection(db, FIRESTORE_BUDGET_COLLECTION_NAME), dataToSave);
     },
@@ -691,7 +785,7 @@ export function BudgetClientPage() {
     const equipment = getEquipmentInfo(selectedBudgetForWhatsApp.equipmentId);
     const serviceOrder = getServiceOrderInfo(selectedBudgetForWhatsApp.serviceOrderId);
 
-    const message = generateDetailedWhatsAppMessage(selectedBudgetForWhatsApp, customer, equipment, serviceOrder);
+    const message = generateDetailedWhatsAppMessage(selectedBudgetForWhatsApp, customer, equipment, serviceOrder, goldmaqCompanyDetails);
     const whatsappUrl = `https://wa.me/${cleanedPhoneNumber}?text=${encodeURIComponent(message)}`;
 
     window.open(whatsappUrl, '_blank');
@@ -792,9 +886,11 @@ export function BudgetClientPage() {
             const equipment = getEquipmentInfo(budget.equipmentId);
             const serviceOrder = getServiceOrderInfo(budget.serviceOrderId);
 
+            const mailtoBody = generateEmailBody(budget, customer, equipment, serviceOrder, goldmaqCompanyDetails);
             const mailtoHref = customer?.email
-              ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento Gold Maq: ${budget.budgetNumber}`)}&body=${encodeURIComponent(`Prezado(a) ${toTitleCase(customer.name)},\\n\\nSegue o orçamento ${budget.budgetNumber} referente à Ordem de Serviço ${serviceOrder?.orderNumber || 'N/A'}.\\n\\nValor Total: ${formatCurrency(budget.totalAmount)}\\n\\nAtenciosamente,\\nEquipe Gold Maq`)}`
+              ? `mailto:${customer.email}?subject=${encodeURIComponent(`Orçamento ${goldmaqCompanyDetails?.name || 'Gold Maq Empilhadeiras'}: Nº ${budget.budgetNumber}`)}&body=${encodeURIComponent(mailtoBody)}`
               : "#";
+
 
             const canApprove = budget.status === "Pendente" || budget.status === "Enviado";
             const canDeny = budget.status === "Pendente" || budget.status === "Enviado";
@@ -895,7 +991,7 @@ export function BudgetClientPage() {
                           variant="outline"
                           size="sm"
                           asChild
-                          disabled={!customer?.email}
+                          disabled={!customer?.email || isLoadingCompanyDetails}
                           onClick={(e) => e.stopPropagation()}
                           className="w-full sm:w-auto justify-start sm:justify-center"
                       >
@@ -907,7 +1003,7 @@ export function BudgetClientPage() {
                           variant="outline"
                           size="sm"
                           onClick={(e) => { e.stopPropagation(); handleOpenWhatsAppModal(budget); }}
-                          disabled={isMutating}
+                          disabled={isMutating || isLoadingCompanyDetails}
                           className="w-full sm:w-auto justify-start sm:justify-center"
                       >
                           <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
@@ -1129,3 +1225,4 @@ export function BudgetClientPage() {
     </>
   );
 }
+
