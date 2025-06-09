@@ -19,7 +19,7 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "../ui/textarea";
 import { toTitleCase, getWhatsAppNumber, formatPhoneNumberForInputDisplay, formatAddressForDisplay, generateGoogleMapsUrl } from "@/lib/utils"; // Import centralized utils
@@ -83,7 +83,7 @@ interface BrasilApiResponseCnpj {
   uf?: string;
   cep?: string;
   ddd_telefone_1?: string;
-  email?: string | null; // Can be string or null
+  email?: string | null;
   descricao_situacao_cadastral?: string;
   erro?: boolean;
   message?: string;
@@ -174,10 +174,33 @@ export function CustomerClientPage() {
     );
   }
 
+  const checkCnpjExists = async (cnpj: string, currentCustomerId?: string): Promise<boolean> => {
+    if (!db) return false;
+    const cleanedCnpj = cnpj.replace(/\D/g, "");
+    const q = query(collection(db, FIRESTORE_CUSTOMER_COLLECTION_NAME), where("cnpj", "==", cleanedCnpj));
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      return false;
+    }
+    // If updating, check if the found CNPJ belongs to a different customer
+    if (currentCustomerId) {
+      return querySnapshot.docs.some(doc => doc.id !== currentCustomerId);
+    }
+    return true; // Found for a new customer
+  };
+
   const addCustomerMutation = useMutation({
     mutationFn: async (newCustomerData: z.infer<typeof CustomerSchema>) => {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
-      const docRef = await addDoc(collection(db!, FIRESTORE_CUSTOMER_COLLECTION_NAME), newCustomerData);
+      const cnpjExists = await checkCnpjExists(newCustomerData.cnpj);
+      if (cnpjExists) {
+        throw new Error(`Já existe um cliente cadastrado com o CNPJ: ${newCustomerData.cnpj}`);
+      }
+      const dataToSave = {
+        ...newCustomerData,
+        cnpj: newCustomerData.cnpj.replace(/\D/g, ""), // Save cleaned CNPJ
+      };
+      const docRef = await addDoc(collection(db!, FIRESTORE_CUSTOMER_COLLECTION_NAME), dataToSave);
       return docRef;
     },
     onSuccess: (docRef, variables) => {
@@ -186,7 +209,7 @@ export function CustomerClientPage() {
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Criar", description: `Não foi possível criar o cliente ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Criar", description: err.message || `Não foi possível criar o cliente ${variables.name}.`, variant: "destructive" });
     },
   });
 
@@ -195,8 +218,20 @@ export function CustomerClientPage() {
       if (!db) throw new Error("Conexão com Firebase não disponível.");
       const { id, ...dataToUpdate } = customerData;
       if (!id) throw new Error("ID do cliente é necessário para atualização.");
+
+      const originalCustomer = customers.find(c => c.id === id);
+      if (originalCustomer && dataToUpdate.cnpj !== originalCustomer.cnpj) {
+        const cnpjExists = await checkCnpjExists(dataToUpdate.cnpj, id);
+        if (cnpjExists) {
+          throw new Error(`O CNPJ ${dataToUpdate.cnpj} já está em uso por outro cliente.`);
+        }
+      }
+      const dataToSave = {
+        ...dataToUpdate,
+        cnpj: dataToUpdate.cnpj.replace(/\D/g, ""), // Save cleaned CNPJ
+      };
       const customerRef = doc(db!, FIRESTORE_CUSTOMER_COLLECTION_NAME, id);
-      await updateDoc(customerRef, dataToUpdate);
+      await updateDoc(customerRef, dataToSave);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [FIRESTORE_CUSTOMER_COLLECTION_NAME] });
@@ -204,7 +239,7 @@ export function CustomerClientPage() {
       closeModal();
     },
     onError: (err: Error, variables) => {
-      toast({ title: "Erro ao Atualizar", description: `Não foi possível atualizar o cliente ${variables.name}. Detalhe: ${err.message}`, variant: "destructive" });
+      toast({ title: "Erro ao Atualizar", description: err.message || `Não foi possível atualizar o cliente ${variables.name}.`, variant: "destructive" });
     },
   });
 
@@ -316,6 +351,7 @@ export function CustomerClientPage() {
       setEditingCustomer(customer);
       form.reset({
         ...customer,
+        cnpj: customer.cnpj, // Use the raw CNPJ for the form
         fantasyName: customer.fantasyName || "",
         email: customer.email || "",
         phone: customer.phone ? formatPhoneNumberForInputDisplay(customer.phone) : "",
@@ -346,6 +382,7 @@ export function CustomerClientPage() {
   const onSubmit = async (values: z.infer<typeof CustomerSchema>) => {
     const dataToSave = {
         ...values,
+        cnpj: values.cnpj.replace(/\D/g, ""), // Ensure CNPJ is clean for saving
         preferredTechnician: values.preferredTechnician || null,
         email: values.email || null,
     };
@@ -766,3 +803,4 @@ export function CustomerClientPage() {
     </>
   );
 }
+
