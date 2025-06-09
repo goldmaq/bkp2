@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import type { Vehicle, FuelingRecord, VehicleMaintenanceRecord } from "@/types";
-import { VehicleSchema, FuelingRecordSchema, VehicleMaintenanceRecordSchema } from "@/types";
+import { VehicleSchema, FuelingRecordSchema, VehicleMaintenanceRecordSchema, type VehicleWithId } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -222,7 +222,7 @@ export function VehicleClientPage() {
       }
       setIsUploadingImage(false);
 
-      const dataToSave = {
+      const dataToSave: Omit<Vehicle, 'id'> = {
         ...data.vehicleData,
         fuelingHistory: data.vehicleData.fuelingHistory || [],
         maintenanceHistory: data.vehicleData.maintenanceHistory || [],
@@ -244,7 +244,7 @@ export function VehicleClientPage() {
   });
 
   const updateVehicleMutation = useMutation({
-    mutationFn: async (data: {
+    mutationFn: async (data: { // Explicitly define the type for clarity
       id: string;
       vehicleData: z.infer<typeof VehicleSchema>;
       newImageFiles: File[];
@@ -270,12 +270,11 @@ export function VehicleClientPage() {
         await deleteVehicleImageFromStorage(url);
       }
       setIsUploadingImage(false);
-
-      const dataToSave = {
+ // Type assertion to ensure dataToSave matches Omit<Vehicle, 'id'>
+      const dataToSave: Omit<Vehicle, 'id'> = {
+        // Ensure vehicleData overrides specific fields that might be updated by the form
         ...data.vehicleData,
-        fuelingHistory: data.currentVehicle.fuelingHistory || [],
         maintenanceHistory: data.currentVehicle.maintenanceHistory || [],
-        nextMaintenanceDate: data.vehicleData.nextMaintenanceDate ? formatDateForInput(data.vehicleData.nextMaintenanceDate) : null,
         imageUrls: finalImageUrls,
       };
       const { id, ...updatePayload } = dataToSave; // Remove id from payload to update
@@ -917,7 +916,7 @@ export function VehicleClientPage() {
                     </div>
                 )}
               <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} />} />
-
+              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} value={field.value ?? []} />} />
 
               <h3 className="text-md font-semibold pt-4 border-t mt-4 pb-1 font-headline">Alerta Próxima Manutenção</h3>
               <FormField

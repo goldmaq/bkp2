@@ -23,7 +23,7 @@ import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
 import { useToast } from "@/hooks/use-toast";
 import { db, storage } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch, setDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch, setDoc, where } from "firebase/firestore";
 import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn, getFileNameFromUrl } from "@/lib/utils";
@@ -160,6 +160,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     setImagePreviews(item?.imageUrls || []);
     if (item) {
       setEditingItem(item);
+      setIsEditMode(false); // Start in view mode for existing items
       const isTypePredefined = auxiliaryEquipmentTypeOptions.includes(item.type as any);
       form.reset({
         name: item.name,
@@ -171,18 +172,18 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
         imageUrls: item.imageUrls || [],
       });
       setShowCustomTypeField(!isTypePredefined);
-      setIsEditMode(false);
     } else {
       setEditingItem(null);
+      setIsEditMode(true); // Start in edit mode for new items
       form.reset({
         name: "", type: "", customType: "", serialNumber: "",
         status: "Disponível", notes: "", imageUrls: [],
       });
       setShowCustomTypeField(false);
-      setIsEditMode(true);
     }
     setIsModalOpen(true);
   }, [form]);
+
 
   useEffect(() => {
     if (auxEquipmentIdFromUrl && !isLoadingAux && auxEquipmentList.length > 0 && !isModalOpen) {
@@ -276,12 +277,12 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
         serialNumber: dataToSave.serialNumber || null,
         status: dataToSave.status,
         notes: dataToSave.notes || null,
-        linkedEquipmentId: data.currentAuxEquipment.linkedEquipmentId, // Preserve existing linkedEquipmentId
+        linkedEquipmentId: data.currentAuxEquipment.linkedEquipmentId,
         imageUrls: finalImageUrls,
       };
 
       const itemRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, data.id);
-      await updateDoc(itemRef, finalData as { [x: string]: any }); // Cast to avoid type issues with updateDoc
+      await updateDoc(itemRef, finalData as { [x: string]: any });
       return { ...finalData, id: data.id };
     },
     onSuccess: (data) => {
@@ -297,8 +298,12 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
 
   const deleteAuxEquipmentMutation = useMutation({
     mutationFn: async (itemToDelete: AuxiliaryEquipment) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível para excluir equipamento auxiliar.");
-      if (!itemToDelete.id) throw new Error("ID do item é necessário para exclusão.");
+      if (!db) {
+        throw new Error("Conexão com Firebase não disponível para excluir equipamento auxiliar.");
+      }
+      if (!itemToDelete.id) {
+        throw new Error("ID do item é necessário para exclusão.");
+      }
 
       if (itemToDelete.imageUrls) {
         for (const url of itemToDelete.imageUrls) {
@@ -310,9 +315,12 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       const auxRef = doc(db, FIRESTORE_AUX_EQUIPMENT_COLLECTION_NAME, itemToDelete.id);
       batch.delete(auxRef);
 
-      // Unlink from any Maquina
-      const maquinasQuery = query(collection(db, FIRESTORE_MAQUINAS_COLLECTION_NAME), where("linkedAuxiliaryEquipmentIds", "array-contains", itemToDelete.id));
+      const maquinasQuery = query(
+        collection(db, FIRESTORE_MAQUINAS_COLLECTION_NAME),
+        where("linkedAuxiliaryEquipmentIds", "array-contains", itemToDelete.id)
+      );
       const maquinasSnapshot = await getDocs(maquinasQuery);
+
       maquinasSnapshot.forEach(maquinaDoc => {
         const maquinaData = maquinaDoc.data() as Maquina;
         const updatedLinkedIds = (maquinaData.linkedAuxiliaryEquipmentIds || []).filter(id => id !== itemToDelete.id);
@@ -416,13 +424,27 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       const currentFormUrls = form.getValues('imageUrls') || [];
       form.setValue('imageUrls', currentFormUrls.filter(url => url !== urlToRemove), {shouldDirty: true});
     } else {
-      const numExistingUrls = (editingItem?.imageUrls || []).filter(url => imagePreviews.includes(url)).length;
-      const fileIndexToRemove = index - numExistingUrls;
+      // This logic needs to correctly identify the index in imageFilesToUpload
+      // based on its corresponding previewUrl (which is a data URI for new files)
+      const urlToRemove = imagePreviews[index]; // This is the data URI of the new file preview
+      setImageFilesToUpload(prevFiles => {
+        // Find the file in imageFilesToUpload that corresponds to this data URI
+        // This might require storing the original File object alongside its preview URL if direct comparison isn't feasible
+        // For simplicity here, we'll assume the order is maintained or a more complex lookup is needed.
+        // A more robust way would be to assign a temporary ID to each new file and its preview.
+        // For now, let's try a simpler approach by finding the file that created this preview (if possible) or by index if order is reliable.
 
-      if (fileIndexToRemove >= 0 && fileIndexToRemove < imageFilesToUpload.length) {
-        setImageFilesToUpload(prev => prev.filter((_, i) => i !== fileIndexToRemove));
-        setImagePreviews(prev => prev.filter((_, i) => i !== index));
-      }
+        // Assuming the order of imagePreviews directly corresponds to [existingCloudUrls..., newLocalFilePreviews...]
+        // and the order of imageFilesToUpload corresponds to newLocalFilePreviews
+        const numExistingUrlsStillInPreview = (editingItem?.imageUrls || []).filter(url => imagePreviews.includes(url)).length;
+        const fileIndexInUploadArray = index - numExistingUrlsStillInPreview;
+
+        if (fileIndexInUploadArray >= 0 && fileIndexInUploadArray < prevFiles.length) {
+           return prevFiles.filter((_, i) => i !== fileIndexInUploadArray);
+        }
+        return prevFiles; // Should not happen if logic is correct
+      });
+      setImagePreviews(prev => prev.filter((_, i) => i !== index));
     }
   };
 
@@ -624,17 +646,18 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
                             multiple
                             accept="image/jpeg, image/png, image/webp"
                             onChange={handleImageFilesChange}
-                            disabled={isUploadingFiles || imageFilesToUpload.length + (form.getValues('imageUrls')?.length || 0) >= MAX_AUX_IMAGE_FILES}
+                            disabled={isUploadingFiles || imageFilesToUpload.length + (form.getValues('imageUrls')?.filter(url => url).length || 0) >= MAX_AUX_IMAGE_FILES}
                         />
                     </FormControl>
                     <FormDescription>
-                        Total de imagens: {imagePreviews.length + imageFilesToUpload.length - (editingItem?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) } de {MAX_AUX_IMAGE_FILES}.
+                        Total de imagens: {imagePreviews.length } de {MAX_AUX_IMAGE_FILES}.
                     </FormDescription>
                     <FormMessage />
                 </FormItem>
-                {(imagePreviews.length > 0 || imageFilesToUpload.length > 0) && (
+                {(imagePreviews.length > 0) && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                         {imagePreviews.map((previewUrl, index) => {
+                             if (!previewUrl) return null;
                             const isExisting = (editingItem?.imageUrls || []).includes(previewUrl) && previewUrl.startsWith('https://firebasestorage.googleapis.com');
                             return (
                                 <div key={`preview-${index}-${previewUrl.slice(-10)}`} className="relative group aspect-square">
@@ -661,8 +684,7 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
                         })}
                     </div>
                 )}
-              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} />} />
-
+              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} value={(field.value as string[] | null | undefined) || []} />} />
 
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Detalhes adicionais sobre o equipamento" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
@@ -674,5 +696,3 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     </>
   );
 }
-
-    
