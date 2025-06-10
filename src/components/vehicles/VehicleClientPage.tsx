@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useState, useEffect, useMemo, ChangeEvent } from "react";
+import { zodResolver, } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import type * as z from "zod";
 import { PlusCircle, CarFront, Tag, Gauge, Droplets, Coins, FileBadge, CircleCheck, WrenchIcon as WrenchIconMain, Loader2, AlertTriangle, DollarSign, Car, Fuel, Calendar as CalendarIcon, Clock, Image as ImageIcon, UploadCloud, XCircle } from "lucide-react"; // Added Clock, ImageIcon, UploadCloud, XCircle
@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import type { Vehicle, FuelingRecord, VehicleMaintenanceRecord } from "@/types";
-import { VehicleSchema, FuelingRecordSchema, VehicleMaintenanceRecordSchema, type VehicleWithId } from "@/types";
+import type { Vehicle, FuelingRecord, VehicleMaintenanceRecord, VehicleStatus } from "@/types";
+import { VehicleSchema, FuelingRecordSchema, VehicleMaintenanceRecordSchema, VehicleWithId } from "@/types";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTablePlaceholder } from "@/components/shared/DataTablePlaceholder";
 import { FormModal } from "@/components/shared/FormModal";
@@ -23,11 +23,10 @@ import { db, storage } from "@/lib/firebase"; // Import storage
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, arrayUnion, writeBatch } from "firebase/firestore";
 import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // Storage functions
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { formatDateForInput, formatDateForDisplay } from "@/lib/utils";
+import { formatDateForInput, formatDateForDisplay, cn } from "@/lib/utils";
 
 const statusOptions: Vehicle['status'][] = ['Disponível', 'Em Uso', 'Manutenção'];
 const statusIcons = {
@@ -83,7 +82,7 @@ async function deleteVehicleImageFromStorage(fileUrl?: string | null) {
 }
 
 async function fetchVehicles(): Promise<Vehicle[]> {
-  if (!db) {
+ if (!db) {
     console.error("fetchVehicles: Firebase DB is not available.");
     throw new Error("Firebase DB is not available");
   }
@@ -133,15 +132,14 @@ export function VehicleClientPage() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
 
-  const form = useForm<z.infer<typeof VehicleSchema>>({
-    resolver: zodResolver(VehicleSchema),
-    defaultValues: {
+ const form = useForm<z.infer<typeof VehicleSchema>>({
+ resolver: zodResolver(VehicleSchema),
+ defaultValues: {
       model: "", licensePlate: "", kind: "", currentMileage: 0, fuelConsumption: 0, costPerKilometer: 0, year: null,
       fipeValue: null, registrationInfo: "", status: "Disponível", fuelingHistory: [], maintenanceHistory: [],
       nextMaintenanceType: null, nextMaintenanceKm: null, nextMaintenanceDate: null, maintenanceNotes: "", imageUrls: [],
     },
   });
-
   const nextMaintenanceTypeWatch = useWatch({ control: form.control, name: 'nextMaintenanceType' });
 
 
@@ -173,7 +171,7 @@ export function VehicleClientPage() {
   const liters = useWatch({ control: fuelingForm.control, name: 'liters' });
   const pricePerLiter = useWatch({ control: fuelingForm.control, name: 'pricePerLiter' });
 
-  useEffect(() => {
+ useEffect(() => {
     if (liters && pricePerLiter && typeof liters === 'number' && typeof pricePerLiter === 'number') {
       fuelingForm.setValue('totalCost', parseFloat((liters * pricePerLiter).toFixed(2)));
     }
@@ -210,7 +208,7 @@ export function VehicleClientPage() {
 
   const addVehicleMutation = useMutation({
     mutationFn: async (data: { vehicleData: z.infer<typeof VehicleSchema>; newImageFiles: File[] }) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível para adicionar veículo.");
+ if (!db) throw new Error("Conexão com Firebase não disponível para adicionar veículo.");
       setIsUploadingImage(true);
       const newVehicleId = doc(collection(db!, FIRESTORE_COLLECTION_NAME)).id;
       const uploadedImageUrls: string[] = [];
@@ -252,7 +250,7 @@ export function VehicleClientPage() {
       currentVehicle: Vehicle;
     }) => {
       if (!db) throw new Error("Conexão com Firebase não disponível para atualizar veículo.");
-      if (data.id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
+      if (!data.id || data.id.startsWith("mock")) throw new Error("ID do veículo inválido para atualização.");
       setIsUploadingImage(true);
 
       const finalImageUrls: string[] = [...data.existingImageUrlsToKeep];
@@ -270,14 +268,16 @@ export function VehicleClientPage() {
         await deleteVehicleImageFromStorage(url);
       }
       setIsUploadingImage(false);
- // Type assertion to ensure dataToSave matches Omit<Vehicle, 'id'>
+
       const dataToSave: Omit<Vehicle, 'id'> = {
         // Ensure vehicleData overrides specific fields that might be updated by the form
         ...data.vehicleData,
-        maintenanceHistory: data.currentVehicle.maintenanceHistory || [],
-        imageUrls: finalImageUrls,
+        // Ensure vehicleData overrides specific fields that might be updated by the form
+        ...data.vehicleData,
+ fuelingHistory: data.currentVehicle.fuelingHistory || [],
+ maintenanceHistory: data.currentVehicle.maintenanceHistory || [],
       };
-      const { id, ...updatePayload } = dataToSave; // Remove id from payload to update
+      const updatePayload = dataToSave; // No need to remove id, as dataToSave is already Omit<Vehicle, 'id'>
       const vehicleRef = doc(db!, FIRESTORE_COLLECTION_NAME, data.id);
       await updateDoc(vehicleRef, updatePayload as { [key: string]: any });
       return { ...dataToSave, id: data.id };
@@ -317,7 +317,7 @@ export function VehicleClientPage() {
 
   const addFuelingRecordMutation = useMutation({
     mutationFn: async ({ vehicleId, newRecord, currentMileage }: { vehicleId: string; newRecord: FuelingRecord; currentMileage: number }) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível.");
+ if (!db) throw new Error("Conexão com Firebase não disponível.");
       const vehicleRef = doc(db, FIRESTORE_COLLECTION_NAME, vehicleId);
       const batch = writeBatch(db);
 
@@ -343,7 +343,7 @@ export function VehicleClientPage() {
 
   const addMaintenanceRecordMutation = useMutation({
     mutationFn: async ({ vehicleId, newRecord, currentMileage }: { vehicleId: string; newRecord: VehicleMaintenanceRecord; currentMileage: number }) => {
-      if (!db) throw new Error("Conexão com Firebase não disponível.");
+ if (!db) throw new Error("Conexão com Firebase não disponível.");
       const vehicleRef = doc(db, FIRESTORE_COLLECTION_NAME, vehicleId);
       const batch = writeBatch(db);
 
@@ -366,7 +366,7 @@ export function VehicleClientPage() {
     },
   });
 
-  const openModal = (vehicle?: Vehicle) => {
+ const openModal = (vehicle?: Vehicle) => {
     setImageFilesToUpload([]);
     setImagePreviews(vehicle?.imageUrls || []);
     if (vehicle) {
@@ -431,7 +431,7 @@ export function VehicleClientPage() {
     }
   };
 
-  const handleModalDeleteConfirm = () => {
+  const handleModalDeleteConfirm = (): void => {
     if (editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock")) {
        if (window.confirm(`Tem certeza que deseja excluir o veículo "${editingVehicle.model} (${editingVehicle.licensePlate})"?`)) {
         deleteVehicleMutation.mutate(editingVehicle);
@@ -441,7 +441,7 @@ export function VehicleClientPage() {
     }
   };
 
-  const openFuelingModal = (vehicle: Vehicle) => {
+  const openFuelingModal = (vehicle: Vehicle): void => {
     setSelectedVehicleForFueling(vehicle);
     fuelingForm.reset({
       date: formatDateForInput(new Date().toISOString()),
@@ -455,7 +455,7 @@ export function VehicleClientPage() {
     setIsFuelingModalOpen(true);
   };
 
-  const closeFuelingModal = () => {
+  const closeFuelingModal = (): void => {
     setIsFuelingModalOpen(false);
     setSelectedVehicleForFueling(null);
     fuelingForm.reset();
@@ -485,7 +485,7 @@ export function VehicleClientPage() {
     });
   };
 
-  const openMaintenanceModal = (vehicle: Vehicle) => {
+  const openMaintenanceModal = (vehicle: Vehicle): void => {
     setSelectedVehicleForMaintenance(vehicle);
     maintenanceForm.reset({
       date: formatDateForInput(new Date().toISOString()),
@@ -498,7 +498,7 @@ export function VehicleClientPage() {
     setIsMaintenanceModalOpen(true);
   };
 
-  const closeMaintenanceModal = () => {
+  const closeMaintenanceModal = (): void => {
     setIsMaintenanceModalOpen(false);
     setSelectedVehicleForMaintenance(null);
     maintenanceForm.reset();
@@ -525,7 +525,7 @@ export function VehicleClientPage() {
     });
   };
 
-  const handleImageFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFilesChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const files = event.target.files;
     if (files) {
       const currentTotalFiles = imagePreviews.length + imageFilesToUpload.length - (editingVehicle?.imageUrls?.filter(url => imagePreviews.includes(url)).length || 0) + files.length;
@@ -550,7 +550,7 @@ export function VehicleClientPage() {
     }
   };
 
-  const handleRemoveVehicleImage = (index: number, isExistingUrl: boolean) => {
+  const handleRemoveVehicleImage = (index: number, isExistingUrl: boolean): void => {
     if (isExistingUrl) {
       const urlToRemove = imagePreviews[index];
       setImagePreviews(prev => prev.filter((_, i) => i !== index));
@@ -566,7 +566,6 @@ export function VehicleClientPage() {
       }
     }
   };
-
 
   const isMutating = addVehicleMutation.isPending || updateVehicleMutation.isPending || isUploadingImage;
 
@@ -590,11 +589,11 @@ export function VehicleClientPage() {
     );
   }
 
-  const sortedFuelingHistory = editingVehicle?.fuelingHistory
+  const sortedFuelingHistory: FuelingRecord[] = editingVehicle?.fuelingHistory
     ? [...editingVehicle.fuelingHistory].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
     : [];
 
-  const sortedMaintenanceHistory = editingVehicle?.maintenanceHistory
+  const sortedMaintenanceHistory: VehicleMaintenanceRecord[] = editingVehicle?.maintenanceHistory
     ? [...editingVehicle.maintenanceHistory].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
     : [];
 
@@ -649,9 +648,9 @@ export function VehicleClientPage() {
                     <div className="relative w-full h-32 mb-2 rounded-t-md overflow-hidden">
                         <NextImage
                             src={primaryImageUrl}
-                            alt={`Imagem de ${vehicle.model}`}
-                            layout="fill"
-                            objectFit="cover"
+ alt={`Imagem de ${vehicle.model}`}
+                            fill // Replace layout="fill"
+                            style={{ objectFit: 'cover' }} // Replace objectFit="cover"
                             data-ai-hint="vehicle car"
                         />
                     </div>
@@ -701,7 +700,7 @@ export function VehicleClientPage() {
                     <span className={cn({
                       'text-green-600': vehicle.status === 'Disponível',
                       'text-blue-600': vehicle.status === 'Em Uso',
-                      'text-yellow-600': vehicle.status === 'Manutenção',
+                      'text-amber-600': vehicle.status === 'Manutenção',
                     })}>
                       {vehicle.status}
                     </span>
@@ -756,9 +755,9 @@ export function VehicleClientPage() {
         formId="vehicle-form"
         isSubmitting={isMutating}
         editingItem={editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock") ? editingVehicle : null}
-        onDeleteConfirm={handleModalDeleteConfirm}
+          onDeleteConfirm={editingVehicle && editingVehicle.id && !editingVehicle.id.startsWith("mock") ? handleModalDeleteConfirm : undefined}
         isDeleting={deleteVehicleMutation.isPending}
-        deleteButtonLabel="Excluir Veículo"
+        deleteButtonLabel={deleteVehicleMutation.isPending ? "Excluindo..." : "Excluir Veículo"}
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
       >
@@ -915,8 +914,7 @@ export function VehicleClientPage() {
                         })}
                     </div>
                 )}
-              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} />} />
-              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} value={field.value ?? []} />} />
+              <FormField control={form.control} name="imageUrls" render={({ field }) => <input type="hidden" {...field} value={field.value as string[] | undefined} />} />
 
               <h3 className="text-md font-semibold pt-4 border-t mt-4 pb-1 font-headline">Alerta Próxima Manutenção</h3>
               <FormField
@@ -1027,7 +1025,7 @@ export function VehicleClientPage() {
                               <TableCell>{formatDateForDisplay(record.date)}</TableCell>
                               <TableCell className="text-right">{record.liters.toFixed(2)} L</TableCell>
                               <TableCell className="text-right">R$ {record.pricePerLiter.toFixed(2)}</TableCell>
-                              <TableCell className="text-right">R$ {record.totalCost.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">R$ {(record.totalCost ?? 0).toFixed(2)}</TableCell>
                               <TableCell className="text-right">{record.mileageAtFueling.toLocaleString('pt-BR')} km</TableCell>
                               <TableCell>{record.fuelStation || '-'}</TableCell>
                             </TableRow>

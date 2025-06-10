@@ -184,6 +184,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
   const [errorCodesFile, setErrorCodesFile] = useState<File | null>(null);
   const [imageFilesToUpload, setImageFilesToUpload] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [viewingImageIndex, setViewingImageIndex] = useState<number | null>(null);
 
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -304,6 +306,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     setPartsCatalogFile(null);
     setErrorCodesFile(null);
     setImageFilesToUpload([]);
+    // Ensure imagePreviews starts fresh with existing URLs or empty for new item
+    if (maquina?.imageUrls) {
+      setImagePreviews(maquina.imageUrls);
+    } else {
+      setImagePreviews([]);
+    }
     setImagePreviews(maquina?.imageUrls || []);
 
     if (maquina) {
@@ -675,6 +683,12 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
     prevCustomerIdRef.current = undefined;
   };
 
+  const closeImageViewer = () => {
+    setViewingImageUrl(null);
+    setViewingImageIndex(null);
+  };
+
+
   const onSubmit = async (values: z.infer<typeof MaquinaSchema>) => {
     const existingImageUrlsToKeep = imagePreviews.filter(
       (url) => (editingMaquina?.imageUrls || []).includes(url) && url.startsWith('https://firebasestorage.googleapis.com')
@@ -723,6 +737,11 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
       }
     }
   };
+
+   const handleImageClick = (url: string, index: number) => {
+      setViewingImageUrl(url);
+      setViewingImageIndex(index);
+   };
 
 
   const handleSelectChange = (field: 'brand' | 'equipmentType', value: string) => {
@@ -906,8 +925,8 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                         <NextImage
                             src={primaryImageUrl}
                             alt={`Imagem de ${maq.brand} ${maq.model}`}
-                            layout="fill"
-                            objectFit="cover"
+ fill
+ style={{ objectFit: 'cover' }} // Replace objectFit="cover"
                             data-ai-hint="machinery product"
                         />
                     </div>
@@ -1095,7 +1114,7 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
         isEditMode={isEditMode}
         onEditModeToggle={() => setIsEditMode(true)}
         isDeleting={deleteMaquinaMutation.isPending}
-        deleteButtonLabel="Excluir Máquina"
+        deleteButtonLabel={deleteMaquinaMutation.isPending ? "Excluindo..." : "Excluir Máquina"}
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="maquina-form" className="space-y-4">
@@ -1377,8 +1396,9 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
                                     <NextImage
                                         src={previewUrl}
                                         alt={`Preview ${index + 1}`}
-                                        layout="fill"
-                                        objectFit="cover"
+ fill // Replace layout="fill"
+ style={{ objectFit: 'cover' }} // Replace objectFit="cover"
+                                        onClick={() => handleImageClick(previewUrl, index)}
                                         className="rounded-md"
                                         data-ai-hint="machine image"
                                     />
@@ -1465,6 +1485,73 @@ export function MaquinasClientPage({ maquinaIdFromUrl, initialStatusFilter }: Ma
           </form>
         </Form>
       </FormModal>
+
+       {/* Image Viewer Modal Overlay */}
+       {viewingImageUrl && viewingImageIndex !== null && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-80 p-4 cursor-pointer"
+            onClick={closeImageViewer}
+          >
+            {/* Image Container */}
+            <div className="relative max-w-full max-h-full w-auto h-auto flex justify-center items-center"
+                 onClick={(e) => e.stopPropagation()} // Prevent closing when clicking on the image itself
+            >
+               <NextImage
+                   src={viewingImageUrl}
+                   alt={`Visualização ${viewingImageIndex + 1}`}
+                   width={800} // Adjust based on desired max size
+                   height={600} // Adjust based on desired max size
+                   objectFit="contain"
+                   className="rounded-lg shadow-xl"
+               />
+            </div>
+
+            {/* Close Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/30 text-white hover:bg-white/50 transition-colors"
+              onClick={closeImageViewer}
+              title="Fechar"
+            >
+              <XCircle className="h-6 w-6" />
+            </Button>
+
+            {/* Navigation Buttons */}
+            {imagePreviews.length > 1 && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/30 text-white hover:bg-white/50 disabled:opacity-50 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const prevIndex = (viewingImageIndex - 1 + imagePreviews.length) % imagePreviews.length;
+                    setViewingImageIndex(prevIndex);
+                    setViewingImageUrl(imagePreviews[prevIndex]);
+                  }}
+                  disabled={viewingImageIndex === 0}
+                  title="Anterior"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/30 text-white hover:bg-white/50 disabled:opacity-50 transition-colors"
+                   onClick={(e) => {
+                    e.stopPropagation();
+                    const nextIndex = (viewingImageIndex + 1) % imagePreviews.length;
+                    setViewingImageIndex(nextIndex);
+                    setViewingImageUrl(imagePreviews[nextIndex]);
+                  }}
+                  disabled={viewingImageIndex === imagePreviews.length - 1}
+                  title="Próxima"
+                ><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg></Button>
+              </>
+            )}
+          </div>
+       )}
     </>
   );
 }

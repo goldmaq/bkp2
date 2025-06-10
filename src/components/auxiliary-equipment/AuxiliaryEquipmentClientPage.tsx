@@ -129,6 +129,9 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
+  const [viewingImageUrlAux, setViewingImageUrlAux] = useState<string | null>(null);
+  const [viewingImageIndexAux, setViewingImageIndexAux] = useState<number | null>(null);
+
 
   const form = useForm<z.infer<typeof AuxiliaryEquipmentSchema>>({
     resolver: zodResolver(AuxiliaryEquipmentSchema),
@@ -324,7 +327,9 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
       maquinasSnapshot.forEach(maquinaDoc => {
         const maquinaData = maquinaDoc.data() as Maquina;
         const updatedLinkedIds = (maquinaData.linkedAuxiliaryEquipmentIds || []).filter(id => id !== itemToDelete.id);
-        batch.update(doc(db, FIRESTORE_MAQUINAS_COLLECTION_NAME, maquinaDoc.id), { linkedAuxiliaryEquipmentIds: updatedLinkedIds });
+        if (db) {
+ batch.update(doc(db, FIRESTORE_MAQUINAS_COLLECTION_NAME, maquinaDoc.id), { linkedAuxiliaryEquipmentIds: updatedLinkedIds });
+ }
       });
 
       await batch.commit();
@@ -351,6 +356,22 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     setImageFilesToUpload([]);
     setImagePreviews([]);
   };
+
+  const handleAuxImageClick = useCallback((url: string, index: number) => {
+    setViewingImageUrlAux(url);
+    setViewingImageIndexAux(index);
+  }, []);
+
+  const handleCloseAuxImageView = useCallback(() => {
+    setViewingImageUrlAux(null);
+    setViewingImageIndexAux(null);
+  }, []);
+
+  const handleAuxPrevImage = useCallback(() => {
+    if (viewingImageIndexAux !== null && viewingImageIndexAux > 0) {
+      handleAuxImageClick(imagePreviews[viewingImageIndexAux - 1], viewingImageIndexAux - 1);
+    }
+  }, [viewingImageIndexAux, imagePreviews, handleAuxImageClick]);
 
   const onSubmit = async (values: z.infer<typeof AuxiliaryEquipmentSchema>) => {
     const existingImageUrlsToKeep = imagePreviews.filter(
@@ -448,6 +469,12 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
     }
   };
 
+  const handleAuxNextImage = useCallback(() => {
+    if (viewingImageIndexAux !== null && viewingImageIndexAux < imagePreviews.length - 1) {
+      handleAuxImageClick(imagePreviews[viewingImageIndexAux + 1], viewingImageIndexAux + 1);
+    }
+  }, [viewingImageIndexAux, imagePreviews, handleAuxImageClick]);
+
 
   const isLoadingPageData = isLoadingAux || isLoadingMaquinasPrincipais;
   const isMutatingAll = addAuxEquipmentMutation.isPending || updateAuxEquipmentMutation.isPending || deleteAuxEquipmentMutation.isPending || isUploadingFiles;
@@ -475,7 +502,10 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
   return (
     <>
       <PageHeader
-        title=""
+        title={
+ isMutatingAll ?
+ "Salvando Equipamento Auxiliar..." : "Equipamentos Auxiliares"
+ }
         actions={
           <Button onClick={() => openModal()} className="bg-primary hover:bg-primary/90" disabled={isMutatingAll}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Equip. Auxiliar
@@ -512,8 +542,9 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
                         <NextImage
                             src={primaryImageUrl}
                             alt={`Imagem de ${item.name}`}
-                            layout="fill"
-                            objectFit="cover"
+                            fill
+                            style={{ objectFit: 'cover' }}
+                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Placeholder, adjust as needed
                             data-ai-hint="auxiliary equipment"
                         />
                     </div>
@@ -664,10 +695,12 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
                                     <NextImage
                                         src={previewUrl}
                                         alt={`Preview ${index + 1}`}
-                                        layout="fill"
-                                        objectFit="cover"
+                                        fill
+                                        style={{ objectFit: 'cover' }}
+                                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Placeholder, adjust as needed
                                         className="rounded-md"
                                         data-ai-hint="auxiliary equipment product"
+                                        onClick={(e) => { e.stopPropagation(); handleAuxImageClick(previewUrl, index); }}
                                     />
                                     <Button
                                         type="button"
@@ -693,6 +726,52 @@ export function AuxiliaryEquipmentClientPage({ auxEquipmentIdFromUrl }: Auxiliar
           </form>
         </Form>
       </FormModal>
+
+      {/* Image Fullscreen View Overlay */}
+      {viewingImageUrlAux && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4"
+          onClick={handleCloseAuxImageView}
+        >
+          <div
+            className="relative max-w-full max-h-full"
+            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking on the image container
+          >
+            <NextImage
+              src={viewingImageUrlAux}
+              alt={`Visualização ${viewingImageIndexAux !== null ? viewingImageIndexAux + 1 : ''}`}
+              fill
+              style={{ objectFit: 'contain' }}
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Placeholder, adjust as needed
+              data-ai-hint="fullscreen auxiliary equipment product"
+              className="!relative !w-auto !h-auto max-w-[90vw] max-h-[90vh]" // Adjust NextImage for objectFit contain
+            />
+
+            {/* Close Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 text-white hover:bg-white/20 z-[10000]"
+              onClick={handleCloseAuxImageView}
+            >
+              <XCircle className="h-6 w-6" />
+            </Button>
+
+            {/* Navigation Buttons */}
+            {imagePreviews.length > 1 && viewingImageIndexAux !== null && (
+              <>
+                <Button variant="ghost" size="icon" className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-[10000]" onClick={handleAuxPrevImage} disabled={viewingImageIndexAux === 0}>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5}" /></svg>
+                </Button>
+                <Button variant="ghost" size="icon" className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-[10000]" onClick={handleAuxNextImage} disabled={viewingImageIndexAux === imagePreviews.length - 1}>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5}" /></svg>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </>
   );
 }

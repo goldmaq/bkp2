@@ -18,6 +18,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+        port: '',
+        pathname: '/v0/b/gold-maq-control.firebasestorage.app/o/**',
+      },
     ],
   },
   serverExternalPackages: ['handlebars', 'dotprompt'], // Moved and renamed from experimental

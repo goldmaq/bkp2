@@ -165,7 +165,7 @@ export interface FuelingRecord {
   date: string;
   liters: number;
   pricePerLiter: number;
-  totalCost: number;
+  totalCost?: number; // Made optional to match schema and usage
   mileageAtFueling: number;
   fuelStation?: string | null;
   notes?: string | null;
@@ -174,7 +174,8 @@ export interface FuelingRecord {
 export interface VehicleMaintenanceRecord {
   id: string;
   date: string;
-  description: string;
+  type?: string | null; // Preventiva, Corretiva, Troca de óleo, etc.
+  description: string; // Detalhes do serviço
   cost: number;
   mileageAtMaintenance: number;
   serviceProvider?: string | null;
@@ -190,7 +191,7 @@ export interface Vehicle {
   fuelConsumption: number;
   costPerKilometer: number;
   fipeValue?: number | null;
-  year?: number | null;
+  year?: number | null; // Ano de fabricação
   registrationInfo?: string;
   status: 'Disponível' | 'Em Uso' | 'Manutenção';
   fuelingHistory?: FuelingRecord[] | null;
@@ -201,6 +202,9 @@ export interface Vehicle {
   maintenanceNotes?: string | null;
   imageUrls?: string[] | null; // Added field for vehicle images
 }
+
+export type VehicleStatus = Vehicle['status'];
+export type VehicleWithId = Vehicle & { id: string };
 
 export const auxiliaryEquipmentTypeOptions = ["Bateria", "Carregador", "Berço", "Cabo"] as const;
 export const auxiliaryEquipmentStatusOptions = ['Disponível', 'Locado', 'Em Manutenção', 'Sucata'] as const;
@@ -379,7 +383,7 @@ export const TechnicianSchema = z.object({
 });
 
 export const FuelingRecordSchema = z.object({
-  id: z.string().uuid("ID inválido").optional(),
+  id: z.string().uuid("ID inválido"),
   date: z.string().refine((val) => {
     try {
       return !!parseISO(val);
@@ -396,7 +400,7 @@ export const FuelingRecordSchema = z.object({
 });
 
 export const VehicleMaintenanceRecordSchema = z.object({
-  id: z.string().uuid("ID inválido").optional(),
+  id: z.string().uuid("ID inválido"),
   date: z.string().refine((val) => {
     try {
       return !!parseISO(val);
